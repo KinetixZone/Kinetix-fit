@@ -7,7 +7,8 @@ import { User } from "../types";
  * Diseñado para generar protocolos técnicos de alto rendimiento.
  */
 export async function generateSmartRoutine(user: User) {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Initialize GoogleGenAI using the mandatory named parameter and API_KEY from environment.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const systemInstruction = `Eres el Head Coach de Kinetix Functional Zone.
   Tu misión es diseñar protocolos de entrenamiento de élite en formato JSON.
@@ -80,6 +81,7 @@ export async function generateSmartRoutine(user: User) {
       },
     });
 
+    // Directly access the text property of the GenerateContentResponse object.
     return JSON.parse(response.text || '{}');
   } catch (error: any) {
     console.error("AI Generation Error:", error);
