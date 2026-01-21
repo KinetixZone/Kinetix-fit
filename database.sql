@@ -1,12 +1,16 @@
--- KINETIX ELITE COMMAND - SUPABASE SCHEMA V1.0
+-- KINETIX ELITE COMMAND - SUPABASE SCHEMA V2.0 (RLS DISABLED)
 
 -- 1. EXTENSIONES (Para UUIDs)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. ENUMS (TIPOS DE DATOS PERSONALIZADOS)
-CREATE TYPE fitness_goal AS ENUM ('Bajar Grasa', 'Subir Músculo', 'Rendimiento');
-CREATE TYPE fitness_level AS ENUM ('Principiante', 'Intermedio', 'Avanzado');
-CREATE TYPE user_role AS ENUM ('coach', 'client', 'admin');
+DO $$ BEGIN
+    CREATE TYPE fitness_goal AS ENUM ('Bajar Grasa', 'Subir Músculo', 'Rendimiento');
+    CREATE TYPE fitness_level AS ENUM ('Principiante', 'Intermedio', 'Avanzado');
+    CREATE TYPE user_role AS ENUM ('coach', 'client', 'admin');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- 3. TABLA DE USUARIOS
 CREATE TABLE IF NOT EXISTS users (
@@ -22,16 +26,18 @@ CREATE TABLE IF NOT EXISTS users (
   streak INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE users DISABLE ROW LEVEL SECURITY; -- PERMITIR ACCESO TOTAL
 
 -- 4. TABLA DE EJERCICIOS (MAESTRO)
 CREATE TABLE IF NOT EXISTS exercises (
-  id TEXT PRIMARY KEY, -- IDs cortos para compatibilidad con constants.ts
+  id TEXT PRIMARY KEY, 
   name TEXT NOT NULL,
   muscle_group TEXT NOT NULL,
   video_url TEXT,
   technique TEXT,
   common_errors TEXT[] DEFAULT '{}'
 );
+ALTER TABLE exercises DISABLE ROW LEVEL SECURITY;
 
 -- 5. TABLA DE PLANES (PROGRAMACIÓN)
 CREATE TABLE IF NOT EXISTS plans (
@@ -40,16 +46,18 @@ CREATE TABLE IF NOT EXISTS plans (
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE plans DISABLE ROW LEVEL SECURITY;
 
--- 6. TABLA DE ENTRENAMIENTOS (DÍAS DENTRO DE UN PLAN)
+-- 6. TABLA DE ENTRENAMIENTOS
 CREATE TABLE IF NOT EXISTS workouts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   plan_id UUID REFERENCES plans(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   day_number INTEGER NOT NULL
 );
+ALTER TABLE workouts DISABLE ROW LEVEL SECURITY;
 
--- 7. TABLA DE EJERCICIOS POR ENTRENAMIENTO (RELACIÓN)
+-- 7. TABLA DE EJERCICIOS POR ENTRENAMIENTO
 CREATE TABLE IF NOT EXISTS workout_exercises (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   workout_id UUID REFERENCES workouts(id) ON DELETE CASCADE,
@@ -58,14 +66,16 @@ CREATE TABLE IF NOT EXISTS workout_exercises (
   target_reps TEXT DEFAULT '10-12',
   coach_cue TEXT
 );
+ALTER TABLE workout_exercises DISABLE ROW LEVEL SECURITY;
 
--- 8. TABLA DE LOGS DE SESIÓN (HISTORIAL)
+-- 8. TABLA DE LOGS DE SESIÓN
 CREATE TABLE IF NOT EXISTS workout_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   workout_id UUID REFERENCES workouts(id) ON DELETE SET NULL,
   date TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE workout_logs DISABLE ROW LEVEL SECURITY;
 
 -- 9. TABLA DE SERIES REGISTRADAS
 CREATE TABLE IF NOT EXISTS set_logs (
@@ -76,8 +86,9 @@ CREATE TABLE IF NOT EXISTS set_logs (
   reps INTEGER DEFAULT 0,
   done BOOLEAN DEFAULT FALSE
 );
+ALTER TABLE set_logs DISABLE ROW LEVEL SECURITY;
 
--- 10. INSERCIÓN DE EJERCICIOS INICIALES (BASADO EN constants.ts)
+-- 10. INSERCIÓN DE EJERCICIOS INICIALES
 INSERT INTO exercises (id, name, muscle_group, video_url) VALUES
 ('p1', 'Press horizontal', 'Pecho', 'https://youtu.be/g8oG_jaAxvs'),
 ('p2', 'Press inclinado', 'Pecho', 'https://youtube.com/shorts/TNmeGZp9ols'),

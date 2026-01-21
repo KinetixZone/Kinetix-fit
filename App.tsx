@@ -5,7 +5,7 @@ import {
   Settings, Dumbbell, History, Zap, Check, ShieldAlert, BarChart3, Search, ChevronRight,
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
-  Wifi, WifiOff
+  Wifi, WifiOff, AlertTriangle
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -13,10 +13,9 @@ import {
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, WorkoutLog } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './services/geminiService';
-import { supabase } from './services/supabaseClient';
+import { supabase, supabaseConnectionStatus } from './services/supabaseClient';
 
 // --- UTILS ---
-// Generador de UUID v4 compatible con navegadores antiguos si crypto no está disponible
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -32,12 +31,11 @@ const isUUID = (str: string) => {
   return regex.test(str);
 };
 
-// --- KINETIX HYBRID ENGINE V14.4 (UUID FIX) ---
+// --- KINETIX HYBRID ENGINE V15.0 (AUTO-MIGRATION) ---
 const STORAGE_KEY = 'KINETIX_CLOUD_SYNC_V1';
 const SESSION_KEY = 'KINETIX_ACTIVE_SESSION_V2';
 
 const DataEngine = {
-  // --- CAPA LOCAL (VELOCIDAD) ---
   getStore: () => {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
@@ -57,8 +55,6 @@ const DataEngine = {
       });
     }
   },
-  
-  // --- CAPA LOCAL GETTERS ---
   getUsers: (): User[] => JSON.parse(DataEngine.getStore().USERS || '[]'),
   getExercises: (): Exercise[] => JSON.parse(DataEngine.getStore().EXERCISES || '[]'),
   getLogo: (): string => DataEngine.getStore().LOGO_URL || '',
@@ -71,19 +67,13 @@ const DataEngine = {
     return l ? JSON.parse(l) : [];
   },
 
-  // --- CAPA HÍBRIDA (LOCAL + CLOUD) ---
-  
-  // Sincronizar hacia abajo (Cloud -> Local)
   pullFromCloud: async () => {
+    if (!supabaseConnectionStatus.isConfigured) return false;
     try {
-      // 1. Traer Usuarios
       const { data: users, error: uErr } = await supabase.from('users').select('*');
       if (users && !uErr) {
         const s = DataEngine.getStore();
-        // Mezclar usuarios locales y nube (prioridad nube)
         const localUsers = JSON.parse(s.USERS || '[]');
-        
-        // Mapear datos de DB a estructura local
         const dbUsersFormatted = users.map(u => ({
              id: u.id,
              name: u.name,
@@ -96,24 +86,18 @@ const DataEngine = {
              streak: u.streak,
              createdAt: u.created_at
         }));
-
-        // Mantener usuarios locales que no estén en la nube
         localUsers.forEach((lu: User) => {
           if (!dbUsersFormatted.find((mu:any) => mu.id === lu.id)) dbUsersFormatted.push(lu);
         });
-
         s.USERS = JSON.stringify(dbUsersFormatted);
         DataEngine.saveStore(s);
       }
-
-      // 2. Traer Ejercicios
       const { data: exercises, error: eErr } = await supabase.from('exercises').select('*');
       if (exercises && !eErr && exercises.length > 0) {
         const s = DataEngine.getStore();
         s.EXERCISES = JSON.stringify(exercises);
         DataEngine.saveStore(s);
       }
-
       return true;
     } catch (e) {
       console.error("Cloud Pull Error", e);
@@ -121,9 +105,7 @@ const DataEngine = {
     }
   },
 
-  // Guardar Usuario
   saveUser: async (user: User) => {
-    // 1. Local
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
     const exists = users.find((u: User) => u.id === user.id);
@@ -137,11 +119,7 @@ const DataEngine = {
       DataEngine.saveStore(s);
     }
 
-    // 2. Cloud - SOLO SI EL ID ES UN UUID VÁLIDO
-    if (!isUUID(user.id)) {
-      console.warn("No se puede sincronizar usuario a la nube: ID inválido (no es UUID)", user.id);
-      return; 
-    }
+    if (!isUUID(user.id)) return; // Block invalid IDs
 
     try {
       const { error } = await supabase.from('users').upsert({
@@ -158,24 +136,15 @@ const DataEngine = {
     } catch (e) {}
   },
 
-  // Guardar Plan
   savePlan: async (p: Plan) => {
-    // 1. Local
     const s = DataEngine.getStore();
     s[`PLAN_${p.userId}`] = JSON.stringify(p);
     DataEngine.saveStore(s);
     
-    // 2. Cloud - VALIDAR IDs
-    if (!isUUID(p.userId)) {
-      console.warn("No se puede guardar plan en nube: Usuario ID no es UUID");
-      return;
-    }
+    if (!isUUID(p.userId)) return;
 
     try {
-      // Usar un ID válido para el plan si el local no lo es
       const planUUID = isUUID(p.id) ? p.id : undefined;
-
-      // Primero crear el plan cabecera
       const { data: planData, error: pErr } = await supabase.from('plans').upsert({
         id: planUUID,
         title: p.title,
@@ -184,16 +153,13 @@ const DataEngine = {
       }).select().single();
 
       if (planData && !pErr) {
-        // Borrar workouts viejos de este plan
         await supabase.from('workouts').delete().eq('plan_id', planData.id);
-        
         for (const w of p.workouts) {
           const { data: wData } = await supabase.from('workouts').insert({
             plan_id: planData.id,
             name: w.name,
             day_number: w.day
           }).select().single();
-          
           if (wData) {
             const exercisesPayload = w.exercises.map(we => ({
               workout_id: wData.id,
@@ -205,21 +171,16 @@ const DataEngine = {
             await supabase.from('workout_exercises').insert(exercisesPayload);
           }
         }
-      } else {
-        console.error("Error saving plan header", pErr);
       }
     } catch (e) { console.error("Cloud Plan Save Error", e); }
   },
 
-  // Guardar Log
   saveLog: async (l: WorkoutLog) => {
-    // 1. Local
     const s = DataEngine.getStore();
     const logs = DataEngine.getLogs(l.userId);
     s[`LOGS_${l.userId}`] = JSON.stringify([l, ...logs]);
     DataEngine.saveStore(s);
 
-    // 2. Cloud
     if (!isUUID(l.userId)) return;
 
     try {
@@ -255,11 +216,8 @@ const DataEngine = {
     delete s[`PLAN_${uid}`];
     delete s[`LOGS_${uid}`];
     DataEngine.saveStore(s);
-    // Cloud Delete
     if (isUUID(uid)) {
-      supabase.from('users').delete().eq('id', uid).then(({error}) => {
-         if(error) console.error("Cloud Delete Error", error);
-      });
+      supabase.from('users').delete().eq('id', uid).then(({error}) => { if(error) console.error(error); });
     }
   },
 
@@ -268,7 +226,6 @@ const DataEngine = {
     s.LOGO_URL = url;
     DataEngine.saveStore(s);
   },
-  
   exportData: () => {
     const data = DataEngine.getStore();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -278,10 +235,7 @@ const DataEngine = {
     a.download = `KINETIX_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
   },
-  
-  downloadSQL: () => {
-     // ...
-  }
+  downloadSQL: () => {}
 };
 
 export default function App() {
@@ -309,21 +263,21 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // INIT & CLOUD SYNC
+  // INIT
   useEffect(() => {
     DataEngine.init();
     
-    // Check DB Connection
-    supabase.from('users').select('count', { count: 'exact', head: true })
-      .then(({ error }) => setDbConnected(!error))
-      .catch(() => setDbConnected(false));
+    // Test connection
+    if (supabaseConnectionStatus.isConfigured) {
+      supabase.from('users').select('count', { count: 'exact', head: true })
+        .then(({ error }) => setDbConnected(!error))
+        .catch(() => setDbConnected(false));
+    }
 
-    // Attempt Cloud Sync on Mount
     const doCloudSync = async () => {
        setSyncing(true);
        await DataEngine.pullFromCloud();
        setSyncing(false);
-       // Re-read local store after sync
        setAllUsers(DataEngine.getUsers());
        setExercises(DataEngine.getExercises());
     };
@@ -337,6 +291,60 @@ export default function App() {
     }
     setIsReady(true);
   }, []);
+
+  // AUTO-MIGRATION LEGACY ID -> UUID
+  useEffect(() => {
+    if (!isReady || !currentUser) return;
+    
+    // Si el usuario actual tiene un ID viejo (no UUID), migrarlo automáticamente
+    if (!isUUID(currentUser.id)) {
+      console.log("DETECTADO USUARIO LEGACY. INICIANDO MIGRACIÓN CLOUD...");
+      notify("MIGRANDO CUENTA A LA NUBE...");
+      
+      const oldId = currentUser.id;
+      const newId = generateUUID(); // Generar pasaporte válido
+      
+      // 1. Clonar usuario con nuevo ID
+      const updatedUser: User = { ...currentUser, id: newId };
+      
+      // 2. Migrar Planes Locales
+      const oldPlan = DataEngine.getPlan(oldId);
+      if (oldPlan) {
+        const newPlan = { ...oldPlan, userId: newId, id: isUUID(oldPlan.id) ? oldPlan.id : generateUUID() };
+        DataEngine.savePlan(newPlan); // Esto también dispara el guardado en nube si es válido
+        // Limpiar viejo
+        const s = DataEngine.getStore();
+        delete s[`PLAN_${oldId}`];
+        DataEngine.saveStore(s);
+      }
+      
+      // 3. Migrar Logs Locales
+      const oldLogs = DataEngine.getLogs(oldId);
+      if (oldLogs.length > 0) {
+        const newLogs = oldLogs.map(l => ({ 
+          ...l, 
+          userId: newId, 
+          id: isUUID(l.id) ? l.id : generateUUID() 
+        }));
+        // Guardar logs manualmente en local
+        const s = DataEngine.getStore();
+        s[`LOGS_${newId}`] = JSON.stringify(newLogs);
+        delete s[`LOGS_${oldId}`];
+        DataEngine.saveStore(s);
+        
+        // Disparar guardado en nube para cada log (puede tardar, pero es background)
+        newLogs.forEach(l => DataEngine.saveLog(l));
+      }
+
+      // 4. Finalizar
+      DataEngine.deleteUser(oldId);
+      DataEngine.saveUser(updatedUser); // Guardar usuario nuevo en nube
+      setCurrentUser(updatedUser);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
+      
+      setTimeout(() => notify("MIGRACIÓN EXITOSA. YA PUEDES ENTRAR EN MÓVIL"), 2000);
+    }
+  }, [isReady, currentUser, notify]);
 
   const sync = useCallback(() => {
     if (!isReady) return;
@@ -356,14 +364,13 @@ export default function App() {
     if (!input) return;
     setLoading(true);
 
-    // 1. Intentar sincronizar primero
     await DataEngine.pullFromCloud();
     
-    // 2. Buscar localmente
+    // Buscar local primero
     let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
     
-    // 3. Fallback a nube
-    if (!found) {
+    // Buscar en nube si no está local
+    if (!found && supabaseConnectionStatus.isConfigured) {
        const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
        if (data) {
           found = {
@@ -389,7 +396,11 @@ export default function App() {
       notify(`SESIÓN ONLINE: ${found.name.toUpperCase()}`);
       setActiveTab('home');
     } else {
-      notify(dbConnected ? `USUARIO NO ENCONTRADO EN NUBE` : `SIN CONEXIÓN A BASE DE DATOS`, 'error');
+      if (!supabaseConnectionStatus.isConfigured) {
+         notify("ERROR: FALTAN LLAVES DE VERCEL", 'error');
+      } else {
+         notify(dbConnected ? `USUARIO NO ENCONTRADO EN NUBE` : `SIN CONEXIÓN A BASE DE DATOS`, 'error');
+      }
     }
   };
 
@@ -455,18 +466,26 @@ export default function App() {
                     {loading ? <RefreshCw className="animate-spin"/> : 'IDENTIFICARSE'}
                   </button>
                   
-                  <div className="flex justify-center items-center gap-3">
-                     <span className={`w-2 h-2 rounded-full ${dbConnected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></span>
-                     <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">
-                       {dbConnected ? 'DATABASE CONNECTED' : 'DATABASE OFFLINE'}
-                     </span>
-                     <button onClick={async () => {
-                       setSyncing(true);
-                       await DataEngine.pullFromCloud();
-                       setSyncing(false);
-                       setAllUsers(DataEngine.getUsers());
-                       notify("DATOS ACTUALIZADOS");
-                     }} className="ml-2 text-zinc-500 hover:text-white"><RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /></button>
+                  {/* DIAGNÓSTICO DE CONEXIÓN */}
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex justify-center items-center gap-3">
+                       <span className={`w-2 h-2 rounded-full ${dbConnected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></span>
+                       <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">
+                         {supabaseConnectionStatus.isConfigured ? (dbConnected ? 'CLOUD CONNECTED' : 'CLOUD UNREACHABLE') : 'MISSING API KEYS'}
+                       </span>
+                       <button onClick={async () => {
+                         setSyncing(true);
+                         await DataEngine.pullFromCloud();
+                         setSyncing(false);
+                         setAllUsers(DataEngine.getUsers());
+                         notify("DATOS ACTUALIZADOS");
+                       }} className="ml-2 text-zinc-500 hover:text-white"><RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /></button>
+                    </div>
+                    {!supabaseConnectionStatus.isConfigured && (
+                      <p className="text-[8px] text-red-500 font-bold bg-red-950/30 px-3 py-1 rounded-lg border border-red-500/20">
+                         CONFIGURA "VITE_SUPABASE_URL" EN VERCEL
+                      </p>
+                    )}
                   </div>
                 </div>
              </div>
@@ -503,6 +522,10 @@ export default function App() {
                    <h2 className="text-6xl font-display italic text-white uppercase leading-none tracking-tighter italic">
                      HOLA, <span className="text-red-600">{currentUser.name.split(' ')[0]}</span>
                    </h2>
+                   {/* Mensaje si el usuario es local y no se ha podido subir */}
+                   {!isUUID(currentUser.id) && (
+                     <p className="text-[9px] text-yellow-500 font-bold mt-2 flex items-center gap-2"><AlertTriangle size={10}/> SINCRONIZACIÓN PENDIENTE...</p>
+                   )}
                 </header>
                 <div className="bg-zinc-900/40 p-8 rounded-[3.5rem] border border-white/5 space-y-8 shadow-2xl relative overflow-hidden">
                    <div className="flex justify-between items-center relative z-10">
@@ -598,7 +621,6 @@ export default function App() {
                           placeholder: 'NOMBRE COMPLETO',
                           callback: (name) => {
                             if (!name) return;
-                            // FIX: Generar UUID válido para usuarios nuevos
                             const u: User = { 
                               ...MOCK_USER, 
                               id: generateUUID(), 
@@ -622,16 +644,32 @@ export default function App() {
                               <span className="text-[9px] text-zinc-700 font-black uppercase px-3 py-1 bg-zinc-950 rounded-xl border border-white/5">{u.level}</span>
                               {/* Indicador visual si el usuario tiene ID inválido (solo local) */}
                               {!isUUID(u.id) && (
-                                <span className="ml-2 text-[8px] text-red-500 bg-red-900/20 px-2 py-1 rounded">LOCAL ONLY</span>
+                                <span className="ml-2 text-[8px] text-red-500 bg-red-900/20 px-2 py-1 rounded border border-red-500/20">MIGRACIÓN PENDIENTE</span>
                               )}
                            </div>
                            <div className="flex gap-2">
+                              {/* Force push button - JUST IN CASE */}
+                              <button
+                                onClick={async () => {
+                                  if(!isUUID(u.id)) { notify("EL ID ES ANTIGUO. ENTRA COMO ESTE USUARIO PARA MIGRARLO."); return; }
+                                  setLoading(true);
+                                  await DataEngine.saveUser(u);
+                                  // Re-save plans and logs if needed
+                                  const p = DataEngine.getPlan(u.id);
+                                  if(p) await DataEngine.savePlan(p);
+                                  const logs = DataEngine.getLogs(u.id);
+                                  for(const l of logs) await DataEngine.saveLog(l);
+                                  setLoading(false);
+                                  notify("FORZADO SUBIDA A NUBE");
+                                }}
+                                className="p-5 bg-blue-600/10 text-blue-500 rounded-2xl hover:bg-blue-600 hover:text-white transition-all"
+                              ><Cloud size={24}/></button>
+
                               <button 
                                 onClick={async () => {
                                   setLoading(true);
                                   try {
                                     const res = await generateSmartRoutine(u);
-                                    // FIX: Generar UUID válido para planes nuevos
                                     setEditingPlan({ 
                                       plan: { 
                                         ...res, 
@@ -648,7 +686,6 @@ export default function App() {
                               ><Sparkles size={24}/></button>
                               <button 
                                 onClick={() => {
-                                  // FIX: Generar UUID si el plan no existe
                                   const plan = DataEngine.getPlan(u.id) || { 
                                     id: generateUUID(), 
                                     userId: u.id, 
@@ -779,7 +816,6 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
           <button onClick={() => { 
              notify("ENTRENAMIENTO FINALIZADO"); 
              onClose(true, { 
-               // FIX: Generar UUID para Logs
                id: generateUUID(), 
                userId, 
                workoutId: workout.id, 
@@ -860,7 +896,6 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
              </div>
           ))}
           <button onClick={() => setLocal({...local, workouts: [...local.workouts, { 
-             // FIX: Generar UUID para Workouts
              id: generateUUID(), 
              name: `DÍA ${local.workouts.length+1}`, 
              day: local.workouts.length+1, 

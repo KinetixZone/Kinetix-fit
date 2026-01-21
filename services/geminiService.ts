@@ -2,16 +2,18 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "../types";
 
 /**
- * Kinetix Intelligent Coaching V12.1
+ * Kinetix Intelligent Coaching V12.2
  * Diseñado para generar protocolos técnicos de alto rendimiento.
  */
 export async function generateSmartRoutine(user: User) {
-  // Asegurar que la API Key exista. En Vite/Vercel, usamos process.env.API_KEY como instruido.
-  // NOTA PARA USUARIO: Asegúrate de configurar 'API_KEY' en Vercel Environment Variables.
-  const apiKey = process.env.API_KEY;
+  // CONFIGURACIÓN VERCEL:
+  // Intentamos leer process.env (estándar) o import.meta.env (Vite específico)
+  // En Vercel, asegúrate de llamar la variable: VITE_API_KEY o API_KEY
+  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
 
   if (!apiKey) {
-    throw new Error("FALTA CONFIGURAR LA API KEY EN VERCEL.");
+    console.error("DEBUG: API Key no encontrada en variables de entorno.");
+    throw new Error("ERROR DE CONFIGURACIÓN: FALTA LA API KEY DE GEMINI.");
   }
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -87,16 +89,11 @@ export async function generateSmartRoutine(user: User) {
       },
     });
 
-    // Directly access the text property of the GenerateContentResponse object.
     return JSON.parse(response.text || '{}');
   } catch (error: any) {
     console.error("AI Generation Error:", error);
     if (error.status === 429) {
       throw new Error("EL COACH ESTÁ OCUPADO. REINTENTA EN 60 SEGUNDOS.");
-    }
-    // Mensaje más amigable si es por falta de configuración
-    if (error.message && error.message.includes("API key")) {
-       throw new Error("ERROR DE CONFIGURACIÓN: REVISA LA API KEY.");
     }
     throw new Error("NO SE PUDO CONECTAR CON EL COACH IA.");
   }
