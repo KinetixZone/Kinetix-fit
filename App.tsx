@@ -4,7 +4,8 @@ import {
   Plus, LogOut, UserPlus, Edit3, ChevronLeft, RefreshCw, Sparkles, Activity,
   Settings, Dumbbell, History, Zap, Check, ShieldAlert, BarChart3, Search, ChevronRight,
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
-  Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff
+  Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
+  Wifi, WifiOff
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -14,7 +15,7 @@ import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
-// --- KINETIX HYBRID ENGINE V14.0 (CLOUD LINKED) ---
+// --- KINETIX HYBRID ENGINE V14.2 (MOBILE SYNC FIX) ---
 const STORAGE_KEY = 'KINETIX_CLOUD_SYNC_V1';
 const SESSION_KEY = 'KINETIX_ACTIVE_SESSION_V2';
 
@@ -65,11 +66,27 @@ const DataEngine = {
         // Mezclar usuarios locales y nube (prioridad nube)
         const localUsers = JSON.parse(s.USERS || '[]');
         const mergedUsers = [...users]; 
-        // Añadir locales que no estén en nube (solo mocks o nuevos offline)
+        
+        // Mapear datos de DB a estructura local si es necesario y combinar
+        const dbUsersFormatted = users.map(u => ({
+             id: u.id,
+             name: u.name,
+             email: u.email,
+             role: u.role,
+             goal: u.goal,
+             level: u.level,
+             daysPerWeek: u.days_per_week,
+             equipment: u.equipment || [],
+             streak: u.streak,
+             createdAt: u.created_at
+        }));
+
+        // Mantener usuarios locales que no estén en la nube (como el mock inicial)
         localUsers.forEach((lu: User) => {
-          if (!mergedUsers.find(mu => mu.id === lu.id)) mergedUsers.push(lu);
+          if (!dbUsersFormatted.find((mu:any) => mu.id === lu.id)) dbUsersFormatted.push(lu);
         });
-        s.USERS = JSON.stringify(mergedUsers);
+
+        s.USERS = JSON.stringify(dbUsersFormatted);
         DataEngine.saveStore(s);
       }
 
@@ -97,7 +114,14 @@ const DataEngine = {
     if (!exists) {
       s.USERS = JSON.stringify([...users, user]);
       DataEngine.saveStore(s);
+    } else {
+      // Update local if exists
+      const idx = users.findIndex((u: User) => u.id === user.id);
+      users[idx] = user;
+      s.USERS = JSON.stringify(users);
+      DataEngine.saveStore(s);
     }
+
     // 2. Cloud
     try {
       const { error } = await supabase.from('users').upsert({
@@ -237,6 +261,7 @@ export default function App() {
   
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [dbConnected, setDbConnected] = useState(false);
   const [loginName, setLoginName] = useState('');
   const [trainingWorkout, setTrainingWorkout] = useState<Workout | null>(null);
   const [editingPlan, setEditingPlan] = useState<{plan: Plan, isNew: boolean} | null>(null);
@@ -253,6 +278,11 @@ export default function App() {
   useEffect(() => {
     DataEngine.init();
     
+    // Check DB Connection
+    supabase.from('users').select('count', { count: 'exact', head: true })
+      .then(({ error }) => setDbConnected(!error))
+      .catch(() => setDbConnected(false));
+
     // Attempt Cloud Sync on Mount
     const doCloudSync = async () => {
        setSyncing(true);
@@ -289,17 +319,18 @@ export default function App() {
   const handleLogin = async () => {
     const input = loginName.trim().toLowerCase();
     if (!input) return;
+    setLoading(true);
+
+    // 1. Intentar sincronizar primero por si es un dispositivo nuevo
+    await DataEngine.pullFromCloud();
     
-    // Intenta buscar local primero
+    // 2. Buscar localmente (ahora actualizado)
     let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
     
-    // Si no está local, intentar buscar en Supabase directo por si es dispositivo nuevo
+    // 3. Si sigue sin estar local, intento directo a DB (Fail-safe)
     if (!found) {
-       setLoading(true);
        const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
-       setLoading(false);
        if (data) {
-          // Adaptar formato de DB a User interface local
           found = {
              id: data.id,
              name: data.name,
@@ -312,17 +343,19 @@ export default function App() {
              streak: data.streak,
              createdAt: data.created_at
           };
-          // Guardarlo en local para futuras sesiones rápidas
           DataEngine.saveUser(found);
        }
     }
+    setLoading(false);
 
     if (found) {
       setCurrentUser(found);
       localStorage.setItem(SESSION_KEY, JSON.stringify(found));
       notify(`SESIÓN ONLINE: ${found.name.toUpperCase()}`);
       setActiveTab('home');
-    } else notify(`IDENTIDAD NO RECONOCIDA`, 'error');
+    } else {
+      notify(dbConnected ? `USUARIO NO ENCONTRADO EN NUBE` : `SIN CONEXIÓN A BASE DE DATOS`, 'error');
+    }
   };
 
   const chartData = useMemo(() => {
@@ -386,6 +419,20 @@ export default function App() {
                   >
                     {loading ? <RefreshCw className="animate-spin"/> : 'IDENTIFICARSE'}
                   </button>
+                  
+                  <div className="flex justify-center items-center gap-3">
+                     <span className={`w-2 h-2 rounded-full ${dbConnected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></span>
+                     <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">
+                       {dbConnected ? 'DATABASE CONNECTED' : 'DATABASE OFFLINE'}
+                     </span>
+                     <button onClick={async () => {
+                       setSyncing(true);
+                       await DataEngine.pullFromCloud();
+                       setSyncing(false);
+                       setAllUsers(DataEngine.getUsers());
+                       notify("DATOS ACTUALIZADOS");
+                     }} className="ml-2 text-zinc-500 hover:text-white"><RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /></button>
+                  </div>
                 </div>
              </div>
              <button 
