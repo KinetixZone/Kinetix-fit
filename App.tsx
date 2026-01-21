@@ -7,7 +7,7 @@ import {
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
-  CalendarDays, Trophy, Pencil, Menu, Youtube
+  CalendarDays, Trophy, Pencil, Menu, Youtube, Info
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -35,7 +35,7 @@ const isUUID = (str: string) => {
 
 // --- SYSTEM CONSTANTS ---
 const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
-const STORAGE_KEY = 'KINETIX_DATA_PRO_V2'; // Updated Key for migration
+const STORAGE_KEY = 'KINETIX_DATA_PRO_V2'; 
 const SESSION_KEY = 'KINETIX_SESSION_PRO_V2';
 
 // --- DATA ENGINE (CLOUD FIRST HYBRID) ---
@@ -61,8 +61,7 @@ const DataEngine = {
       store.USERS = JSON.stringify([MOCK_USER]);
     }
 
-    // Fusión Inteligente de Ejercicios: 
-    // Mantiene los creados por el usuario y asegura que estén los de la DB inicial
+    // Fusión Inteligente de Ejercicios
     const storedExercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
     const mergedExercises = [...INITIAL_EXERCISES];
     
@@ -87,9 +86,14 @@ const DataEngine = {
     return users.find(u => u.id === id);
   },
 
-  getUserByEmail: (email: string): User | undefined => {
+  // Busca por Nombre O Email (Case insensitive)
+  getUserByNameOrEmail: (query: string): User | undefined => {
     const users = DataEngine.getUsers();
-    return users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const q = query.toLowerCase().trim();
+    return users.find(u => 
+      u.email.toLowerCase() === q || 
+      u.name.toLowerCase() === q
+    );
   },
 
   getExercises: (): Exercise[] => {
@@ -161,7 +165,7 @@ const ConnectionStatus = () => {
 const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const [mode, setMode] = useState<'coach' | 'athlete'>('coach');
   const [pin, setPin] = useState('');
-  const [email, setEmail] = useState('');
+  const [identity, setIdentity] = useState(''); // Puede ser email o nombre
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -189,9 +193,9 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
     setIsLoading(true);
     await new Promise(r => setTimeout(r, 800));
     
-    // Buscar atleta localmente
-    const user = DataEngine.getUserByEmail(email);
-    if (user) {
+    // Buscar atleta localmente por nombre o email
+    const user = DataEngine.getUserByNameOrEmail(identity);
+    if (user && user.role === 'client') {
       onLogin(user);
     } else {
       setError(true);
@@ -204,7 +208,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-red-600/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[100px] pointer-events-none" />
 
-      <div className="w-full max-w-sm z-10 animate-fade-in-up">
+      <div className="w-full max-w-md z-10 animate-fade-in-up">
         <div className="mb-8 text-center">
           <h1 className="font-display text-5xl italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-500 neon-red mb-2">
             KINETIX
@@ -217,13 +221,13 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
              onClick={() => { setMode('coach'); setError(false); }}
              className={`flex-1 py-3 text-sm font-bold rounded-2xl transition-all ${mode === 'coach' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
            >
-             STAFF COACH
+             COACH
            </button>
            <button 
              onClick={() => { setMode('athlete'); setError(false); }}
              className={`flex-1 py-3 text-sm font-bold rounded-2xl transition-all ${mode === 'athlete' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
            >
-             ACCESO ATLETA
+             ATLETA
            </button>
         </div>
 
@@ -242,23 +246,24 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
               </div>
               {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">PIN INCORRECTO</div>}
               <button type="submit" disabled={isLoading} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-red-900/20">
-                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR COMO COACH</span><ArrowRight size={20} /></>}
+                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR</span><ArrowRight size={20} /></>}
               </button>
             </form>
           ) : (
             <form onSubmit={handleAthleteSubmit} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">Email Registrado</label>
+                <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">Nombre o Email</label>
                 <input
-                  type="email"
-                  value={email} onChange={(e) => { setError(false); setEmail(e.target.value); }}
-                  placeholder="atleta@kinetix.com"
+                  type="text"
+                  value={identity} onChange={(e) => { setError(false); setIdentity(e.target.value); }}
+                  placeholder="Ej: Juan Perez"
                   className={`w-full bg-black/40 border-2 ${error ? 'border-red-500 text-red-500' : 'border-white/10 focus:border-blue-500 text-white'} rounded-xl px-4 py-4 text-lg font-medium outline-none transition-all placeholder-gray-700`}
                 />
+                <p className="text-[10px] text-gray-500 text-right">Ingresa tu nombre completo tal como te registró tu coach.</p>
               </div>
-              {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">USUARIO NO ENCONTRADO</div>}
+              {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">ATLETA NO ENCONTRADO</div>}
               <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
-                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR COMO ATLETA</span><ArrowRight size={20} /></>}
+                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ACCEDER</span><ArrowRight size={20} /></>}
               </button>
             </form>
           )}
@@ -604,6 +609,14 @@ export default function App() {
                       <span className="text-[10px] uppercase bg-white/10 px-2 py-1 rounded mt-1 inline-block">{currentUser.role}</span>
                    </div>
                 </div>
+                {currentUser.role === 'client' && (
+                  <div className="mt-4 p-4 bg-blue-600/10 rounded-xl border border-blue-600/20">
+                    <p className="text-sm text-blue-300 font-bold flex items-center gap-2">
+                       <Info size={16} /> Credenciales
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">Usa tu Nombre ({currentUser.name}) o tu Email ({currentUser.email}) para iniciar sesión.</p>
+                  </div>
+                )}
              </div>
              <button onClick={handleLogout} className="w-full bg-red-600/10 text-red-500 py-4 rounded-xl font-bold border border-red-500/20 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2">
                 <LogOut size={20} /> CERRAR SESIÓN
@@ -727,14 +740,18 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
 
       {showAddModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">Nuevo Atleta</h3>
+          <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in-up">
+            <h3 className="text-lg font-bold mb-2">Nuevo Atleta</h3>
+            <p className="text-xs text-gray-400 mb-4 bg-white/5 p-3 rounded-lg border border-white/10">
+              <span className="font-bold text-red-400 block mb-1">IMPORTANTE:</span>
+              El atleta usará el <strong>Nombre Exacto</strong> o el <strong>Email</strong> que registres aquí para iniciar sesión en la app.
+            </p>
             <div className="space-y-3">
-              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Nombre" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Nombre Completo (Ej: Juan Perez)" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
               <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Email (Opcional)" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-2">
                  <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-xs font-bold text-gray-400">CANCELAR</button>
-                 <button onClick={handleCreateUser} className="flex-1 py-3 rounded-xl bg-red-600 text-xs font-bold">GUARDAR</button>
+                 <button onClick={handleCreateUser} className="flex-1 py-3 rounded-xl bg-red-600 text-xs font-bold">DAR DE ALTA</button>
               </div>
             </div>
           </div>
