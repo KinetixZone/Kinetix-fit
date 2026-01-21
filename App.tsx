@@ -675,6 +675,36 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
 
 const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any) => {
   const [local, setLocal] = useState<Plan>(() => JSON.parse(JSON.stringify(plan)));
+  const [addingExerciseTo, setAddingExerciseTo] = useState<number | null>(null);
+
+  const addExercise = (workoutIdx: number, exercise: Exercise) => {
+    const nw = [...local.workouts];
+    nw[workoutIdx].exercises.push({
+       exerciseId: exercise.id,
+       name: exercise.name,
+       targetSets: 4,
+       targetReps: '10-12',
+       coachCue: ''
+    });
+    setLocal({...local, workouts: nw});
+    setAddingExerciseTo(null);
+  };
+
+  const removeExercise = (workoutIdx: number, exIdx: number) => {
+    const nw = [...local.workouts];
+    nw[workoutIdx].exercises.splice(exIdx, 1);
+    setLocal({...local, workouts: nw});
+  };
+
+  const removeDay = (wIdx: number) => {
+    if(!window.confirm("¿ELIMINAR DÍA?")) return;
+    const nw = [...local.workouts];
+    nw.splice(wIdx, 1);
+    // Reordenar días
+    nw.forEach((w, i) => w.day = i + 1);
+    setLocal({...local, workouts: nw});
+  }
+
   return (
     <div className="fixed inset-0 bg-[#050507] z-[350] p-10 flex flex-col animate-in slide-in-from-right overflow-y-auto pb-48 no-scrollbar">
        <header className="flex justify-between items-center mb-16 sticky top-0 bg-[#050507]/95 backdrop-blur-3xl py-8 z-10 border-b border-white/5">
@@ -686,23 +716,49 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
        </header>
        <div className="space-y-16">
           {local.workouts.map((w, wIdx) => (
-             <div key={wIdx} className="bg-zinc-900/30 p-12 rounded-[5rem] border border-white/5 space-y-12 shadow-2xl">
-                <input value={w.name} onChange={e => { const nw = [...local.workouts]; nw[wIdx].name = e.target.value; setLocal({...local, workouts: nw}); }} className="bg-transparent border-b border-zinc-800 p-4 text-4xl font-display italic text-white outline-none w-full uppercase italic" />
+             <div key={wIdx} className="bg-zinc-900/30 p-12 rounded-[5rem] border border-white/5 space-y-12 shadow-2xl relative">
+                <button onClick={() => removeDay(wIdx)} className="absolute top-8 right-8 text-zinc-700 hover:text-red-600"><Trash2/></button>
+                <input value={w.name} onChange={e => { const nw = [...local.workouts]; nw[wIdx].name = e.target.value; setLocal({...local, workouts: nw}); }} className="bg-transparent border-b border-zinc-800 p-4 text-4xl font-display italic text-white outline-none w-full uppercase italic pr-12" />
                 <div className="space-y-10">
                    {w.exercises.map((ex, exIdx) => (
-                     <div key={exIdx} className="p-10 bg-zinc-950/80 rounded-[4rem] border border-white/5 space-y-10 shadow-2xl">
-                        <span className="text-3xl font-black uppercase text-white tracking-tighter italic">{allExercises.find((e:any) => e.id === ex.exerciseId)?.name || ex.name}</span>
+                     <div key={exIdx} className="p-10 bg-zinc-950/80 rounded-[4rem] border border-white/5 space-y-10 shadow-2xl relative group">
+                        <button onClick={() => removeExercise(wIdx, exIdx)} className="absolute top-6 right-6 text-zinc-800 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><X/></button>
+                        <span className="text-3xl font-black uppercase text-white tracking-tighter italic block pr-10">{allExercises.find((e:any) => e.id === ex.exerciseId)?.name || ex.name}</span>
                         <div className="grid grid-cols-2 gap-8">
-                           <input value={ex.targetSets} type="number" onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetSets = parseInt(e.target.value) || 0; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl" />
-                           <input value={ex.targetReps} onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetReps = e.target.value; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl" />
+                           <div className="space-y-2">
+                             <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest pl-2">SETS</span>
+                             <input value={ex.targetSets} type="number" onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetSets = parseInt(e.target.value) || 0; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl" />
+                           </div>
+                           <div className="space-y-2">
+                             <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest pl-2">REPS</span>
+                             <input value={ex.targetReps} onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetReps = e.target.value; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl" />
+                           </div>
                         </div>
                      </div>
                    ))}
+                   <button onClick={() => setAddingExerciseTo(wIdx)} className="w-full py-10 bg-zinc-900 rounded-[3rem] text-xs font-black text-zinc-500 uppercase flex items-center justify-center gap-4 hover:bg-zinc-800 hover:text-white transition-all"><Plus size={20}/> EJERCICIO</button>
                 </div>
              </div>
           ))}
           <button onClick={() => setLocal({...local, workouts: [...local.workouts, { id: `w-${Date.now()}`, name: `DÍA ${local.workouts.length+1}`, day: local.workouts.length+1, exercises: [] }]})} className="w-full py-20 border-2 border-dashed border-zinc-800 rounded-[6rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-8 shadow-2xl italic"><Plus size={64}/> AÑADIR DÍA</button>
        </div>
+
+       {addingExerciseTo !== null && (
+         <div className="fixed inset-0 z-[400] bg-black/95 flex flex-col p-10 animate-in fade-in">
+            <header className="flex justify-between items-center mb-10">
+               <h3 className="text-3xl font-display italic text-white uppercase">SELECCIONAR</h3>
+               <button onClick={() => setAddingExerciseTo(null)} className="p-4 bg-zinc-800 rounded-full"><X/></button>
+            </header>
+            <div className="grid gap-4 overflow-y-auto pb-20 no-scrollbar">
+               {allExercises.map((ex: Exercise) => (
+                 <button key={ex.id} onClick={() => addExercise(addingExerciseTo, ex)} className="p-8 bg-zinc-900 rounded-[3rem] text-left hover:bg-zinc-800 hover:border-red-600 border border-transparent transition-all">
+                    <h4 className="text-xl font-bold text-white uppercase">{ex.name}</h4>
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">{ex.muscleGroup}</p>
+                 </button>
+               ))}
+            </div>
+         </div>
+       )}
     </div>
   );
 });

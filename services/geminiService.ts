@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "../types";
 
@@ -7,8 +6,15 @@ import { User } from "../types";
  * Diseñado para generar protocolos técnicos de alto rendimiento.
  */
 export async function generateSmartRoutine(user: User) {
-  // Initialize GoogleGenAI using the mandatory named parameter and API_KEY from environment.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Asegurar que la API Key exista. En Vite/Vercel, usamos process.env.API_KEY como instruido.
+  // NOTA PARA USUARIO: Asegúrate de configurar 'API_KEY' en Vercel Environment Variables.
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
+    throw new Error("FALTA CONFIGURAR LA API KEY EN VERCEL.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: apiKey });
 
   const systemInstruction = `Eres el Head Coach de Kinetix Functional Zone.
   Tu misión es diseñar protocolos de entrenamiento de élite en formato JSON.
@@ -87,6 +93,10 @@ export async function generateSmartRoutine(user: User) {
     console.error("AI Generation Error:", error);
     if (error.status === 429) {
       throw new Error("EL COACH ESTÁ OCUPADO. REINTENTA EN 60 SEGUNDOS.");
+    }
+    // Mensaje más amigable si es por falta de configuración
+    if (error.message && error.message.includes("API key")) {
+       throw new Error("ERROR DE CONFIGURACIÓN: REVISA LA API KEY.");
     }
     throw new Error("NO SE PUDO CONECTAR CON EL COACH IA.");
   }
