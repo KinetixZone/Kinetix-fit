@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Kinetix | Functional Zone</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,6 +15,7 @@
         color: white; 
         -webkit-tap-highlight-color: transparent;
         overflow-x: hidden;
+        overscroll-behavior-y: none; /* Prevenir rebote en iOS */
       }
       .font-display { font-family: 'Outfit', sans-serif; }
       
@@ -23,7 +23,8 @@
         text-shadow: 0 0 10px rgba(239, 68, 68, 0.6), 0 0 20px rgba(239, 68, 68, 0.3);
       }
       
-      ::-webkit-scrollbar { width: 0px; }
+      /* Ocultar scrollbar pero permitir scroll */
+      ::-webkit-scrollbar { width: 0px; background: transparent; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       
       @keyframes float {
@@ -32,6 +33,13 @@
         100% { transform: translateY(0px); }
       }
       .float { animation: float 6s ease-in-out infinite; }
+
+      /* Animación de pulso sutil para carga */
+      @keyframes pulse-subtle {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+      .animate-pulse-subtle { animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     </style>
   <script type="importmap">
 {
@@ -47,7 +55,7 @@
 }
 </script>
 </head>
-  <body class="bg-[#050507]">
+  <body class="bg-[#050507] min-h-screen text-white antialiased selection:bg-red-500 selection:text-white">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
