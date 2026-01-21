@@ -14,9 +14,9 @@ import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, Workou
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './services/geminiService';
 
-// --- KINETIX ULTIMATE ENGINE V12.4 ---
-const STORAGE_KEY = 'KINETIX_ULTIMATE_V12_4';
-const SESSION_KEY = 'KINETIX_SESSION';
+// --- KINETIX ULTIMATE ENGINE V12.4.1 (RELEASE CANDIDATE) ---
+const STORAGE_KEY = 'KINETIX_MASTER_FINAL';
+const SESSION_KEY = 'KINETIX_SESSION_ACTIVE';
 
 const DataEngine = {
   getStore: () => {
@@ -76,7 +76,7 @@ const DataEngine = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `KINETIX_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `KINETIX_DB_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
   },
   importData: (file: File, callback: () => void) => {
@@ -86,11 +86,10 @@ const DataEngine = {
         const json = JSON.parse(e.target?.result as string);
         DataEngine.saveStore(json);
         callback();
-      } catch { alert("ERROR AL IMPORTAR: ARCHIVO INVÁLIDO"); }
+      } catch { alert("ERROR CRÍTICO: ARCHIVO NO VÁLIDO"); }
     };
     reader.readAsText(file);
   },
-  // Added deleteUser to fix Property 'deleteUser' does not exist error on line 407
   deleteUser: (uid: string) => {
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
@@ -157,9 +156,9 @@ export default function App() {
     if (found) {
       setCurrentUser(found);
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(found));
-      notify(`ACCESO ATLETA: ${found.name.toUpperCase()}`);
+      notify(`SESIÓN INICIADA: ${found.name.toUpperCase()}`);
       setActiveTab('home');
-    } else notify(`ATLETA NO ENCONTRADO`, 'error');
+    } else notify(`ATLETA NO REGISTRADO`, 'error');
   };
 
   const chartData = useMemo(() => {
@@ -174,7 +173,7 @@ export default function App() {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-[#050507] flex flex-col text-zinc-100 font-sans selection:bg-red-600/30 overflow-x-hidden">
-      {/* HEADER KINETIX ELITE */}
+      {/* HEADER DE PRODUCCIÓN */}
       <header className="p-6 flex justify-between items-center bg-zinc-950/90 backdrop-blur-3xl sticky top-0 z-[100] border-b border-white/5 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(239,68,68,0.4)]">
@@ -182,7 +181,7 @@ export default function App() {
           </div>
           <div className="flex flex-col">
             <span className="font-display italic text-2xl uppercase text-white tracking-tighter leading-none neon-red">KINETIX</span>
-            <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.4em]">ELITE COACHING V12.4</span>
+            <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.4em]">STATION RELEASE V12.4</span>
           </div>
         </div>
         {currentUser && (
@@ -205,7 +204,7 @@ export default function App() {
              <div className="w-full space-y-12 px-4 text-center">
                 <div className="space-y-2">
                   <h1 className="text-7xl font-display italic text-white uppercase tracking-tighter leading-none italic">ENTRAR</h1>
-                  <p className="text-zinc-700 font-black uppercase text-[10px] tracking-[0.5em]">CENTRO DE ALTO RENDIMIENTO</p>
+                  <p className="text-zinc-700 font-black uppercase text-[10px] tracking-[0.5em]">ZONA DE ALTO RENDIMIENTO</p>
                 </div>
                 
                 <div className="space-y-5">
@@ -213,7 +212,7 @@ export default function App() {
                     value={loginName} 
                     onChange={e => setLoginName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                    placeholder="TU IDENTIDAD"
+                    placeholder="ID DE ATLETA"
                     className="w-full bg-zinc-900/50 border border-zinc-800 p-8 rounded-[3rem] text-center font-bold text-white outline-none focus:border-red-600 transition-all uppercase text-2xl placeholder:text-zinc-800 shadow-inner"
                   />
                   <button 
@@ -246,7 +245,7 @@ export default function App() {
                })}
                className="text-[10px] font-black text-zinc-800 uppercase tracking-[0.5em] hover:text-red-600 flex items-center gap-2 transition-colors"
              >
-               <Lock size={12}/> STAFF LOGIN
+               <Lock size={12}/> COACH ACCESS
              </button>
           </div>
         ) : (
@@ -254,7 +253,7 @@ export default function App() {
             {activeTab === 'home' && (
               <div className="space-y-10">
                 <header className="text-left">
-                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-1">DATA PERFORMANCE</p>
+                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-1">DASHBOARD</p>
                    <h2 className="text-6xl font-display italic text-white uppercase leading-none tracking-tighter italic">
                      HOLA, <span className="text-red-600">{currentUser.name.split(' ')[0]}</span>
                    </h2>
@@ -263,12 +262,12 @@ export default function App() {
                 <div className="bg-zinc-900/40 p-8 rounded-[3.5rem] border border-white/5 space-y-8 shadow-2xl relative overflow-hidden">
                    <div className="flex justify-between items-center relative z-10">
                       <div className="text-left">
-                        <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest flex items-center gap-2"><Activity size={14}/> VOLUMEN SEMANAL</p>
-                        <h4 className="text-2xl font-display italic text-white uppercase tracking-tighter italic">PROGRESO</h4>
+                        <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest flex items-center gap-2"><Activity size={14}/> VOLUMEN CARGA</p>
+                        <h4 className="text-2xl font-display italic text-white uppercase tracking-tighter italic">RENDIMIENTO</h4>
                       </div>
                       <div className="bg-zinc-950 p-4 rounded-3xl border border-white/5 text-right min-w-[80px]">
                          <p className="text-3xl font-display italic text-white leading-none">{myLogs.length}</p>
-                         <p className="text-[7px] text-zinc-600 font-black uppercase tracking-widest mt-1">LOGS</p>
+                         <p className="text-[7px] text-zinc-600 font-black uppercase tracking-widest mt-1">SESIONES</p>
                       </div>
                    </div>
                    <div className="h-44 w-full relative z-10">
@@ -289,7 +288,7 @@ export default function App() {
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-zinc-800 rounded-[2.5rem] gap-3 text-zinc-800">
                            <BarChart3 size={32}/>
-                           <p className="text-[9px] font-black uppercase tracking-widest text-center italic">PENDIENTE DE TU PRIMERA SESIÓN</p>
+                           <p className="text-[9px] font-black uppercase tracking-widest text-center italic">EMPIEZA TU PRIMER PROTOCOLO</p>
                         </div>
                       )}
                    </div>
@@ -297,8 +296,8 @@ export default function App() {
 
                 <div className="space-y-6 pb-12 text-left">
                   <div className="flex justify-between items-center px-4">
-                     <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest italic">PROTOCOLO ACTIVO</p>
-                     <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">{myPlan?.title || 'SIN PROGRAMA'}</p>
+                     <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest italic">PROTOCOLO ACTUAL</p>
+                     <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">{myPlan?.title || 'SIN ASIGNAR'}</p>
                   </div>
                   <div className="grid gap-4">
                     {myPlan?.workouts.map(w => (
@@ -311,7 +310,7 @@ export default function App() {
                            <div className="w-16 h-16 bg-zinc-950 rounded-2xl flex items-center justify-center font-display italic text-3xl text-zinc-800 group-hover:text-red-600 border border-white/5 transition-colors">{w.day}</div>
                            <div className="text-left">
                               <h4 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">{w.name}</h4>
-                              <p className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.2em]">{w.exercises.length} BLOQUES TÉCNICOS</p>
+                              <p className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.2em]">{w.exercises.length} BLOQUES</p>
                            </div>
                         </div>
                         <div className="bg-zinc-950 p-5 rounded-2xl group-hover:bg-red-600 transition-all text-zinc-800 group-hover:text-white shadow-xl"><Play size={24}/></div>
@@ -320,7 +319,7 @@ export default function App() {
                     {!myPlan && (
                       <div className="py-16 bg-zinc-900/10 border-2 border-dashed border-zinc-800 rounded-[4rem] text-center space-y-4">
                          <ShieldAlert size={40} className="mx-auto text-zinc-800" />
-                         <p className="text-[11px] text-zinc-700 font-black uppercase tracking-widest px-10">HEAD COACH: GENERA UN PROTOCOLO IA</p>
+                         <p className="text-[11px] text-zinc-700 font-black uppercase tracking-widest px-10">SOLICITA TU PLAN IA AL COACH</p>
                       </div>
                     )}
                   </div>
@@ -332,7 +331,7 @@ export default function App() {
               <div className="space-y-12 pb-24 text-left">
                 <header className="flex justify-between items-end">
                   <div className="space-y-1">
-                    <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.4em]">ELITE STAFF PANEL</p>
+                    <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.4em]">STATION COMMAND</p>
                     <h2 className="text-7xl font-display italic text-red-600 uppercase tracking-tighter leading-none italic">COACH</h2>
                   </div>
                   <div className="flex gap-2">
@@ -342,13 +341,13 @@ export default function App() {
                         <Upload size={22}/>
                         <input type="file" className="hidden" accept=".json" onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if(file) DataEngine.importData(file, () => { sync(); notify("BASE DE DATOS RESTAURADA"); });
+                          if(file) DataEngine.importData(file, () => { sync(); notify("BASE DE DATOS SINCRONIZADA"); });
                         }} />
                       </label>
                     </div>
                     <button onClick={() => setInputModal({
-                      title: 'SISTEMA VISUAL',
-                      placeholder: 'URL DEL LOGO',
+                      title: 'IDENTIDAD VISUAL',
+                      placeholder: 'URL DEL LOGO (GITHUB/IMG)',
                       callback: (url) => { if(url) { DataEngine.saveLogo(url); setLogo(url); notify("LOGO ACTUALIZADO"); } }
                     })} className="bg-zinc-900 p-6 rounded-[2rem] text-zinc-500 border border-zinc-800 hover:text-white shadow-xl transition-all"><ImageIcon size={28}/></button>
                     <button onClick={() => setShowLibrary(true)} className="bg-zinc-900 p-6 rounded-[2rem] text-cyan-400 border border-zinc-800 hover:text-white shadow-xl transition-all"><BookOpen size={28}/></button>
@@ -358,11 +357,11 @@ export default function App() {
 
                 <div className="space-y-8">
                    <div className="flex justify-between items-center px-4">
-                      <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Users size={14}/> ATLETAS ACTIVOS ({allUsers.length - 1})</p>
+                      <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Users size={14}/> ATLETAS ({allUsers.length - 1})</p>
                       <button 
                         onClick={() => setInputModal({
-                          title: 'ALTA DE ATLETA',
-                          placeholder: 'NOMBRE Y APELLIDO',
+                          title: 'REGISTRO DE ATLETA',
+                          placeholder: 'NOMBRE COMPLETO',
                           callback: (name) => {
                             if (!name) return;
                             const u: User = { ...MOCK_USER, id: `u-${Date.now()}`, name, streak: 0, createdAt: new Date().toISOString() };
@@ -371,7 +370,7 @@ export default function App() {
                             s.USERS = JSON.stringify([...users, u]);
                             DataEngine.saveStore(s);
                             sync();
-                            notify("ATLETA REGISTRADO EN KINETIX");
+                            notify("NUEVO ATLETA KINETIX");
                           }
                         })}
                         className="bg-red-600 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all"
@@ -410,13 +409,13 @@ export default function App() {
                               <button 
                                 onClick={() => { 
                                   setInputModal({
-                                    title: 'ELIMINAR ATLETA',
-                                    placeholder: 'Escribe "ELIMINAR" para confirmar',
+                                    title: 'BORRAR ATLETA',
+                                    placeholder: 'Escribe "CONFIRMAR"',
                                     callback: (v) => {
-                                      if (v.toLowerCase() === 'eliminar') {
+                                      if (v.toLowerCase() === 'confirmar') {
                                         DataEngine.deleteUser(u.id);
                                         sync();
-                                        notify("REGISTRO BORRADO");
+                                        notify("REGISTRO ELIMINADO");
                                       }
                                     }
                                   });
@@ -434,16 +433,16 @@ export default function App() {
         )}
       </main>
 
-      {/* FOOTER NAVEGACIÓN */}
+      {/* FOOTER */}
       {currentUser && !trainingWorkout && (
         <nav className="fixed bottom-0 left-0 right-0 bg-zinc-950/98 backdrop-blur-3xl border-t border-white/5 px-10 py-8 z-[100] flex justify-around shadow-2xl">
-          <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<LayoutDashboard size={28}/>} label="HOME" />
-          {currentUser.role === 'coach' && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={28}/>} label="COACH" />}
+          <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<LayoutDashboard size={28}/>} label="STATION" />
+          {currentUser.role === 'coach' && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={28}/>} label="STAFF" />}
           <NavItem active={activeTab === 'stats'} onClick={() => {}} icon={<History size={28}/>} label="HISTORY" />
         </nav>
       )}
 
-      {/* MODAL BIBLIOTECA + FILTROS */}
+      {/* MODAL LIBRERÍA */}
       {showLibrary && (
         <LibraryModal 
           exercises={exercises} 
@@ -457,26 +456,25 @@ export default function App() {
           onDelete={(id) => {
             DataEngine.saveExercises(exercises.filter(e => e.id !== id));
             sync();
-            notify("EJERCICIO ELIMINADO");
+            notify("RECURSO ELIMINADO");
           }}
         />
       )}
 
-      {/* MODAL TÁCTICO */}
+      {/* MODAL ENTRADA */}
       {inputModal && (
         <div className="fixed inset-0 z-[550] bg-black/99 flex items-center justify-center p-6 animate-in fade-in">
-           <div className="w-full bg-zinc-900 border border-white/10 rounded-[4rem] p-12 space-y-12 shadow-[0_0_200px_rgba(239,68,68,0.4)] relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-red-600/50"></div>
+           <div className="w-full bg-zinc-900 border border-white/10 rounded-[4rem] p-12 space-y-12 shadow-[0_0_200px_rgba(239,68,68,0.4)]">
               <div className="text-center space-y-2">
                  <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.8em] italic">{inputModal.title}</p>
-                 <h3 className="text-3xl font-display italic text-white uppercase italic tracking-tighter italic">KINETIX CORE</h3>
+                 <h3 className="text-3xl font-display italic text-white uppercase tracking-tighter">KINETIX COMMAND</h3>
               </div>
               <input 
                 autoFocus
                 id="elite-input"
                 type={inputModal.type || 'text'}
                 placeholder={inputModal.placeholder}
-                className="w-full bg-zinc-950 border border-zinc-800 p-8 rounded-[2.5rem] text-center text-2xl font-bold outline-none focus:border-red-600 uppercase text-white shadow-inner placeholder:text-zinc-800"
+                className="w-full bg-zinc-950 border border-zinc-800 p-8 rounded-[2.5rem] text-center text-2xl font-bold outline-none focus:border-red-600 uppercase text-white shadow-inner"
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
                     inputModal.callback((e.target as HTMLInputElement).value);
@@ -486,24 +484,24 @@ export default function App() {
                 }}
               />
               <div className="grid grid-cols-2 gap-5">
-                 <button onClick={() => setInputModal(null)} className="py-7 bg-zinc-800 rounded-3xl font-black uppercase text-[10px] text-zinc-500 hover:bg-zinc-700 transition-all">ABORTAR</button>
+                 <button onClick={() => setInputModal(null)} className="py-7 bg-zinc-800 rounded-3xl font-black uppercase text-[10px] text-zinc-500">CERRAR</button>
                  <button onClick={() => {
                     const val = (document.getElementById('elite-input') as HTMLInputElement)?.value;
                     inputModal.callback(val);
                     setInputModal(null);
-                 }} className="py-7 bg-red-600 rounded-3xl font-black uppercase text-[10px] text-white shadow-xl active:scale-95 transition-all">CONFIRMAR</button>
+                 }} className="py-7 bg-red-600 rounded-3xl font-black uppercase text-[10px] text-white">CONFIRMAR</button>
               </div>
            </div>
         </div>
       )}
 
-      {/* NOTIFICACIONES */}
+      {/* TOASTS */}
       {toast && (
-        <div className="fixed top-12 left-6 right-6 z-[600] animate-in slide-in-from-top duration-300">
-           <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} p-8 rounded-[3rem] flex items-center justify-between shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/10 backdrop-blur-3xl`}>
+        <div className="fixed top-12 left-6 right-6 z-[600] animate-in slide-in-from-top">
+           <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} p-8 rounded-[3rem] flex items-center justify-between shadow-2xl border border-white/10 backdrop-blur-3xl`}>
               <div className="flex items-center gap-6">
                  {toast.type === 'error' ? <ShieldAlert className="text-white" size={32}/> : <CheckCircle2 className="text-white" size={32}/>}
-                 <p className="text-[11px] font-black uppercase tracking-widest text-white leading-tight italic">{toast.msg}</p>
+                 <p className="text-[11px] font-black uppercase tracking-widest text-white italic">{toast.msg}</p>
               </div>
               <button onClick={() => setToast(null)} className="p-3 bg-white/20 rounded-full text-white"><X size={16}/></button>
            </div>
@@ -512,14 +510,15 @@ export default function App() {
 
       {/* SESIÓN Y EDITOR */}
       {trainingWorkout && <TrainingSession logo={logo} workout={trainingWorkout} exercises={exercises} userId={currentUser?.id || ''} notify={notify} onClose={(did, log) => { if(did && log) { DataEngine.saveLog(log); sync(); } setTrainingWorkout(null); }} logs={myLogs} />}
-      {editingPlan && <PlanEditor plan={editingPlan.plan} allExercises={exercises} onSave={(p: Plan) => { DataEngine.savePlan(p); sync(); setEditingPlan(null); notify("PLAN ACTUALIZADO"); }} onCancel={() => setEditingPlan(null)} loading={loading} />}
+      {editingPlan && <PlanEditor plan={editingPlan.plan} allExercises={exercises} onSave={(p: Plan) => { DataEngine.savePlan(p); sync(); setEditingPlan(null); notify("PROTOCOLO SINCRONIZADO"); }} onCancel={() => setEditingPlan(null)} loading={loading} />}
     </div>
   );
 }
 
+// COMPONENTES AUXILIARES CONMEMORIZADOS PARA MÁXIMO RENDIMIENTO
 const NavItem = memo(({ icon, label, active, onClick }: any) => (
   <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all flex-1 ${active ? 'text-red-600' : 'text-zinc-800'}`}>
-    <div className={`p-4 rounded-3xl transition-all ${active ? 'bg-red-600/15 scale-110 border border-red-600/30 shadow-lg' : ''}`}>{icon}</div>
+    <div className={`p-4 rounded-3xl transition-all ${active ? 'bg-red-600/15 scale-110 border border-red-600/30' : ''}`}>{icon}</div>
     <span className={`text-[9px] font-black uppercase tracking-[0.6em] ${active ? 'opacity-100' : 'opacity-30'}`}>{label}</span>
   </button>
 ));
@@ -527,28 +526,24 @@ const NavItem = memo(({ icon, label, active, onClick }: any) => (
 const LibraryModal = memo(({ exercises, onClose, onAdd, onDelete }: any) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
-  
   const muscleGroups = useMemo(() => ['All', ...new Set(exercises.map((e:any) => e.muscleGroup))], [exercises]);
-  
   const filtered = exercises.filter((ex:any) => 
     (filter === 'All' || ex.muscleGroup === filter) &&
     ex.name.toLowerCase().includes(search.toLowerCase())
   );
-
   return (
     <div className="fixed inset-0 z-[450] bg-black/98 flex flex-col p-8 animate-in slide-in-from-right overflow-hidden">
        <header className="flex justify-between items-center mb-10">
           <div className="text-left">
-            <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.5em] mb-1 italic">KINETIX RESOURCE PRO</p>
+            <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.5em] mb-1 italic">RESOURCE REPOSITORY</p>
             <h3 className="text-4xl font-display italic text-white uppercase tracking-tighter leading-none italic">LIBRERÍA</h3>
           </div>
           <button onClick={onClose} className="bg-zinc-900 p-6 rounded-full text-white"><X size={32}/></button>
        </header>
-
        <div className="space-y-6 mb-10">
           <div className="relative">
              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-600" size={20} />
-             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="BUSCAR EJERCICIO..." className="w-full bg-zinc-900/50 border border-zinc-800 p-7 pl-16 rounded-[2rem] outline-none focus:border-red-600 text-white font-bold transition-all shadow-inner" />
+             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="FILTRAR RECURSOS..." className="w-full bg-zinc-900/50 border border-zinc-800 p-7 pl-16 rounded-[2rem] outline-none text-white font-bold" />
           </div>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
              {muscleGroups.map(m => (
@@ -556,21 +551,19 @@ const LibraryModal = memo(({ exercises, onClose, onAdd, onDelete }: any) => {
              ))}
           </div>
        </div>
-       
        <button onClick={() => {
-         const name = prompt("NOMBRE DEL NUEVO EJERCICIO:");
+         const name = prompt("NOMBRE DEL EJERCICIO:");
          if(name) onAdd(name);
-       }} className="w-full py-8 bg-cyan-600/10 text-cyan-400 rounded-[2.5rem] border border-cyan-400/20 font-black uppercase text-xs mb-8 flex items-center justify-center gap-4 active:scale-95 transition-all shadow-xl italic">+ NUEVO RECURSO TÉCNICO</button>
-
+       }} className="w-full py-8 bg-cyan-600/10 text-cyan-400 rounded-[2.5rem] border border-cyan-400/20 font-black uppercase text-xs mb-8 flex items-center justify-center gap-4 italic">+ NUEVO RECURSO TÉCNICO</button>
        <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar pb-24">
           {filtered.map((ex: any) => (
-            <div key={ex.id} className="p-8 bg-zinc-900/40 rounded-[3rem] border border-white/5 flex items-center justify-between group shadow-lg hover:border-cyan-500/20 transition-all border-l-2 border-l-zinc-800">
+            <div key={ex.id} className="p-8 bg-zinc-900/40 rounded-[3rem] border border-white/5 flex items-center justify-between group shadow-lg border-l-2 border-l-zinc-800">
                <div className="text-left">
                   <p className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none mb-2 italic">{ex.name}</p>
                   <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">{ex.muscleGroup}</p>
                </div>
                <div className="flex gap-2">
-                  {ex.videoUrl && <a href={ex.videoUrl} target="_blank" className="p-4 bg-red-600/10 text-red-600 rounded-2xl border border-red-600/20 hover:bg-red-600 hover:text-white transition-all shadow-lg"><Video size={20}/></a>}
+                  {ex.videoUrl && <a href={ex.videoUrl} target="_blank" className="p-4 bg-red-600/10 text-red-600 rounded-2xl border border-red-600/20"><Video size={20}/></a>}
                   <button onClick={() => onDelete(ex.id)} className="p-4 bg-zinc-800 text-zinc-600 rounded-2xl hover:text-red-500 transition-all"><Trash2 size={20}/></button>
                </div>
             </div>
@@ -585,10 +578,8 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
     exerciseId: ex.exerciseId,
     sets: Array.from({ length: ex.targetSets || 4 }).map(() => ({ weight: 0, reps: 0, done: false }))
   })));
-
   const [timer, setTimer] = useState<number | null>(null);
   const timerRef = useRef<any>(null);
-
   const startTimer = (seconds: number = 60) => {
     if(timerRef.current) clearInterval(timerRef.current);
     setTimer(seconds);
@@ -599,32 +590,26 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
       });
     }, 1000);
   };
-
   const updateSet = (exIdx: number, setIdx: number, field: string, val: any) => {
     const nl = [...sessionLogs];
     nl[exIdx].sets[setIdx][field] = val;
     setSessionLogs(nl);
-    if(field === 'done' && val === true) {
-      startTimer();
-    }
+    if(field === 'done' && val === true) startTimer();
   };
-
   const getLastPerformance = (exId: string) => {
     const lastSession = logs.find((l:any) => l.exercisesData.some((ed:any) => ed.exerciseId === exId));
     if(!lastSession) return null;
     const exData = lastSession.exercisesData.find((ed:any) => ed.exerciseId === exId);
-    if(!exData) return null;
-    const maxWeight = Math.max(...exData.sets.map((s:any) => s.weight));
+    const maxWeight = Math.max(...(exData?.sets.map((s:any) => s.weight) || [0]));
     return { weight: maxWeight, date: new Date(lastSession.date).toLocaleDateString() };
   };
-
   return (
-    <div className="fixed inset-0 z-[300] bg-[#050507] flex flex-col animate-in slide-in-from-bottom duration-500 overflow-y-auto pb-40 no-scrollbar">
+    <div className="fixed inset-0 z-[300] bg-[#050507] flex flex-col animate-in slide-in-from-bottom overflow-y-auto pb-40 no-scrollbar">
        <header className="p-10 flex justify-between items-center sticky top-0 bg-[#050507]/98 backdrop-blur-2xl z-10 border-b border-zinc-900 shadow-2xl">
           <div className="text-left flex items-center gap-4">
-             <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-lg"><img src={logo} className="w-8 h-8 object-contain" /></div>
+             <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center"><img src={logo} className="w-8 h-8 object-contain" /></div>
              <div>
-               <span className="text-[10px] font-black text-red-600 uppercase tracking-[0.5em] mb-1">ELITE PROTOCOL ACTIVE</span>
+               <span className="text-[10px] font-black text-red-600 uppercase tracking-[0.5em] mb-1">PROTOCOLO ACTIVO</span>
                <h3 className="text-4xl font-display italic text-white uppercase tracking-tighter leading-none italic">{workout.name}</h3>
              </div>
           </div>
@@ -635,60 +620,50 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
                   <span className="text-2xl font-display italic text-red-600 leading-none">{timer}s</span>
                </div>
              )}
-             <button onClick={() => onClose(false)} className="bg-zinc-900 p-7 rounded-full text-zinc-500 hover:text-red-600 transition-all shadow-xl"><X size={36}/></button>
+             <button onClick={() => onClose(false)} className="bg-zinc-900 p-7 rounded-full text-zinc-500 shadow-xl"><X size={36}/></button>
           </div>
        </header>
-
        <div className="p-8 space-y-16 mt-8">
           {workout.exercises.map((ex: any, exIdx: number) => {
-            const exerciseData = exercises.find((e:any) => e.id === ex.exerciseId);
+            const exInfo = exercises.find((e:any) => e.id === ex.exerciseId);
             const lastPerf = getLastPerformance(ex.exerciseId);
             return (
-              <div key={exIdx} className="space-y-10 text-left border-l-4 border-red-600 pl-10 animate-in slide-in-from-left duration-700">
+              <div key={exIdx} className="space-y-10 text-left border-l-4 border-red-600 pl-10 animate-in slide-in-from-left">
                 <div className="space-y-4">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="text-4xl font-black text-white italic uppercase tracking-tighter leading-none italic">{exerciseData?.name || ex.name}</h4>
-                      {lastPerf && (
-                        <p className="text-[9px] text-cyan-400 font-black uppercase tracking-widest mt-2 flex items-center gap-2">
-                          <Zap size={12}/> PR: {lastPerf.weight}KG EL {lastPerf.date}
-                        </p>
-                      )}
+                      <h4 className="text-4xl font-black text-white italic uppercase tracking-tighter leading-none italic">{exInfo?.name || ex.name}</h4>
+                      {lastPerf && <p className="text-[9px] text-cyan-400 font-black uppercase tracking-widest mt-2">PR: {lastPerf.weight}KG ({lastPerf.date})</p>}
                     </div>
-                    {exerciseData?.videoUrl && <a href={exerciseData.videoUrl} target="_blank" className="text-red-600 p-2 bg-red-600/5 rounded-xl border border-red-600/10 shadow-lg"><Video size={28}/></a>}
+                    {exInfo?.videoUrl && <a href={exInfo.videoUrl} target="_blank" className="text-red-600 p-2 bg-red-600/5 rounded-xl border border-red-600/10"><Video size={28}/></a>}
                   </div>
-                  <div className="flex gap-4">
-                    <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest border border-zinc-900 px-4 py-1 rounded-full">{ex.targetSets} SETS</span>
-                    <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest border border-zinc-900 px-4 py-1 rounded-full">{ex.targetReps} REPS</span>
-                  </div>
-                  {ex.coachCue && <div className="bg-cyan-500/10 p-6 rounded-[2.5rem] border border-cyan-500/20 flex gap-5 items-center shadow-inner">
+                  {ex.coachCue && <div className="bg-cyan-500/10 p-6 rounded-[2.5rem] border border-cyan-500/20 flex gap-5 items-center">
                     <Sparkles size={20} className="text-cyan-400 shrink-0" />
-                    <p className="text-[11px] text-cyan-100 italic font-medium tracking-tight leading-relaxed">{ex.coachCue}</p>
+                    <p className="text-[11px] text-cyan-100 italic leading-relaxed">{ex.coachCue}</p>
                   </div>}
                 </div>
-
                 <div className="grid gap-5">
                    {sessionLogs[exIdx].sets.map((set: any, setIdx: number) => (
-                     <div key={setIdx} className={`p-8 rounded-[3.5rem] border transition-all flex items-center justify-between gap-10 ${set.done ? 'bg-green-600/10 border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.1)]' : 'bg-zinc-900/40 border-white/5 shadow-inner'}`}>
-                        <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-display italic text-4xl ${set.done ? 'bg-green-600 text-white shadow-xl' : 'bg-zinc-950 text-zinc-800 border border-white/5 shadow-inner'}`}>{setIdx + 1}</div>
+                     <div key={setIdx} className={`p-8 rounded-[3.5rem] border transition-all flex items-center justify-between gap-10 ${set.done ? 'bg-green-600/10 border-green-500/30 shadow-xl' : 'bg-zinc-900/40 border-white/5'}`}>
+                        <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-display italic text-4xl ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5'}`}>{setIdx + 1}</div>
                         <div className="flex-1 flex gap-6">
                            <div className="flex-1 text-center space-y-3">
                               <p className="text-[10px] text-zinc-700 font-black uppercase tracking-[0.3em]">KG</p>
-                              <input type="number" placeholder="--" value={set.weight || ''} onChange={e => updateSet(exIdx, setIdx, 'weight', parseFloat(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-7 rounded-3xl text-center text-white outline-none focus:border-red-600 text-3xl font-bold shadow-inner" />
+                              <input type="number" placeholder="--" value={set.weight || ''} onChange={e => updateSet(exIdx, setIdx, 'weight', parseFloat(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-7 rounded-3xl text-center text-white text-3xl font-bold shadow-inner" />
                            </div>
                            <div className="flex-1 text-center space-y-3">
                               <p className="text-[10px] text-zinc-700 font-black uppercase tracking-[0.3em]">REPS</p>
-                              <input type="number" placeholder="--" value={set.reps || ''} onChange={e => updateSet(exIdx, setIdx, 'reps', parseInt(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-7 rounded-3xl text-center text-white outline-none focus:border-red-600 text-3xl font-bold shadow-inner" />
+                              <input type="number" placeholder="--" value={set.reps || ''} onChange={e => updateSet(exIdx, setIdx, 'reps', parseInt(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-7 rounded-3xl text-center text-white text-3xl font-bold shadow-inner" />
                            </div>
                         </div>
-                        <button onClick={() => updateSet(exIdx, setIdx, 'done', !set.done)} className={`p-9 rounded-[2rem] transition-all shadow-2xl active:scale-90 ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5 shadow-inner'}`}><Check size={36}/></button>
+                        <button onClick={() => updateSet(exIdx, setIdx, 'done', !set.done)} className={`p-9 rounded-[2rem] transition-all shadow-2xl ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5'}`}><Check size={36}/></button>
                      </div>
                    ))}
                 </div>
               </div>
             );
           })}
-          <button onClick={() => { notify("PROTOCOLO FINALIZADO"); onClose(true, { id: `log-${Date.now()}`, userId, workoutId: workout.id, date: new Date().toISOString(), exercisesData: sessionLogs }); }} className="w-full py-16 bg-red-600 rounded-[5rem] font-display italic text-4xl uppercase text-white shadow-[0_30px_70px_rgba(239,68,68,0.5)] active:scale-95 transition-all mt-20 mb-32 italic">FINALIZAR SESIÓN</button>
+          <button onClick={() => { notify("PROTOCOLO FINALIZADO"); onClose(true, { id: `log-${Date.now()}`, userId, workoutId: workout.id, date: new Date().toISOString(), exercisesData: sessionLogs }); }} className="w-full py-16 bg-red-600 rounded-[5rem] font-display italic text-4xl uppercase text-white shadow-[0_30px_70px_rgba(239,68,68,0.5)] mt-20 mb-32 italic">FINALIZAR ENTRENAMIENTO</button>
        </div>
     </div>
   );
@@ -699,92 +674,82 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
   const [picker, setPicker] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
-
   const muscleGroups = useMemo(() => ['All', ...new Set(allExercises.map((e:any) => e.muscleGroup))], [allExercises]);
   const filtered = allExercises.filter((ex:any) => 
     (filter === 'All' || ex.muscleGroup === filter) &&
     ex.name.toLowerCase().includes(search.toLowerCase())
   );
-
   return (
-    <div className="fixed inset-0 bg-[#050507] z-[350] p-10 flex flex-col animate-in slide-in-from-right duration-500 overflow-y-auto pb-48 no-scrollbar">
-       <header className="flex justify-between items-center mb-16 sticky top-0 bg-[#050507]/95 backdrop-blur-3xl py-8 z-10 border-b border-white/5 shadow-2xl">
-          <button onClick={onCancel} className="bg-zinc-900 p-7 rounded-full text-zinc-500 hover:text-white transition-all shadow-xl"><ChevronLeft size={36}/></button>
+    <div className="fixed inset-0 bg-[#050507] z-[350] p-10 flex flex-col animate-in slide-in-from-right overflow-y-auto pb-48 no-scrollbar">
+       <header className="flex justify-between items-center mb-16 sticky top-0 bg-[#050507]/95 backdrop-blur-3xl py-8 z-10 border-b border-white/5">
+          <button onClick={onCancel} className="bg-zinc-900 p-7 rounded-full text-zinc-500 shadow-xl"><ChevronLeft size={36}/></button>
           <div className="text-center flex-1 px-8 text-left">
-             <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.8em] mb-1 italic">PROTOCOLO TÁCTICO</p>
-             <input value={local.title} onChange={e => setLocal({...local, title: e.target.value})} className="bg-transparent text-3xl font-display italic text-white text-center outline-none uppercase tracking-tighter w-full border-b border-zinc-900 focus:border-red-600 transition-all italic" />
+             <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.8em] mb-1 italic">EDITOR DE PLAN</p>
+             <input value={local.title} onChange={e => setLocal({...local, title: e.target.value})} className="bg-transparent text-3xl font-display italic text-white text-center outline-none uppercase tracking-tighter w-full border-b border-zinc-900 italic" />
           </div>
-          <button onClick={() => onSave(local)} disabled={loading} className="bg-red-600 p-7 rounded-full text-white shadow-[0_15px_30px_rgba(239,68,68,0.4)] active:scale-95 transition-all">
+          <button onClick={() => onSave(local)} disabled={loading} className="bg-red-600 p-7 rounded-full text-white shadow-xl">
             {loading ? <RefreshCw className="animate-spin" size={36}/> : <Save size={36}/>}
           </button>
        </header>
-
        <div className="space-y-16">
           {local.workouts.map((w, wIdx) => (
-             <div key={wIdx} className="bg-zinc-900/30 p-12 rounded-[5rem] border border-white/5 space-y-12 shadow-2xl text-left hover:bg-zinc-900/40 transition-all border-t-2 border-t-red-600/15">
+             <div key={wIdx} className="bg-zinc-900/30 p-12 rounded-[5rem] border border-white/5 space-y-12 shadow-2xl border-t-2 border-t-red-600/15">
                 <div className="flex items-center gap-8">
-                  <div className="w-18 h-18 bg-red-600/10 rounded-[2rem] flex items-center justify-center text-red-600 font-display italic text-5xl border border-red-600/20 shadow-inner">{wIdx + 1}</div>
-                  <input value={w.name} onChange={e => { const nw = [...local.workouts]; nw[wIdx].name = e.target.value; setLocal({...local, workouts: nw}); }} className="bg-transparent border-b border-zinc-800 p-4 text-4xl font-display italic text-white outline-none w-full uppercase focus:border-red-600 transition-all italic shadow-inner" />
-                  <button onClick={() => { if(window.confirm("¿BORRAR JORNADA?")) { const nw = [...local.workouts]; nw.splice(wIdx, 1); setLocal({...local, workouts: nw}); } }} className="text-zinc-800 hover:text-red-500 transition-colors p-4"><Trash2 size={32}/></button>
+                  <div className="w-18 h-18 bg-red-600/10 rounded-[2rem] flex items-center justify-center text-red-600 font-display italic text-5xl border border-red-600/20">{wIdx + 1}</div>
+                  <input value={w.name} onChange={e => { const nw = [...local.workouts]; nw[wIdx].name = e.target.value; setLocal({...local, workouts: nw}); }} className="bg-transparent border-b border-zinc-800 p-4 text-4xl font-display italic text-white outline-none w-full uppercase italic" />
+                  <button onClick={() => { if(window.confirm("¿BORRAR DÍA?")) { const nw = [...local.workouts]; nw.splice(wIdx, 1); setLocal({...local, workouts: nw}); } }} className="text-zinc-800 hover:text-red-500 transition-colors p-4"><Trash2 size={32}/></button>
                 </div>
-
                 <div className="space-y-10">
                    {w.exercises.map((ex, exIdx) => (
-                     <div key={exIdx} className="p-10 bg-zinc-950/80 rounded-[4rem] border border-white/5 space-y-10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] relative group">
+                     <div key={exIdx} className="p-10 bg-zinc-950/80 rounded-[4rem] border border-white/5 space-y-10 shadow-2xl relative">
                         <div className="flex justify-between items-start">
                            <div className="text-left space-y-1">
-                              <p className="text-[9px] font-black text-zinc-700 uppercase tracking-widest italic">BLOQUE {exIdx + 1}</p>
-                              <span className="text-3xl font-black uppercase text-white tracking-tighter italic leading-none">{allExercises.find((e:any) => e.id === ex.exerciseId)?.name || ex.name}</span>
+                              <p className="text-[9px] font-black text-zinc-700 uppercase tracking-widest">BLOQUE {exIdx + 1}</p>
+                              <span className="text-3xl font-black uppercase text-white tracking-tighter italic">{allExercises.find((e:any) => e.id === ex.exerciseId)?.name || ex.name}</span>
                            </div>
-                           <button onClick={() => { const nw = [...local.workouts]; nw[wIdx].exercises.splice(exIdx, 1); setLocal({...local, workouts: nw}); }} className="text-zinc-800 hover:text-red-600 p-2"><X size={28}/></button>
+                           <button onClick={() => { const nw = [...local.workouts]; nw[wIdx].exercises.splice(exIdx, 1); setLocal({...local, workouts: nw}); }} className="text-zinc-800 hover:text-red-600"><X size={28}/></button>
                         </div>
                         <div className="grid grid-cols-2 gap-8">
                            <div className="text-center space-y-4">
-                             <label className="text-[10px] font-black text-zinc-700 uppercase tracking-widest">TARGET SETS</label>
-                             <input value={ex.targetSets} type="number" onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetSets = parseInt(e.target.value) || 0; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl shadow-inner focus:border-red-600 outline-none" />
+                             <label className="text-[10px] font-black text-zinc-700 uppercase tracking-widest">SERIES</label>
+                             <input value={ex.targetSets} type="number" onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetSets = parseInt(e.target.value) || 0; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl" />
                            </div>
                            <div className="text-center space-y-4">
-                             <label className="text-[10px] font-black text-zinc-700 uppercase tracking-widest">TARGET REPS</label>
-                             <input value={ex.targetReps} onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetReps = e.target.value; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl shadow-inner focus:border-red-600 outline-none" />
+                             <label className="text-[10px] font-black text-zinc-700 uppercase tracking-widest">REPS</label>
+                             <input value={ex.targetReps} onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetReps = e.target.value; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-7 rounded-[2.5rem] text-white font-bold text-center text-4xl" />
                            </div>
                         </div>
-                        <div className="space-y-4">
-                          <label className="text-[9px] font-black text-zinc-700 uppercase tracking-widest ml-6">CUELLE DE COACH (NOTAS)</label>
-                          <textarea 
-                            value={ex.coachCue || ''} 
-                            onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].coachCue = e.target.value; setLocal({...local, workouts: nw}); }} 
-                            placeholder="Escribe instrucciones técnicas aquí..." 
-                            className="w-full bg-zinc-900/40 border border-zinc-800 p-8 rounded-[3rem] text-[12px] text-zinc-300 outline-none italic placeholder:text-zinc-800 resize-none h-28 focus:border-cyan-500/30 transition-all shadow-inner" 
-                          />
-                        </div>
+                        <textarea 
+                          value={ex.coachCue || ''} 
+                          onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].coachCue = e.target.value; setLocal({...local, workouts: nw}); }} 
+                          placeholder="Instrucciones del Coach..." 
+                          className="w-full bg-zinc-900/40 border border-zinc-800 p-8 rounded-[3rem] text-[12px] text-zinc-300 outline-none italic resize-none h-28 focus:border-cyan-500/30 shadow-inner" 
+                        />
                      </div>
                    ))}
-                   <button onClick={() => { setPicker(wIdx); setSearch(''); setFilter('All'); }} className="w-full py-14 border-2 border-dashed border-zinc-800 rounded-[4rem] text-[10px] font-black text-zinc-700 uppercase tracking-[0.4em] hover:text-red-600 hover:border-red-600/30 transition-all flex items-center justify-center gap-6 bg-zinc-950/20 shadow-2xl active:scale-[0.98]">+ AÑADIR BLOQUE TÉCNICO</button>
+                   <button onClick={() => setPicker(wIdx)} className="w-full py-14 border-2 border-dashed border-zinc-800 rounded-[4rem] text-[10px] font-black text-zinc-700 uppercase tracking-[0.4em] bg-zinc-950/20 shadow-2xl">+ AÑADIR EJERCICIO</button>
                 </div>
              </div>
           ))}
-          <button onClick={() => setLocal({...local, workouts: [...local.workouts, { id: `w-${Date.now()}`, name: `DÍA ${local.workouts.length+1}`, day: local.workouts.length+1, exercises: [] }]})} className="w-full py-20 border-2 border-dashed border-zinc-800 rounded-[6rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-8 hover:bg-zinc-900/40 hover:text-red-600 transition-all shadow-2xl active:scale-95 italic"><Plus size={64}/> AÑADIR JORNADA SEMANAL</button>
+          <button onClick={() => setLocal({...local, workouts: [...local.workouts, { id: `w-${Date.now()}`, name: `DÍA ${local.workouts.length+1}`, day: local.workouts.length+1, exercises: [] }]})} className="w-full py-20 border-2 border-dashed border-zinc-800 rounded-[6rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-8 shadow-2xl italic"><Plus size={64}/> AÑADIR DÍA SEMANAL</button>
        </div>
-
        {picker !== null && (
-         <div className="fixed inset-0 z-[500] bg-black/99 backdrop-blur-3xl p-10 flex flex-col animate-in slide-in-from-bottom duration-400">
+         <div className="fixed inset-0 z-[500] bg-black/99 backdrop-blur-3xl p-10 flex flex-col animate-in slide-in-from-bottom">
             <header className="flex justify-between items-center mb-12">
               <div className="text-left">
-                <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.6em] mb-1 italic">RESOURCE PICKER</p>
+                <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.6em] mb-1 italic">PICKER</p>
                 <h3 className="text-4xl font-display italic text-white uppercase tracking-tighter italic">LIBRERÍA</h3>
               </div>
-              <button onClick={() => setPicker(null)} className="bg-zinc-900 p-8 rounded-full text-white hover:text-red-600 transition-all shadow-2xl"><X size={40}/></button>
+              <button onClick={() => setPicker(null)} className="bg-zinc-900 p-8 rounded-full text-white shadow-2xl"><X size={40}/></button>
             </header>
-            
             <div className="space-y-6 mb-10">
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="FILTRAR..." className="w-full bg-zinc-900/50 border border-zinc-800 p-8 rounded-[2.5rem] outline-none text-white font-bold shadow-inner" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="BUSCAR..." className="w-full bg-zinc-900/50 border border-zinc-800 p-8 rounded-[2.5rem] text-white" />
               <div className="flex gap-2 overflow-x-auto no-scrollbar">
                  {muscleGroups.map(m => (
-                   <button key={m as string} onClick={() => setFilter(m as string)} className={`px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap border ${filter === m ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-600'}`}>{m as string}</button>
+                   <button key={m as string} onClick={() => setFilter(m as string)} className={`px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border ${filter === m ? 'bg-red-600 border-red-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-600'}`}>{m as string}</button>
                  ))}
               </div>
             </div>
-
             <div className="flex-1 space-y-4 overflow-y-auto no-scrollbar pb-32">
               {filtered.map((ex: any) => (
                 <div key={ex.id} onClick={() => {
@@ -792,9 +757,9 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
                    nw[picker].exercises.push({ exerciseId: ex.id, name: ex.name, targetSets: 4, targetReps: "10-12", coachCue: "" });
                    setLocal({...local, workouts: nw});
                    setPicker(null);
-                }} className="p-10 bg-zinc-900/40 border border-white/5 rounded-[4rem] flex justify-between items-center group active:scale-[0.98] transition-all text-left shadow-2xl hover:bg-zinc-900/60 border-l-4 border-l-transparent hover:border-l-red-600">
+                }} className="p-10 bg-zinc-900/40 border border-white/5 rounded-[4rem] flex justify-between items-center group shadow-2xl hover:bg-zinc-900/60 transition-all">
                   <div className="space-y-1">
-                    <p className="font-black text-white uppercase italic text-3xl tracking-tighter group-hover:text-red-600 transition-colors italic">{ex.name}</p>
+                    <p className="font-black text-white uppercase italic text-3xl tracking-tighter group-hover:text-red-600 italic">{ex.name}</p>
                     <p className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">{ex.muscleGroup}</p>
                   </div>
                   <div className="bg-zinc-950 p-7 rounded-3xl group-hover:bg-red-600 transition-all shadow-lg">
