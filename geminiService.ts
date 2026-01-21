@@ -6,7 +6,7 @@ export async function generateSmartRoutine(user: User) {
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("KINETIX_ENGINE_ERROR: API_KEY no configurada en el entorno de despliegue.");
+    throw new Error("API_KEY no configurada.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -19,40 +19,37 @@ export async function generateSmartRoutine(user: User) {
   - Equipamiento: ${user.equipment.join(', ')}
   
   REQUISITOS TÉCNICOS:
-  1. Títulos de los Workouts deben ser impactantes (ej: "Protocolo A: Fuerza Explosiva").
-  2. Instrucciones de Coach (coachCue) cortas y centradas en la técnica (ej: "Foco en la fase excéntrica").
-  3. Usa SOLO estos IDs de ejercicios de la base de datos maestra: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
-  4. Formato de repeticiones puede ser rango (ej: "8-12") o fijo ("10").
+  1. Títulos de los Workouts impactantes.
+  2. coachCue cortos (ej: "Foco excéntrico").
+  3. Usa SOLO estos IDs: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
   
-  Responde con un JSON puro que siga estrictamente este esquema.`;
+  Responde con un JSON puro que siga el esquema proporcionado.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            workouts: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  day: { type: Type.NUMBER },
-                  exercises: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        exerciseId: { type: Type.STRING },
-                        targetSets: { type: Type.NUMBER },
-                        targetReps: { type: Type.STRING },
-                        coachCue: { type: Type.STRING }
-                      }
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          workouts: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                day: { type: Type.NUMBER },
+                exercises: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      exerciseId: { type: Type.STRING },
+                      targetSets: { type: Type.NUMBER },
+                      targetReps: { type: Type.STRING },
+                      coachCue: { type: Type.STRING }
                     }
                   }
                 }
@@ -61,11 +58,8 @@ export async function generateSmartRoutine(user: User) {
           }
         }
       }
-    });
+    }
+  });
 
-    return JSON.parse(response.text);
-  } catch (error) {
-    console.error("Gemini Generation Error:", error);
-    throw error;
-  }
+  return JSON.parse(response.text);
 }

@@ -8,42 +8,90 @@ import {
   Lock, Fingerprint, Megaphone, RefreshCw, Wifi, Sparkles
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { createClient } from '@supabase/supabase-js';
 import { User, Plan, Workout, Exercise, WorkoutLog, Goal, UserLevel } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './geminiService';
 
-// --- CONFIGURACIÓN DE MARCA POR DEFECTO ---
-// REEMPLAZA ESTA URL POR TU LINK "RAW" DE GITHUB
+// --- CONFIGURACIÓN DE MARCA ---
 const DEFAULT_LOGO = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/tu-logo.png";
 const DEFAULT_PIN = "KINETIX2025";
 
+// --- CLIENTE SUPABASE ---
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+
 const DataService = {
-  getPlans: async (): Promise<Plan[]> => JSON.parse(localStorage.getItem('kx_plans') || '[]'),
-  savePlan: async (plan: Plan) => {
-    const plans = await DataService.getPlans();
-    const updated = [plan, ...plans.filter((p: Plan) => p.userId !== plan.userId)];
-    localStorage.setItem('kx_plans', JSON.stringify(updated));
-    return true;
+  getPlans: async (): Promise<Plan[]> => {
+    if (!supabase) return JSON.parse(localStorage.getItem('kx_plans') || '[]');
+    const { data } = await supabase.from('plans').select('*');
+    return (data || []).map(p => ({ ...p, userId: p.user_id, coachNotes: p.coach_notes, updatedAt: p.updated_at }));
   },
-  getLogs: async (): Promise<WorkoutLog[]> => JSON.parse(localStorage.getItem('kx_logs') || '[]'),
+  savePlan: async (plan: Plan) => {
+    if (!supabase) {
+      const plans = await DataService.getPlans();
+      const updated = [plan, ...plans.filter((p: Plan) => p.userId !== plan.userId)];
+      localStorage.setItem('kx_plans', JSON.stringify(updated));
+      return true;
+    }
+    const { error } = await supabase.from('plans').upsert({
+      user_id: plan.userId,
+      title: plan.title,
+      workouts: plan.workouts,
+      coach_notes: plan.coachNotes,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+    return !error;
+  },
+  getLogs: async (): Promise<WorkoutLog[]> => {
+    if (!supabase) return JSON.parse(localStorage.getItem('kx_logs') || '[]');
+    const { data } = await supabase.from('workout_logs').select('*').order('date', { ascending: false });
+    return (data || []).map(d => ({ ...d, userId: d.user_id, workoutId: d.workout_id, setsData: d.sets_data }));
+  },
   saveLog: async (log: WorkoutLog) => {
-    const logs = await DataService.getLogs();
-    localStorage.setItem('kx_logs', JSON.stringify([log, ...logs]));
-    return true;
+    if (!supabase) {
+      const logs = await DataService.getLogs();
+      localStorage.setItem('kx_logs', JSON.stringify([log, ...logs]));
+      return true;
+    }
+    const { error } = await supabase.from('workout_logs').insert({
+      user_id: log.userId,
+      workout_id: log.workoutId,
+      sets_data: log.setsData,
+      date: log.date
+    });
+    return !error;
   },
   getUsers: async (): Promise<User[]> => {
-    const stored = localStorage.getItem('kx_users');
-    return stored ? JSON.parse(stored) : [MOCK_USER];
+    if (!supabase) {
+      const stored = localStorage.getItem('kx_users');
+      return stored ? JSON.parse(stored) : [MOCK_USER];
+    }
+    const { data } = await supabase.from('profiles').select('*');
+    return (data || []).map(u => ({ ...u, daysPerWeek: u.days_per_week }));
   },
   saveUser: async (user: User) => {
-    const users = await DataService.getUsers();
-    localStorage.setItem('kx_users', JSON.stringify([...users, user]));
-    return true;
+    if (!supabase) {
+      const users = await DataService.getUsers();
+      localStorage.setItem('kx_users', JSON.stringify([...users, user]));
+      return true;
+    }
+    const { error } = await supabase.from('profiles').insert({
+      name: user.name,
+      goal: user.goal,
+      level: user.level,
+      days_per_week: user.daysPerWeek,
+      equipment: user.equipment,
+      role: user.role
+    });
+    return !error;
   },
   getBrandConfig: () => JSON.parse(localStorage.getItem('kx_brand') || JSON.stringify({ logo: DEFAULT_LOGO, pin: DEFAULT_PIN })),
   saveBrandConfig: (config: { logo: string, pin: string }) => localStorage.setItem('kx_brand', JSON.stringify(config))
 };
 
+// --- COMPONENTES UI ---
 const NeonButton = memo(({ children, onClick, variant = 'primary', className = '', loading = false, icon, disabled = false }: any) => {
   const base = "relative overflow-hidden px-6 py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-3 text-[10px] uppercase tracking-[0.2em] active:scale-95 disabled:opacity-30 group shrink-0 select-none";
   const styles = {
@@ -145,15 +193,22 @@ export default function App() {
         ...w,
         exercises: w.exercises.map((we: any) => ({
           ...we,
-          name: exercises.find(e => e.id === we.exerciseId)?.name || 'Nueva Técnica'
+          name: exercises.find(e => e.id === we.exerciseId)?.name || 'Técnica'
         }))
       }));
       setEditingPlan({ 
-        plan: { ...generated, workouts: enrichedWorkouts, id: `p-${Date.now()}`, userId: user.id, coachNotes: 'Optimizado por IA. Ajusta cargas según RPE.', updatedAt: new Date().toISOString() }, 
+        plan: { 
+          ...generated, 
+          workouts: enrichedWorkouts, 
+          id: `p-${Date.now()}`, 
+          userId: user.id, 
+          coachNotes: 'Optimizado por IA. Ajusta cargas según RPE.', 
+          updatedAt: new Date().toISOString() 
+        }, 
         isNew: true 
       });
     } catch (error) {
-      alert("Error en el motor de IA Kinetix. Verifica tu API KEY.");
+      alert("Error en el motor de IA. Verifica tu API KEY.");
     } finally { setIsAiGenerating(false); }
   }, [exercises]);
 
@@ -199,8 +254,8 @@ export default function App() {
     );
   }
 
-  if (editingPlan) return <PlanEditor plan={editingPlan.plan} allExercises={exercises} onSave={async (p: any) => { setCloudStatus('syncing'); await DataService.savePlan(p); setPlans(prev => [p, ...prev.filter(x => x.userId !== p.userId)]); setEditingPlan(null); setCloudStatus('online'); }} onCancel={() => setEditingPlan(null)} />;
-  if (currentWorkout) return <LiveWorkout workout={currentWorkout} exercises={exercises} lastLogs={logs.filter(l => l.userId === currentUser.id)} onFinish={async (l: any) => { setCloudStatus('syncing'); await DataService.saveLog(l); setLogs([l, ...logs]); setWorkoutSummary(l); setCurrentWorkout(null); setCloudStatus('online'); }} onCancel={() => setCurrentWorkout(null)} />;
+  if (editingPlan) return <PlanEditor plan={editingPlan.plan} allExercises={exercises} onSave={async (p: any) => { setCloudStatus('syncing'); await DataService.savePlan(p); syncData(); setEditingPlan(null); }} onCancel={() => setEditingPlan(null)} />;
+  if (currentWorkout) return <LiveWorkout workout={currentWorkout} exercises={exercises} lastLogs={logs.filter(l => l.userId === currentUser.id)} onFinish={async (l: any) => { setCloudStatus('syncing'); await DataService.saveLog(l); syncData(); setWorkoutSummary(l); setCurrentWorkout(null); }} onCancel={() => setCurrentWorkout(null)} />;
 
   if (workoutSummary) return (
     <div className="fixed inset-0 z-[200] bg-[#050507] flex flex-col items-center justify-center p-8 animate-in fade-in duration-500">
@@ -229,7 +284,7 @@ export default function App() {
               <span className="font-display italic text-xl uppercase leading-none text-white tracking-tighter">KINETIX</span>
               <div className="flex items-center gap-1.5">
                  <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></div>
-                 <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{cloudStatus === 'syncing' ? 'SYNCING' : 'READY'}</span>
+                 <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{supabase ? (cloudStatus === 'syncing' ? 'SYNCING' : 'CLOUD READY') : 'LOCAL MODE'}</span>
               </div>
            </div>
         </div>
@@ -330,7 +385,6 @@ export default function App() {
                 ))}
              </div>
 
-             {/* Panel de Configuración de Marca */}
              <GlassCard className="mt-12 p-8 border-zinc-800">
                 <h3 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-6 italic">AJUSTES DE IDENTIDAD</h3>
                 <div className="space-y-4">
@@ -389,11 +443,12 @@ export default function App() {
       </nav>
 
       {showAddExercise && <ExerciseDialog onSave={(ex: any) => { setExercises(prev => [ex, ...prev]); setShowAddExercise(false); }} onCancel={() => setShowAddExercise(false)} />}
-      {showAddUser && <UserDialog onSave={async (user: any) => { setCloudStatus('syncing'); await DataService.saveUser(user); setUsers(prev => [...prev, user]); setShowAddUser(false); setCloudStatus('online'); }} onCancel={() => setShowAddUser(false)} />}
+      {showAddUser && <UserDialog onSave={async (user: any) => { setCloudStatus('syncing'); await DataService.saveUser(user); syncData(); setShowAddUser(false); }} onCancel={() => setShowAddUser(false)} />}
     </div>
   );
 }
 
+// Sub-componentes (LiveWorkout, PlanEditor, Dialogs)
 const LiveWorkout = memo(({ workout, exercises, lastLogs, onFinish, onCancel }: any) => {
   const [idx, setIdx] = useState(0);
   const [timer, setTimer] = useState(0);
@@ -529,11 +584,6 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
   const [localPlan, setLocalPlan] = useState<Plan>(plan);
   const [showPicker, setShowPicker] = useState<{ workoutIndex: number } | null>(null);
 
-  const cloneWorkout = useCallback((w: Workout) => {
-    const newW = { ...w, id: `w-${Date.now()}`, name: `${w.name} (COPIA)` };
-    setLocalPlan(prev => ({ ...prev, workouts: [...prev.workouts, newW] }));
-  }, []);
-
   const addExerciseToWorkout = useCallback((wIdx: number, exercise: Exercise) => {
     setLocalPlan(prev => {
       const newWorkouts = [...prev.workouts];
@@ -542,7 +592,7 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
         name: exercise.name,
         targetSets: 3,
         targetReps: '12',
-        coachCue: 'Ejecución estricta'
+        coachCue: 'Foco técnico'
       });
       return { ...prev, workouts: newWorkouts };
     });
@@ -555,22 +605,17 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
           <button onClick={onCancel} className="bg-zinc-900/50 p-4 rounded-2xl text-zinc-600 hover:text-white transition-colors"><ChevronLeft size={24}/></button>
           <div className="text-center">
              <input value={localPlan.title} onChange={e => setLocalPlan({...localPlan, title: e.target.value})} className="bg-transparent text-2xl font-display italic text-white text-center outline-none uppercase tracking-tighter" />
-             <p className="text-[8px] text-zinc-800 font-black uppercase tracking-[0.4em] italic mt-1">PROGRAMACIÓN TÉCNICA</p>
           </div>
           <button onClick={() => onSave(localPlan)} className="bg-red-600 p-5 rounded-2xl text-white shadow-xl active:scale-90 transition-all"><Save size={24}/></button>
        </header>
 
        <div className="flex-1 overflow-y-auto space-y-10 pb-40 no-scrollbar">
-          <GlassCard className="p-8 border-red-600/10 bg-red-600/5">
-             <div className="flex items-center gap-4 mb-4">
-                <Megaphone size={20} className="text-red-600" />
-                <h3 className="text-[10px] font-black text-red-600 uppercase tracking-[0.2em] italic">INDICACIONES DEL COACH</h3>
-             </div>
+          <GlassCard className="p-8 bg-red-600/5 border-red-600/10">
              <textarea 
                value={localPlan.coachNotes} 
                onChange={e => setLocalPlan({...localPlan, coachNotes: e.target.value})}
-               placeholder="Escribe las pautas del bloque aquí..." 
-               className="w-full bg-zinc-950 border border-zinc-900 p-5 rounded-2xl text-xs font-bold italic text-white outline-none focus:border-red-600 min-h-[100px] placeholder:text-zinc-800 resize-none"
+               placeholder="Pautas del Coach..." 
+               className="w-full bg-zinc-950 border border-zinc-900 p-5 rounded-2xl text-xs font-bold italic text-white outline-none focus:border-red-600 min-h-[100px]"
              />
           </GlassCard>
 
@@ -582,10 +627,7 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
                     newW[wIdx].name = e.target.value;
                     setLocalPlan({...localPlan, workouts: newW});
                   }} className="bg-transparent text-3xl font-display italic text-white outline-none uppercase tracking-tighter w-full" />
-                  <div className="flex gap-4">
-                     <button onClick={() => cloneWorkout(w)} className="text-zinc-700 hover:text-cyan-400 transition-colors"><Copy size={18}/></button>
-                     <button onClick={() => setLocalPlan({...localPlan, workouts: localPlan.workouts.filter((_, idx) => idx !== wIdx)})} className="text-zinc-700 hover:text-red-500 transition-colors"><Trash2 size={18}/></button>
-                  </div>
+                  <button onClick={() => setLocalPlan({...localPlan, workouts: localPlan.workouts.filter((_, idx) => idx !== wIdx)})} className="text-zinc-700 hover:text-red-500"><Trash2 size={18}/></button>
                </div>
                
                <div className="space-y-6">
@@ -597,7 +639,7 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
                             const newWArr = [...localPlan.workouts];
                             newWArr[wIdx].exercises = newWArr[wIdx].exercises.filter((_, i) => i !== eIdx);
                             setLocalPlan({...localPlan, workouts: newWArr});
-                          }} className="text-zinc-800 hover:text-red-500"><X size={16}/></button>
+                          }} className="text-zinc-800"><X size={16}/></button>
                        </div>
                        <input value={`${we.targetSets}x${we.targetReps}`} onChange={e => {
                          const val = e.target.value;
@@ -606,30 +648,29 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
                          newWArr[wIdx].exercises[eIdx].targetSets = parseInt(parts[0]) || 0;
                          newWArr[wIdx].exercises[eIdx].targetReps = parts[1] || '0';
                          setLocalPlan({...localPlan, workouts: newWArr});
-                       }} className="w-full bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs font-display italic text-white outline-none focus:border-cyan-400" />
+                       }} className="w-full bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs font-display italic text-white outline-none" />
                     </div>
                   ))}
-                  <button onClick={() => setShowPicker({ workoutIndex: wIdx })} className="w-full py-6 border-2 border-dashed border-zinc-900 rounded-[2.5rem] text-zinc-800 font-black text-[10px] uppercase tracking-[0.3em] hover:text-cyan-400 transition-all">
+                  <button onClick={() => setShowPicker({ workoutIndex: wIdx })} className="w-full py-6 border-2 border-dashed border-zinc-900 rounded-[2.5rem] text-zinc-800 font-black text-[10px] uppercase tracking-[0.3em]">
                     + AÑADIR TÉCNICA
                   </button>
                </div>
             </GlassCard>
           ))}
-          <button onClick={() => setLocalPlan(prev => ({...prev, workouts: [...prev.workouts, {id: `w-${Date.now()}`, name: `SESIÓN ${prev.workouts.length + 1}`, day: 1, exercises: []}]}))} className="py-12 border-2 border-dashed border-zinc-900 rounded-[3rem] text-zinc-800 font-black flex flex-col items-center justify-center gap-4 hover:text-zinc-600 transition-all">
-            <Plus size={24}/> 
-            <span className="text-[10px] uppercase tracking-[0.4em]">NUEVA SESIÓN</span>
+          <button onClick={() => setLocalPlan(prev => ({...prev, workouts: [...prev.workouts, {id: `w-${Date.now()}`, name: `SESIÓN ${prev.workouts.length + 1}`, day: 1, exercises: []}]}))} className="py-12 border-2 border-dashed border-zinc-900 rounded-[3rem] text-zinc-800 font-black flex flex-col items-center justify-center gap-4">
+            <Plus size={24}/> <span className="text-[10px] uppercase tracking-[0.4em]">NUEVA SESIÓN</span>
           </button>
        </div>
 
        {showPicker !== null && (
-         <div className="fixed inset-0 z-[120] bg-black/98 backdrop-blur-3xl p-8 flex flex-col animate-in slide-in-from-bottom-full">
+         <div className="fixed inset-0 z-[120] bg-black/98 backdrop-blur-3xl p-8 flex flex-col">
             <header className="flex justify-between items-center mb-10">
                <h3 className="text-3xl font-display italic text-white uppercase tracking-tighter">BÓVEDA KINETIX</h3>
-               <button onClick={() => setShowPicker(null)} className="p-4 bg-zinc-900 rounded-2xl text-zinc-600 hover:text-white transition-colors"><X size={20}/></button>
+               <button onClick={() => setShowPicker(null)} className="p-4 bg-zinc-900 rounded-2xl text-zinc-600"><X size={20}/></button>
             </header>
-            <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-20">
+            <div className="flex-1 overflow-y-auto space-y-4 pb-20 no-scrollbar">
                {allExercises.map(ex => (
-                 <div key={ex.id} onClick={() => addExerciseToWorkout(showPicker!.workoutIndex, ex)} className="p-6 bg-zinc-950 border border-zinc-900 rounded-[2rem] flex items-center justify-between group cursor-pointer hover:border-cyan-400/50 transition-all">
+                 <div key={ex.id} onClick={() => addExerciseToWorkout(showPicker!.workoutIndex, ex)} className="p-6 bg-zinc-950 border border-zinc-900 rounded-[2rem] flex items-center justify-between group cursor-pointer hover:border-cyan-400/50">
                     <h4 className="font-black text-white uppercase italic tracking-tighter text-lg">{ex.name}</h4>
                     <Plus size={24} className="text-zinc-800 group-hover:text-cyan-400"/>
                  </div>
@@ -652,7 +693,7 @@ const ExerciseDialog = memo(({ onSave, onCancel }: any) => {
              <input placeholder="GRUPO MUSCULAR" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-bold uppercase" onChange={e => setD({...d, m: e.target.value})} />
              <input placeholder="ID YOUTUBE" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-mono" onChange={e => setD({...d, v: e.target.value})} />
              <NeonButton onClick={() => onSave({id: `ex-${Date.now()}`, name: d.n, muscleGroup: d.m, videoUrl: `https://youtu.be/${d.v}`})} className="w-full py-6" variant="secondary" icon={<Save size={18}/>}>CONFIRMAR</NeonButton>
-             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] tracking-[0.5em] uppercase hover:text-white transition-colors">Cancelar</button>
+             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] tracking-[0.5em] uppercase">Cancelar</button>
           </div>
        </GlassCard>
     </div>
@@ -669,16 +710,8 @@ const UserDialog = memo(({ onSave, onCancel }: any) => {
           <h2 className="text-4xl font-display italic text-white uppercase tracking-tighter text-center leading-none">ALTA DE<br/>ATLETA</h2>
           <div className="space-y-5">
              <input placeholder="NOMBRE Y APELLIDO" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-bold uppercase" onChange={e => setU({...u, name: e.target.value})} />
-             <div className="grid grid-cols-2 gap-4">
-                <select className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl text-zinc-500 text-[10px] font-black uppercase appearance-none" onChange={e => setU({...u, goal: e.target.value as Goal})}>
-                   {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <select className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl text-zinc-500 text-[10px] font-black uppercase appearance-none" onChange={e => setU({...u, level: e.target.value as UserLevel})}>
-                   {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-             </div>
              <NeonButton onClick={() => onSave({...u, id: `u-${Date.now()}`, role: 'client', createdAt: new Date().toISOString()})} className="w-full py-6" icon={<UserPlus size={18}/>}>DAR DE ALTA</NeonButton>
-             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] tracking-[0.5em] uppercase hover:text-white transition-colors">Cancelar</button>
+             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] tracking-[0.5em] uppercase">Cancelar</button>
           </div>
        </GlassCard>
     </div>
