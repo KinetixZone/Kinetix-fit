@@ -34,7 +34,7 @@ const isUUID = (str: string) => {
 // ID FIJO PARA EL HEAD COACH (UUID VÁLIDO PARA SUPABASE)
 const COACH_UUID = '99999999-9999-9999-9999-999999999999';
 
-// --- KINETIX HYBRID ENGINE V15.0 (AUTO-MIGRATION) ---
+// --- KINETIX HYBRID ENGINE V16.0 (CLOUD FIRST) ---
 const STORAGE_KEY = 'KINETIX_CLOUD_SYNC_V1';
 const SESSION_KEY = 'KINETIX_ACTIVE_SESSION_V2';
 
@@ -70,14 +70,18 @@ const DataEngine = {
     return l ? JSON.parse(l) : [];
   },
 
+  // FUNCIÓN CRÍTICA: DESCARGA TODO DE LA NUBE Y ACTUALIZA EL CELULAR
   pullFromCloud: async () => {
     if (!supabaseConnectionStatus.isConfigured) return false;
+    console.log("KINETIX: INICIANDO SINCRONIZACIÓN CLOUD...");
+    
     try {
-      // 1. Obtener usuarios
+      const s = DataEngine.getStore();
+      
+      // 1. USUARIOS: La verdad absoluta está en la nube
       const { data: users, error: uErr } = await supabase.from('users').select('*');
+      
       if (users && !uErr) {
-        const s = DataEngine.getStore();
-        const localUsers = JSON.parse(s.USERS || '[]');
         const dbUsersFormatted = users.map(u => ({
              id: u.id,
              name: u.name,
@@ -90,20 +94,15 @@ const DataEngine = {
              streak: u.streak,
              createdAt: u.created_at
         }));
-        // Merge inteligente: Mantener locales que no estén en nube (aún)
-        localUsers.forEach((lu: User) => {
-          if (!dbUsersFormatted.find((mu:any) => mu.id === lu.id)) dbUsersFormatted.push(lu);
-        });
+        // Guardamos TODOS los usuarios de la nube en local
         s.USERS = JSON.stringify(dbUsersFormatted);
-        DataEngine.saveStore(s);
       }
 
-      // 2. Obtener Planes (Importante para que el celular vea los planes creados en PC)
+      // 2. PLANES: Descargar TODOS los planes (para que el Coach los vea todos)
       const { data: plans, error: pErr } = await supabase.from('plans').select('*, workouts(*, workout_exercises(*))');
+      
       if (plans && !pErr) {
-        const s = DataEngine.getStore();
         plans.forEach((p: any) => {
-          // Reconstruir estructura completa del Plan
           const fullPlan: Plan = {
             id: p.id,
             title: p.title,
@@ -115,24 +114,26 @@ const DataEngine = {
               day: w.day_number,
               exercises: w.workout_exercises.map((we: any) => ({
                 exerciseId: we.exercise_id,
-                name: '', // Se llenará con cruce de ejercicios
+                name: '', // Se llena dinámicamente en render
                 targetSets: we.target_sets,
                 targetReps: we.target_reps,
                 coachCue: we.coach_cue
               }))
             })).sort((a:any, b:any) => a.day - b.day)
           };
+          // Guardar plan en memoria local del dispositivo
           s[`PLAN_${p.user_id}`] = JSON.stringify(fullPlan);
         });
-        DataEngine.saveStore(s);
       }
 
+      // 3. EJERCICIOS
       const { data: exercises, error: eErr } = await supabase.from('exercises').select('*');
       if (exercises && !eErr && exercises.length > 0) {
-        const s = DataEngine.getStore();
         s.EXERCISES = JSON.stringify(exercises);
-        DataEngine.saveStore(s);
       }
+
+      // GUARDAR TODO EN LOCALSTORAGE DE GOLPE
+      DataEngine.saveStore(s);
       return true;
     } catch (e) {
       console.error("Cloud Pull Error", e);
@@ -141,26 +142,19 @@ const DataEngine = {
   },
 
   saveUser: async (user: User) => {
+    // 1. Guardar Local
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
-    const exists = users.find((u: User) => u.id === user.id);
-    if (!exists) {
-      s.USERS = JSON.stringify([...users, user]);
-      DataEngine.saveStore(s);
-    } else {
-      const idx = users.findIndex((u: User) => u.id === user.id);
-      users[idx] = user;
-      s.USERS = JSON.stringify(users);
-      DataEngine.saveStore(s);
-    }
+    const idx = users.findIndex((u: User) => u.id === user.id);
+    if (idx >= 0) users[idx] = user; else users.push(user);
+    s.USERS = JSON.stringify(users);
+    DataEngine.saveStore(s);
 
-    if (!isUUID(user.id)) {
-      console.warn("NO SE PUEDE GUARDAR USUARIO: ID INVÁLIDO", user.id);
-      return; 
-    }
+    if (!isUUID(user.id)) return; // No intentar subir si ID es inválido
 
+    // 2. Guardar Nube (Upsert)
     try {
-      const { error } = await supabase.from('users').upsert({
+      await supabase.from('users').upsert({
         id: user.id,
         name: user.name,
         email: user.email,
@@ -168,26 +162,24 @@ const DataEngine = {
         goal: user.goal,
         level: user.level,
         days_per_week: user.daysPerWeek,
-        equipment: user.equipment
+        equipment: user.equipment,
+        streak: user.streak
       });
-      if(error) console.error("Cloud Save User Error", error);
-    } catch (e) {}
+    } catch (e) { console.error("Error guardando usuario en nube", e); }
   },
 
   savePlan: async (p: Plan) => {
+    // 1. Guardar Local
     const s = DataEngine.getStore();
     s[`PLAN_${p.userId}`] = JSON.stringify(p);
     DataEngine.saveStore(s);
     
-    if (!isUUID(p.userId)) {
-      console.warn("NO SE PUEDE GUARDAR PLAN: USER ID INVÁLIDO", p.userId);
-      return;
-    }
+    if (!isUUID(p.userId)) return;
 
+    // 2. Guardar Nube
     try {
-      const planUUID = isUUID(p.id) ? p.id : undefined; // Dejar que Supabase genere si es inválido
+      const planUUID = isUUID(p.id) ? p.id : undefined;
       
-      // 1. Guardar Plan Cabecera
       const { data: planData, error: pErr } = await supabase.from('plans').upsert({
         id: planUUID,
         title: p.title,
@@ -198,10 +190,9 @@ const DataEngine = {
       if (pErr) throw pErr;
 
       if (planData) {
-        // 2. Limpiar workouts anteriores para evitar duplicados complejos
+        // Borrar workouts viejos para reescribir limpio
         await supabase.from('workouts').delete().eq('plan_id', planData.id);
         
-        // 3. Insertar Workouts y Ejercicios
         for (const w of p.workouts) {
           const { data: wData } = await supabase.from('workouts').insert({
             plan_id: planData.id,
@@ -212,7 +203,7 @@ const DataEngine = {
           if (wData) {
             const exercisesPayload = w.exercises.map(we => ({
               workout_id: wData.id,
-              exercise_id: we.exerciseId, // ID texto corto (ej: 'c1') está permitido en tabla ejercicios
+              exercise_id: we.exerciseId,
               target_sets: we.targetSets,
               target_reps: we.targetReps,
               coach_cue: we.coachCue
@@ -265,7 +256,6 @@ const DataEngine = {
     const filtered = users.filter((u: any) => u.id !== uid);
     s.USERS = JSON.stringify(filtered);
     delete s[`PLAN_${uid}`];
-    delete s[`LOGS_${uid}`];
     DataEngine.saveStore(s);
     if (isUUID(uid)) {
       supabase.from('users').delete().eq('id', uid).then(({error}) => { if(error) console.error(error); });
@@ -276,17 +266,7 @@ const DataEngine = {
     const s = DataEngine.getStore();
     s.LOGO_URL = url;
     DataEngine.saveStore(s);
-  },
-  exportData: () => {
-    const data = DataEngine.getStore();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `KINETIX_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-  },
-  downloadSQL: () => {}
+  }
 };
 
 export default function App() {
@@ -314,88 +294,31 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // INIT
-  useEffect(() => {
-    DataEngine.init();
+  // Compute chart data from logs
+  const chartData = useMemo(() => {
+    if (!myLogs || myLogs.length === 0) return [];
     
-    // Test connection
-    if (supabaseConnectionStatus.isConfigured) {
-      supabase.from('users').select('count', { count: 'exact', head: true })
-        .then(({ error }) => setDbConnected(!error))
-        .catch(() => setDbConnected(false));
-    }
+    // Create data points
+    const dataPoints = myLogs.map(log => {
+      const dateObj = new Date(log.date);
+      // Volume = sum of (weight > 0 ? weight : 1) * reps for all done sets
+      const vol = log.exercisesData.reduce((acc, ex) => {
+        return acc + ex.sets.reduce((sAcc, s) => {
+          return sAcc + (s.done ? (Math.max(s.weight, 1) * s.reps) : 0);
+        }, 0);
+      }, 0);
+      return { dateObj, vol };
+    });
 
-    const doCloudSync = async () => {
-       setSyncing(true);
-       await DataEngine.pullFromCloud();
-       setSyncing(false);
-       setAllUsers(DataEngine.getUsers());
-       setExercises(DataEngine.getExercises());
-    };
-    doCloudSync();
+    // Sort chronologically
+    dataPoints.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
 
-    const saved = localStorage.getItem(SESSION_KEY);
-    if (saved) {
-      const user = JSON.parse(saved);
-      setCurrentUser(user);
-      setActiveTab(user.role === 'coach' ? 'admin' : 'home');
-    }
-    setIsReady(true);
-  }, []);
-
-  // AUTO-MIGRATION LEGACY ID -> UUID
-  useEffect(() => {
-    if (!isReady || !currentUser) return;
-    
-    // Si el usuario actual tiene un ID viejo (no UUID), migrarlo automáticamente
-    if (!isUUID(currentUser.id)) {
-      console.log("DETECTADO USUARIO LEGACY. INICIANDO MIGRACIÓN CLOUD...");
-      notify("MIGRANDO CUENTA A LA NUBE...");
-      
-      const oldId = currentUser.id;
-      const newId = generateUUID(); // Generar pasaporte válido
-      
-      // 1. Clonar usuario con nuevo ID
-      const updatedUser: User = { ...currentUser, id: newId };
-      
-      // 2. Migrar Planes Locales
-      const oldPlan = DataEngine.getPlan(oldId);
-      if (oldPlan) {
-        const newPlan = { ...oldPlan, userId: newId, id: isUUID(oldPlan.id) ? oldPlan.id : generateUUID() };
-        DataEngine.savePlan(newPlan); // Esto también dispara el guardado en nube si es válido
-        // Limpiar viejo
-        const s = DataEngine.getStore();
-        delete s[`PLAN_${oldId}`];
-        DataEngine.saveStore(s);
-      }
-      
-      // 3. Migrar Logs Locales
-      const oldLogs = DataEngine.getLogs(oldId);
-      if (oldLogs.length > 0) {
-        const newLogs = oldLogs.map(l => ({ 
-          ...l, 
-          userId: newId, 
-          id: isUUID(l.id) ? l.id : generateUUID() 
-        }));
-        // Guardar logs manualmente en local
-        const s = DataEngine.getStore();
-        s[`LOGS_${newId}`] = JSON.stringify(newLogs);
-        delete s[`LOGS_${oldId}`];
-        DataEngine.saveStore(s);
-        
-        // Disparar guardado en nube para cada log (puede tardar, pero es background)
-        newLogs.forEach(l => DataEngine.saveLog(l));
-      }
-
-      // 4. Finalizar
-      DataEngine.deleteUser(oldId);
-      DataEngine.saveUser(updatedUser); // Guardar usuario nuevo en nube
-      setCurrentUser(updatedUser);
-      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
-      
-      setTimeout(() => notify("MIGRACIÓN EXITOSA. YA PUEDES ENTRAR EN MÓVIL"), 2000);
-    }
-  }, [isReady, currentUser, notify]);
+    // Format for Recharts
+    return dataPoints.map(p => ({
+      date: `${p.dateObj.getDate()}/${p.dateObj.getMonth() + 1}`,
+      vol: Math.round(p.vol)
+    }));
+  }, [myLogs]);
 
   const sync = useCallback(() => {
     if (!isReady) return;
@@ -408,19 +331,49 @@ export default function App() {
     }
   }, [currentUser, isReady]);
 
+  // INIT
+  useEffect(() => {
+    DataEngine.init();
+    
+    if (supabaseConnectionStatus.isConfigured) {
+      supabase.from('users').select('count', { count: 'exact', head: true })
+        .then(({ error }) => setDbConnected(!error))
+        .catch(() => setDbConnected(false));
+    }
+
+    // CARGA INICIAL
+    const boot = async () => {
+       await DataEngine.pullFromCloud(); // Intentar traer datos frescos al abrir
+       setAllUsers(DataEngine.getUsers());
+       setExercises(DataEngine.getExercises());
+       
+       const saved = localStorage.getItem(SESSION_KEY);
+       if (saved) {
+         const user = JSON.parse(saved);
+         setCurrentUser(user);
+         setActiveTab(user.role === 'coach' ? 'admin' : 'home');
+       }
+       setIsReady(true);
+    };
+    boot();
+  }, []);
+
   useEffect(() => { sync(); }, [sync]);
 
+  // --- LOGIN ATLETA (CLOUD FIRST) ---
   const handleLogin = async () => {
     const input = loginName.trim().toLowerCase();
     if (!input) return;
     setLoading(true);
 
+    // 1. Forzar búsqueda en nube primero
+    notify("BUSCANDO EN LA RED KINETIX...");
     await DataEngine.pullFromCloud();
-    
-    // Buscar local primero
+
+    // 2. Buscar en datos actualizados
     let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
     
-    // Buscar en nube si no está local
+    // 3. Fallback directo a Supabase por si pullFromCloud falló parcialmente
     if (!found && supabaseConnectionStatus.isConfigured) {
        const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
        if (data) {
@@ -436,32 +389,23 @@ export default function App() {
              streak: data.streak,
              createdAt: data.created_at
           };
-          DataEngine.saveUser(found);
+          DataEngine.saveUser(found); // Guardar para futuro
+          // Intentar traer su plan también
+          await DataEngine.pullFromCloud(); 
        }
     }
+
     setLoading(false);
 
     if (found) {
       setCurrentUser(found);
       localStorage.setItem(SESSION_KEY, JSON.stringify(found));
-      notify(`SESIÓN ONLINE: ${found.name.toUpperCase()}`);
+      notify(`BIENVENIDO, ${found.name.toUpperCase()}`);
       setActiveTab('home');
     } else {
-      if (!supabaseConnectionStatus.isConfigured) {
-         notify("ERROR: FALTAN LLAVES DE VERCEL", 'error');
-      } else {
-         notify(dbConnected ? `USUARIO NO ENCONTRADO EN NUBE` : `SIN CONEXIÓN A BASE DE DATOS`, 'error');
-      }
+      notify("ATLETA NO ENCONTRADO EN LA BASE DE DATOS", 'error');
     }
   };
-
-  const chartData = useMemo(() => {
-    if (!myLogs.length) return [];
-    return myLogs.slice(0, 8).reverse().map(log => ({
-      date: new Date(log.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-      vol: log.exercisesData.reduce((acc, ex) => acc + (ex.sets?.reduce((sAcc, s) => sAcc + (s.weight * (s.reps || 0)), 0) || 0), 0)
-    }));
-  }, [myLogs]);
 
   if (!isReady) return <div className="min-h-screen bg-[#050507] flex items-center justify-center"><RefreshCw className="animate-spin text-red-600" size={40}/></div>;
 
@@ -517,26 +461,13 @@ export default function App() {
                     {loading ? <RefreshCw className="animate-spin"/> : 'IDENTIFICARSE'}
                   </button>
                   
-                  {/* DIAGNÓSTICO DE CONEXIÓN */}
                   <div className="flex flex-col items-center gap-2">
                     <div className="flex justify-center items-center gap-3">
                        <span className={`w-2 h-2 rounded-full ${dbConnected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></span>
                        <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">
                          {supabaseConnectionStatus.isConfigured ? (dbConnected ? 'CLOUD CONNECTED' : 'CLOUD UNREACHABLE') : 'MISSING API KEYS'}
                        </span>
-                       <button onClick={async () => {
-                         setSyncing(true);
-                         await DataEngine.pullFromCloud();
-                         setSyncing(false);
-                         setAllUsers(DataEngine.getUsers());
-                         notify("DATOS ACTUALIZADOS");
-                       }} className="ml-2 text-zinc-500 hover:text-white"><RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /></button>
                     </div>
-                    {!supabaseConnectionStatus.isConfigured && (
-                      <p className="text-[8px] text-red-500 font-bold bg-red-950/30 px-3 py-1 rounded-lg border border-red-500/20">
-                         CONFIGURA "VITE_SUPABASE_URL" EN VERCEL
-                      </p>
-                    )}
                   </div>
                 </div>
              </div>
@@ -547,26 +478,27 @@ export default function App() {
                  type: 'password',
                  callback: async (pin) => {
                    if (pin === 'KINETIX2025') {
-                     // COACH CON ID VÁLIDO (FIX CRÍTICO)
                      const coach: User = { 
-                       id: COACH_UUID, // USAR EL UUID FIJO
+                       id: COACH_UUID, // UUID FIJO
                        name: 'HEAD COACH', email: 'staff@kinetix.com',
                        role: 'coach', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED,
                        daysPerWeek: 7, equipment: ['Full Box'], streak: 100, createdAt: new Date().toISOString()
                      };
                      
-                     notify("AUTENTICANDO STAFF...");
+                     notify("CONECTANDO A BASE DE DATOS...");
                      setLoading(true);
-                     // 1. Guardar/Actualizar Coach en Nube
+                     
+                     // 1. ASEGURAR QUE COACH EXISTE EN NUBE
                      await DataEngine.saveUser(coach);
-                     // 2. Traer últimos datos
+                     
+                     // 2. DESCARGAR ABSOLUTAMENTE TODO (Usuarios y Planes creados en PC)
                      await DataEngine.pullFromCloud();
+                     
                      setLoading(false);
-
                      setCurrentUser(coach);
                      localStorage.setItem(SESSION_KEY, JSON.stringify(coach));
                      setActiveTab('admin');
-                     notify("MODO COACH ACTIVADO");
+                     notify("SINCRONIZACIÓN STAFF COMPLETA");
                    } else notify("PIN INCORRECTO", 'error');
                  }
                })}
@@ -584,9 +516,8 @@ export default function App() {
                    <h2 className="text-6xl font-display italic text-white uppercase leading-none tracking-tighter italic">
                      HOLA, <span className="text-red-600">{currentUser.name.split(' ')[0]}</span>
                    </h2>
-                   {/* Mensaje si el usuario es local y no se ha podido subir */}
                    {!isUUID(currentUser.id) && (
-                     <p className="text-[9px] text-yellow-500 font-bold mt-2 flex items-center gap-2"><AlertTriangle size={10}/> SINCRONIZACIÓN PENDIENTE...</p>
+                     <p className="text-[9px] text-yellow-500 font-bold mt-2 flex items-center gap-2"><AlertTriangle size={10}/> CUENTA LOCAL - CONTACTA AL COACH</p>
                    )}
                 </header>
                 <div className="bg-zinc-900/40 p-8 rounded-[3.5rem] border border-white/5 space-y-8 shadow-2xl relative overflow-hidden">
@@ -668,7 +599,7 @@ export default function App() {
                        await DataEngine.pullFromCloud();
                        sync();
                        setLoading(false);
-                       notify("SINCRONIZACIÓN NUBE COMPLETADA");
+                       notify("DATOS SINCRONIZADOS");
                     }} className="bg-zinc-900 p-6 rounded-[2rem] text-zinc-400 border border-zinc-800 hover:text-white shadow-xl transition-all">
                       <RefreshCw className={loading ? 'animate-spin' : ''} size={28}/>
                     </button>
@@ -692,7 +623,7 @@ export default function App() {
                             };
                             DataEngine.saveUser(u);
                             sync();
-                            notify("NUEVO ATLETA KINETIX");
+                            notify("ATLETA REGISTRADO EN NUBE");
                           }
                         })}
                         className="bg-red-600 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg"
@@ -704,29 +635,8 @@ export default function App() {
                            <div className="text-left space-y-2">
                               <h4 className="text-3xl font-black text-white italic uppercase tracking-tighter leading-none">{u.name}</h4>
                               <span className="text-[9px] text-zinc-700 font-black uppercase px-3 py-1 bg-zinc-950 rounded-xl border border-white/5">{u.level}</span>
-                              {/* Indicador visual si el usuario tiene ID inválido (solo local) */}
-                              {!isUUID(u.id) && (
-                                <span className="ml-2 text-[8px] text-red-500 bg-red-900/20 px-2 py-1 rounded border border-red-500/20">MIGRACIÓN PENDIENTE</span>
-                              )}
                            </div>
                            <div className="flex gap-2">
-                              {/* Force push button - JUST IN CASE */}
-                              <button
-                                onClick={async () => {
-                                  if(!isUUID(u.id)) { notify("EL ID ES ANTIGUO. ENTRA COMO ESTE USUARIO PARA MIGRARLO."); return; }
-                                  setLoading(true);
-                                  await DataEngine.saveUser(u);
-                                  // Re-save plans and logs if needed
-                                  const p = DataEngine.getPlan(u.id);
-                                  if(p) await DataEngine.savePlan(p);
-                                  const logs = DataEngine.getLogs(u.id);
-                                  for(const l of logs) await DataEngine.saveLog(l);
-                                  setLoading(false);
-                                  notify("FORZADO SUBIDA A NUBE");
-                                }}
-                                className="p-5 bg-blue-600/10 text-blue-500 rounded-2xl hover:bg-blue-600 hover:text-white transition-all"
-                              ><Cloud size={24}/></button>
-
                               <button 
                                 onClick={async () => {
                                   setLoading(true);
