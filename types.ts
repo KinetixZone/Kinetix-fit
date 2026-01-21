@@ -25,7 +25,6 @@ export interface User {
   injuries?: string;
   streak: number;
   createdAt: string;
-  hasNewUpdate?: boolean;
 }
 
 export interface Exercise {
@@ -42,7 +41,7 @@ export interface WorkoutExercise {
   name: string;
   targetSets: number;
   targetReps: string;
-  coachCue?: string; // Instrucción específica del coach para este cliente
+  coachCue?: string;
 }
 
 export interface Workout {
@@ -52,14 +51,21 @@ export interface Workout {
   exercises: WorkoutExercise[];
 }
 
+export interface SetLog {
+  weight: number;
+  reps: number;
+  done: boolean;
+}
+
 export interface WorkoutLog {
   id: string;
   workoutId: string;
   userId: string;
   date: string;
-  rpe: number; // Esfuerzo 1-10
-  coachNote?: string; // Comentario del cliente al coach
-  setsData: { exerciseId: string, sets: { w: number, r: number }[] }[];
+  exercisesData: {
+    exerciseId: string;
+    sets: SetLog[];
+  }[];
 }
 
 export interface Plan {
@@ -69,12 +75,4 @@ export interface Plan {
   workouts: Workout[];
   coachNotes?: string;
   updatedAt: string;
-}
-
-export interface KinetixClass {
-  id: string;
-  title: string;
-  date: string;
-  time: string;
-  instructor: string;
 }

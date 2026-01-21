@@ -1,56 +1,71 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "./types";
 
-const getApiKey = () => {
-  return (process?.env as any)?.API_KEY || 
-         localStorage.getItem('KX_CONF_API_KEY') || 
-         '';
-};
-
+/**
+ * Kinetix Intelligent Engine (KIE) v4
+ * Genera rutinas de alto rendimiento basadas en biometría y equipamiento disponible.
+ */
 export async function generateSmartRoutine(user: User) {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
-    throw new Error("API KEY no detectada en Vercel ni en LocalStorage.");
-  }
+  // Uso estricto de process.env.API_KEY de Vercel
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
-  // Siempre instanciamos una nueva conexión para asegurar que use la última llave
-  const ai = new GoogleGenAI({ apiKey });
+  const systemInstruction = `Eres el Head Coach de Kinetix Functional Zone. 
+  Tu estilo es técnico, motivacional y orientado a resultados de élite. 
+  Diseñas planes que optimizan el volumen de carga semanal. 
+  Solo respondes en JSON puro, sin explicaciones.`;
 
-  const prompt = `Actúa como Master Coach de Kinetix Functional Zone.
-  Diseña un plan funcional para:
-  Atleta: ${user.name} | Meta: ${user.goal} | Nivel: ${user.level} | Material: ${user.equipment.join(', ')}
-  
-  Devuelve UNICAMENTE un JSON válido:
+  const prompt = `DISEÑA PROTOCOLO DE ENTRENAMIENTO PARA:
+  ATLETA: ${user.name} | NIVEL: ${user.level} | META: ${user.goal}
+  DÍAS DISPONIBLES: ${user.daysPerWeek} | EQUIPO: ${user.equipment.join(', ')}
+
+  REQUISITOS DEL PROTOCOLO:
+  1. Estructura lógica A/B/C...
+  2. Enfoque en progresión de cargas.
+  3. Cues técnicas breves y agresivas para cada ejercicio.
+  4. Usa IDs estándar (p1, c1, e1, i1, b1, g1, f1, a1) o nombres descriptivos.
+
+  ESQUEMA JSON OBLIGATORIO:
   {
-    "title": "NOMBRE DEL PLAN",
+    "title": "NOMBRE DEL PROGRAMA (Ej: KINETIX X-TREME v4)",
     "workouts": [
       {
-        "name": "DÍA 1: EMPUJE",
+        "id": "w1",
+        "name": "DÍA 1: ENFOQUE FUERZA",
         "day": 1,
         "exercises": [
-          { "exerciseId": "p1", "targetSets": 4, "targetReps": "12", "coachCue": "Baja lento" }
+          { 
+            "exerciseId": "p1", 
+            "name": "Press Plano", 
+            "targetSets": 4, 
+            "targetReps": "8-10", 
+            "coachCue": "Explota en el empuje, controla 3s la bajada" 
+          }
         ]
       }
     ]
-  }
-  Usa exclusivamente estos IDs: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1.`;
+  }`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
+        systemInstruction,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            title: { type: Type.STRING },
+            title: {
+              type: Type.STRING,
+              description: 'Nombre épico del programa.',
+            },
             workouts: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
+                  id: { type: Type.STRING },
                   name: { type: Type.STRING },
                   day: { type: Type.NUMBER },
                   exercises: {
@@ -59,28 +74,30 @@ export async function generateSmartRoutine(user: User) {
                       type: Type.OBJECT,
                       properties: {
                         exerciseId: { type: Type.STRING },
+                        name: { type: Type.STRING },
                         targetSets: { type: Type.NUMBER },
                         targetReps: { type: Type.STRING },
                         coachCue: { type: Type.STRING }
-                      }
+                      },
+                      required: ["exerciseId", "targetSets", "targetReps"]
                     }
                   }
-                }
+                },
+                required: ["id", "name", "day", "exercises"]
               }
             }
-          }
+          },
+          required: ["title", "workouts"],
+          propertyOrdering: ["title", "workouts"],
         }
-      }
+      },
     });
 
-    const text = response.text;
-    if (!text) throw new Error("Respuesta vacía de la IA.");
-    return JSON.parse(text);
-  } catch (error: any) {
-    console.error("Gemini Error:", error);
-    if (error.message?.includes("entity was not found")) {
-      throw new Error("API Key inválida o modelo no encontrado.");
-    }
-    throw new Error("Error conectando con el motor de IA.");
+    // Directly access the .text property (SDK Rule)
+    const jsonStr = response.text?.trim() || '{}';
+    return JSON.parse(jsonStr);
+  } catch (error) {
+    console.error("Kinetix AI Failure:", error);
+    throw new Error("El motor Kinetix AI no respondió satisfactoriamente. Verifica la API_KEY.");
   }
 }
