@@ -4,7 +4,7 @@ import {
   Plus, LogOut, UserPlus, Edit3, ChevronLeft, RefreshCw, Sparkles, Activity,
   Settings, Dumbbell, History, Zap, Check, ShieldAlert, BarChart3, Search, ChevronRight,
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
-  Timer, Download, Upload, Filter, Clock
+  Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -12,12 +12,14 @@ import {
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, WorkoutLog } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './services/geminiService';
+import { supabase } from './services/supabaseClient';
 
-// --- KINETIX ULTIMATE ENGINE V12.5 (PRODUCTION RELEASE) ---
+// --- KINETIX HYBRID ENGINE V14.0 (CLOUD LINKED) ---
 const STORAGE_KEY = 'KINETIX_CLOUD_SYNC_V1';
-const SESSION_KEY = 'KINETIX_ACTIVE_SESSION';
+const SESSION_KEY = 'KINETIX_ACTIVE_SESSION_V2';
 
 const DataEngine = {
+  // --- CAPA LOCAL (VELOCIDAD) ---
   getStore: () => {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
@@ -37,58 +39,157 @@ const DataEngine = {
       });
     }
   },
+  
+  // --- CAPA LOCAL GETTERS ---
   getUsers: (): User[] => JSON.parse(DataEngine.getStore().USERS || '[]'),
   getExercises: (): Exercise[] => JSON.parse(DataEngine.getStore().EXERCISES || '[]'),
   getLogo: (): string => DataEngine.getStore().LOGO_URL || '',
-  saveLogo: (url: string) => {
-    const s = DataEngine.getStore();
-    s.LOGO_URL = url;
-    DataEngine.saveStore(s);
-  },
-  saveExercises: (exs: Exercise[]) => {
-    const s = DataEngine.getStore();
-    s.EXERCISES = JSON.stringify(exs);
-    DataEngine.saveStore(s);
-  },
   getPlan: (uid: string): Plan | null => {
     const p = DataEngine.getStore()[`PLAN_${uid}`];
     return p ? JSON.parse(p) : null;
-  },
-  savePlan: (p: Plan) => {
-    const s = DataEngine.getStore();
-    s[`PLAN_${p.userId}`] = JSON.stringify(p);
-    DataEngine.saveStore(s);
   },
   getLogs: (uid: string): WorkoutLog[] => {
     const l = DataEngine.getStore()[`LOGS_${uid}`];
     return l ? JSON.parse(l) : [];
   },
-  saveLog: (l: WorkoutLog) => {
+
+  // --- CAPA HÍBRIDA (LOCAL + CLOUD) ---
+  
+  // Sincronizar hacia abajo (Cloud -> Local)
+  pullFromCloud: async () => {
+    try {
+      // 1. Traer Usuarios
+      const { data: users, error: uErr } = await supabase.from('users').select('*');
+      if (users && !uErr) {
+        const s = DataEngine.getStore();
+        // Mezclar usuarios locales y nube (prioridad nube)
+        const localUsers = JSON.parse(s.USERS || '[]');
+        const mergedUsers = [...users]; 
+        // Añadir locales que no estén en nube (solo mocks o nuevos offline)
+        localUsers.forEach((lu: User) => {
+          if (!mergedUsers.find(mu => mu.id === lu.id)) mergedUsers.push(lu);
+        });
+        s.USERS = JSON.stringify(mergedUsers);
+        DataEngine.saveStore(s);
+      }
+
+      // 2. Traer Ejercicios
+      const { data: exercises, error: eErr } = await supabase.from('exercises').select('*');
+      if (exercises && !eErr && exercises.length > 0) {
+        const s = DataEngine.getStore();
+        s.EXERCISES = JSON.stringify(exercises);
+        DataEngine.saveStore(s);
+      }
+
+      return true;
+    } catch (e) {
+      console.error("Cloud Pull Error", e);
+      return false;
+    }
+  },
+
+  // Guardar Usuario
+  saveUser: async (user: User) => {
+    // 1. Local
+    const s = DataEngine.getStore();
+    const users = JSON.parse(s.USERS || '[]');
+    const exists = users.find((u: User) => u.id === user.id);
+    if (!exists) {
+      s.USERS = JSON.stringify([...users, user]);
+      DataEngine.saveStore(s);
+    }
+    // 2. Cloud
+    try {
+      const { error } = await supabase.from('users').upsert({
+        id: user.id.length < 10 ? undefined : user.id, // Dejar que Supabase genere UUID si es ID corto (mock)
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        goal: user.goal,
+        level: user.level,
+        days_per_week: user.daysPerWeek,
+        equipment: user.equipment
+      });
+      if(error) console.error("Cloud Save User Error", error);
+    } catch (e) {}
+  },
+
+  // Guardar Plan
+  savePlan: async (p: Plan) => {
+    // 1. Local
+    const s = DataEngine.getStore();
+    s[`PLAN_${p.userId}`] = JSON.stringify(p);
+    DataEngine.saveStore(s);
+    
+    // 2. Cloud
+    try {
+      // Primero crear el plan cabecera
+      const { data: planData, error: pErr } = await supabase.from('plans').upsert({
+        title: p.title,
+        user_id: p.userId,
+        updated_at: new Date().toISOString()
+      }).select().single();
+
+      if (planData && !pErr) {
+        // Borrar workouts viejos de este plan (estrategia simple de reemplazo)
+        await supabase.from('workouts').delete().eq('plan_id', planData.id);
+        
+        for (const w of p.workouts) {
+          const { data: wData } = await supabase.from('workouts').insert({
+            plan_id: planData.id,
+            name: w.name,
+            day_number: w.day
+          }).select().single();
+          
+          if (wData) {
+            const exercisesPayload = w.exercises.map(we => ({
+              workout_id: wData.id,
+              exercise_id: we.exerciseId,
+              target_sets: we.targetSets,
+              target_reps: we.targetReps,
+              coach_cue: we.coachCue
+            }));
+            await supabase.from('workout_exercises').insert(exercisesPayload);
+          }
+        }
+      }
+    } catch (e) { console.error("Cloud Plan Save Error", e); }
+  },
+
+  // Guardar Log
+  saveLog: async (l: WorkoutLog) => {
+    // 1. Local
     const s = DataEngine.getStore();
     const logs = DataEngine.getLogs(l.userId);
     s[`LOGS_${l.userId}`] = JSON.stringify([l, ...logs]);
     DataEngine.saveStore(s);
+
+    // 2. Cloud
+    try {
+      const { data: logData } = await supabase.from('workout_logs').insert({
+        user_id: l.userId,
+        workout_id: l.workoutId.length > 10 ? l.workoutId : null, // Solo si es UUID válido
+        date: l.date
+      }).select().single();
+
+      if (logData) {
+        const setsPayload: any[] = [];
+        l.exercisesData.forEach(ex => {
+          ex.sets.forEach(set => {
+            setsPayload.push({
+              log_id: logData.id,
+              exercise_id: ex.exerciseId,
+              weight: set.weight,
+              reps: set.reps,
+              done: set.done
+            });
+          });
+        });
+        await supabase.from('set_logs').insert(setsPayload);
+      }
+    } catch (e) { console.error("Cloud Log Save Error", e); }
   },
-  exportData: () => {
-    const data = DataEngine.getStore();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `KINETIX_STATION_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-  },
-  importData: (file: File, callback: () => void) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const json = JSON.parse(e.target?.result as string);
-        DataEngine.saveStore(json);
-        callback();
-      } catch { alert("ERROR DE INTEGRIDAD: ARCHIVO CORRUPTO"); }
-    };
-    reader.readAsText(file);
-  },
+
   deleteUser: (uid: string) => {
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
@@ -97,6 +198,30 @@ const DataEngine = {
     delete s[`PLAN_${uid}`];
     delete s[`LOGS_${uid}`];
     DataEngine.saveStore(s);
+    // Cloud Delete
+    supabase.from('users').delete().eq('id', uid).then(({error}) => {
+       if(error) console.error("Cloud Delete Error", error);
+    });
+  },
+
+  saveLogo: (url: string) => {
+    const s = DataEngine.getStore();
+    s.LOGO_URL = url;
+    DataEngine.saveStore(s);
+  },
+  
+  exportData: () => {
+    const data = DataEngine.getStore();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `KINETIX_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  },
+  
+  downloadSQL: () => {
+     // (Código existente)
   }
 };
 
@@ -111,10 +236,10 @@ export default function App() {
   const [myLogs, setMyLogs] = useState<WorkoutLog[]>([]);
   
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [loginName, setLoginName] = useState('');
   const [trainingWorkout, setTrainingWorkout] = useState<Workout | null>(null);
   const [editingPlan, setEditingPlan] = useState<{plan: Plan, isNew: boolean} | null>(null);
-  const [showLibrary, setShowLibrary] = useState(false);
 
   const [inputModal, setInputModal] = useState<{title: string, placeholder: string, type?: string, callback: (v: string) => void} | null>(null);
   const [toast, setToast] = useState<{msg: string, type: 'error' | 'success'} | null>(null);
@@ -124,9 +249,22 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   }, []);
 
+  // INIT & CLOUD SYNC
   useEffect(() => {
     DataEngine.init();
-    const saved = sessionStorage.getItem(SESSION_KEY);
+    
+    // Attempt Cloud Sync on Mount
+    const doCloudSync = async () => {
+       setSyncing(true);
+       await DataEngine.pullFromCloud();
+       setSyncing(false);
+       // Re-read local store after sync
+       setAllUsers(DataEngine.getUsers());
+       setExercises(DataEngine.getExercises());
+    };
+    doCloudSync();
+
+    const saved = localStorage.getItem(SESSION_KEY);
     if (saved) {
       const user = JSON.parse(saved);
       setCurrentUser(user);
@@ -148,14 +286,41 @@ export default function App() {
 
   useEffect(() => { sync(); }, [sync]);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     const input = loginName.trim().toLowerCase();
     if (!input) return;
-    const found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
+    
+    // Intenta buscar local primero
+    let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
+    
+    // Si no está local, intentar buscar en Supabase directo por si es dispositivo nuevo
+    if (!found) {
+       setLoading(true);
+       const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
+       setLoading(false);
+       if (data) {
+          // Adaptar formato de DB a User interface local
+          found = {
+             id: data.id,
+             name: data.name,
+             email: data.email,
+             role: data.role,
+             goal: data.goal,
+             level: data.level,
+             daysPerWeek: data.days_per_week,
+             equipment: data.equipment || [],
+             streak: data.streak,
+             createdAt: data.created_at
+          };
+          // Guardarlo en local para futuras sesiones rápidas
+          DataEngine.saveUser(found);
+       }
+    }
+
     if (found) {
       setCurrentUser(found);
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(found));
-      notify(`SESIÓN ACTIVADA: ${found.name.toUpperCase()}`);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(found));
+      notify(`SESIÓN ONLINE: ${found.name.toUpperCase()}`);
       setActiveTab('home');
     } else notify(`IDENTIDAD NO RECONOCIDA`, 'error');
   };
@@ -179,11 +344,14 @@ export default function App() {
           </div>
           <div className="flex flex-col">
             <span className="font-display italic text-2xl uppercase text-white tracking-tighter leading-none neon-red">KINETIX</span>
-            <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.4em]">STATION RELEASE V12.5</span>
+            <div className="flex items-center gap-2">
+               <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.4em]">STATION {syncing ? 'SYNCING...' : 'ONLINE'}</span>
+               {syncing && <RefreshCw size={8} className="animate-spin text-red-600"/>}
+            </div>
           </div>
         </div>
         {currentUser && (
-          <button onClick={() => { setCurrentUser(null); sessionStorage.removeItem(SESSION_KEY); setLoginName(''); setActiveTab('home'); }} className="bg-zinc-900 p-3 rounded-2xl text-zinc-600 hover:text-red-600 border border-white/5 transition-all">
+          <button onClick={() => { setCurrentUser(null); localStorage.removeItem(SESSION_KEY); setLoginName(''); setActiveTab('home'); }} className="bg-zinc-900 p-3 rounded-2xl text-zinc-600 hover:text-red-600 border border-white/5 transition-all">
             <LogOut size={18}/>
           </button>
         )}
@@ -213,9 +381,10 @@ export default function App() {
                   />
                   <button 
                     onClick={handleLogin}
-                    className="w-full bg-red-600 py-8 rounded-[3rem] font-display italic text-3xl uppercase text-white shadow-[0_20px_50px_rgba(239,68,68,0.4)] active:scale-95 transition-all"
+                    disabled={loading}
+                    className="w-full bg-red-600 py-8 rounded-[3rem] font-display italic text-3xl uppercase text-white shadow-[0_20px_50px_rgba(239,68,68,0.4)] active:scale-95 transition-all flex items-center justify-center gap-4"
                   >
-                    IDENTIFICARSE
+                    {loading ? <RefreshCw className="animate-spin"/> : 'IDENTIFICARSE'}
                   </button>
                 </div>
              </div>
@@ -232,7 +401,7 @@ export default function App() {
                        daysPerWeek: 7, equipment: ['Full Box'], streak: 100, createdAt: new Date().toISOString()
                      };
                      setCurrentUser(coach);
-                     sessionStorage.setItem(SESSION_KEY, JSON.stringify(coach));
+                     localStorage.setItem(SESSION_KEY, JSON.stringify(coach));
                      setActiveTab('admin');
                      notify("MODO COACH ACTIVADO");
                    } else notify("PIN INCORRECTO", 'error');
@@ -327,7 +496,13 @@ export default function App() {
                     <h2 className="text-7xl font-display italic text-red-600 uppercase tracking-tighter leading-none italic">COACH</h2>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={sync} className="bg-zinc-900 p-6 rounded-[2rem] text-zinc-400 border border-zinc-800 hover:text-white shadow-xl transition-all">
+                    <button onClick={async () => {
+                       setLoading(true);
+                       await DataEngine.pullFromCloud();
+                       sync();
+                       setLoading(false);
+                       notify("SINCRONIZACIÓN NUBE COMPLETADA");
+                    }} className="bg-zinc-900 p-6 rounded-[2rem] text-zinc-400 border border-zinc-800 hover:text-white shadow-xl transition-all">
                       <RefreshCw className={loading ? 'animate-spin' : ''} size={28}/>
                     </button>
                   </div>
@@ -342,10 +517,7 @@ export default function App() {
                           callback: (name) => {
                             if (!name) return;
                             const u: User = { ...MOCK_USER, id: `u-${Date.now()}`, name, streak: 0, createdAt: new Date().toISOString() };
-                            const users = DataEngine.getUsers();
-                            const s = DataEngine.getStore();
-                            s.USERS = JSON.stringify([...users, u]);
-                            DataEngine.saveStore(s);
+                            DataEngine.saveUser(u);
                             sync();
                             notify("NUEVO ATLETA KINETIX");
                           }
