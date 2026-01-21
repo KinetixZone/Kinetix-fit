@@ -554,7 +554,7 @@ export default function App() {
                    title: 'STAFF ACCESS',
                    placeholder: 'PIN DE SEGURIDAD',
                    type: 'password',
-                   inputMode: 'numeric',
+                   inputMode: 'text', // FIX: Permitir letras para "KINETIX2025"
                    callback: handleCoachLogin
                  })}
                  className="flex flex-col items-center gap-1 text-zinc-700 hover:text-white transition-colors"
