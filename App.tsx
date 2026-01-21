@@ -7,7 +7,7 @@ import {
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
-  CalendarDays, Trophy, Pencil, Menu, Youtube, Info
+  CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -146,6 +146,16 @@ const DataEngine = {
     if (idx >= 0) users[idx] = user; else users.push(user);
     s.USERS = JSON.stringify(users);
     DataEngine.saveStore(s);
+  },
+
+  deleteUser: (userId: string) => {
+    const s = DataEngine.getStore();
+    let users = JSON.parse(s.USERS || '[]');
+    users = users.filter((u: User) => u.id !== userId);
+    s.USERS = JSON.stringify(users);
+    // También borrar el plan asociado
+    delete s[`PLAN_${userId}`];
+    DataEngine.saveStore(s);
   }
 };
 
@@ -160,6 +170,105 @@ const ConnectionStatus = () => {
     </div>
   );
 };
+
+const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
+  <button 
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${active ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+  >
+    {icon}
+    <span>{label}</span>
+  </button>
+);
+
+const MobileNavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
+  <button 
+    onClick={onClick}
+    className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors ${active ? 'text-red-500' : 'text-gray-500'}`}
+  >
+    <div className={`p-1 rounded-lg ${active ? 'bg-red-500/10' : ''}`}>{icon}</div>
+    <span className="text-[10px] font-bold">{label}</span>
+  </button>
+);
+
+const StatCard = ({ label, value, icon }: { label: string, value: string | number, icon: React.ReactNode }) => (
+  <div className="bg-[#0F0F11] border border-white/5 p-4 rounded-2xl flex flex-col justify-between hover:border-white/10 transition-colors">
+     <div className="flex justify-between items-start mb-2">
+       <span className="text-xs text-gray-500 font-bold uppercase">{label}</span>
+       {icon}
+     </div>
+     <span className="text-2xl font-bold font-display truncate">{value}</span>
+  </div>
+);
+
+// --- PLAN VIEWER COMPONENT (REUSABLE) ---
+const PlanViewer = ({ plan }: { plan: Plan }) => {
+  const [showVideo, setShowVideo] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <h2 className="text-lg font-bold flex items-center gap-2 text-white">
+        <CalendarDays size={18} className="text-red-500" />
+        {plan.title}
+      </h2>
+      <div className="grid md:grid-cols-2 gap-4">
+        {plan.workouts.map((workout) => (
+          <div key={workout.id} className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-colors">
+            <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3">
+              <h3 className="font-bold text-red-400 text-sm">DÍA {workout.day}: {workout.name.toUpperCase()}</h3>
+              <Dumbbell size={16} className="text-gray-600" />
+            </div>
+            <div className="space-y-3">
+              {workout.exercises.map((ex, idx) => (
+                <div key={idx} onClick={() => setShowVideo(ex.name)} className="flex justify-between items-start text-sm group cursor-pointer">
+                  <div className="flex items-start gap-3">
+                    <span className="text-gray-600 font-mono text-xs w-4 mt-0.5">{idx + 1}</span>
+                    <div>
+                      <p className="font-medium group-hover:text-red-400 transition-colors text-white">{ex.name}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                          <span className="bg-white/5 px-1.5 py-0.5 rounded">{ex.targetSets} Sets</span>
+                          <span>x</span>
+                          <span className="bg-white/5 px-1.5 py-0.5 rounded">{ex.targetReps} Reps</span>
+                          {ex.targetLoad && <span className="text-yellow-500 font-bold ml-1">@ {ex.targetLoad}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  {ex.coachCue && <div className="hidden md:block text-[10px] text-gray-500 italic max-w-[150px] text-right">"{ex.coachCue}"</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+       {showVideo && (
+         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6" onClick={() => setShowVideo(null)}>
+            <div className="bg-[#111] w-full max-w-lg rounded-2xl overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
+               <div className="p-4 border-b border-white/10 flex justify-between items-center">
+                  <h3 className="font-bold text-white">{showVideo}</h3>
+                  <button onClick={() => setShowVideo(null)}><X size={20} className="text-white" /></button>
+               </div>
+               <div className="aspect-video bg-black flex items-center justify-center">
+                  <a 
+                    href={DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl || `https://www.youtube.com/results?search_query=${showVideo}+exercise`} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex flex-col items-center gap-2 text-red-500 hover:text-red-400"
+                  >
+                    <Play size={48} />
+                    <span className="text-sm font-bold underline">VER EN YOUTUBE</span>
+                  </a>
+               </div>
+               <div className="p-4 bg-[#0F0F11]">
+                 <p className="text-xs text-gray-400">Toca el enlace para ver la técnica correcta del ejercicio.</p>
+               </div>
+            </div>
+         </div>
+      )}
+    </div>
+  );
+};
+
 
 // LOGIN PAGE
 const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
@@ -572,9 +681,11 @@ export default function App() {
         <nav className="flex-1 px-4 space-y-2">
           <NavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={20} />} label="Dashboard" />
           {currentUser.role === 'coach' && (
-             <NavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+             <>
+                <NavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+                <NavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />
+             </>
           )}
-          <NavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />
         </nav>
         <div className="p-4 border-t border-white/5">
           <button onClick={handleLogout} className="flex items-center gap-3 text-gray-400 hover:text-white transition-colors w-full p-3 rounded-xl hover:bg-white/5">
@@ -585,7 +696,7 @@ export default function App() {
 
       {/* CONTENT */}
       <main className="md:ml-64 p-4 md:p-8 max-w-7xl mx-auto min-h-[calc(100vh-80px)]">
-        {activeTab === 'dashboard' && <DashboardView user={currentUser} onNavigateToClients={() => setActiveTab(currentUser.role === 'coach' ? 'clients' : 'workouts')} />}
+        {activeTab === 'dashboard' && <DashboardView user={currentUser} onNavigateToClients={() => setActiveTab(currentUser.role === 'coach' ? 'clients' : 'dashboard')} />}
         
         {activeTab === 'clients' && currentUser.role === 'coach' && !selectedClientId && (
           <ClientsView onSelectClient={navigateToClient} />
@@ -595,7 +706,7 @@ export default function App() {
           <ClientDetailView clientId={selectedClientId} onBack={() => setSelectedClientId(null)} />
         )}
         
-        {activeTab === 'workouts' && <WorkoutsView />}
+        {activeTab === 'workouts' && currentUser.role === 'coach' && <WorkoutsView />}
         
         {activeTab === 'profile' && (
           <div className="animate-fade-in p-4">
@@ -629,9 +740,11 @@ export default function App() {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-t border-white/10 flex justify-around p-2 z-50 pb-safe shadow-2xl">
         <MobileNavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={20} />} label="Inicio" />
         {currentUser.role === 'coach' && (
-           <MobileNavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+           <>
+             <MobileNavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+             <MobileNavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Entreno" />
+           </>
         )}
-        <MobileNavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Entreno" />
         <MobileNavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<Menu size={20} />} label="Perfil" />
       </nav>
     </div>
@@ -641,9 +754,17 @@ export default function App() {
 // --- VIEW COMPONENTS ---
 
 const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateToClients: () => void }) => {
+  const [athletePlan, setAthletePlan] = useState<Plan | null>(null);
+
+  useEffect(() => {
+    if (user.role === 'client') {
+       setAthletePlan(DataEngine.getPlan(user.id));
+    }
+  }, [user]);
+
   return (
     <div className="space-y-6 animate-fade-in pb-10">
-      <div className="bg-gradient-to-r from-red-900/40 to-black border border-red-500/20 rounded-3xl p-6 relative overflow-hidden group cursor-pointer" onClick={onNavigateToClients}>
+      <div className="bg-gradient-to-r from-red-900/40 to-black border border-red-500/20 rounded-3xl p-6 relative overflow-hidden group cursor-pointer" onClick={user.role === 'coach' ? onNavigateToClients : undefined}>
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-2 text-red-400 font-bold text-sm tracking-wider uppercase">
              <Activity size={16} /> Panel de Control
@@ -654,7 +775,7 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
           </p>
         </div>
         <div className="absolute right-[-20px] top-[-20px] w-40 h-40 bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
-        <ChevronRight className="absolute right-6 top-1/2 -translate-y-1/2 text-white/20 group-hover:text-white transition-colors" size={32} />
+        {user.role === 'coach' && <ChevronRight className="absolute right-6 top-1/2 -translate-y-1/2 text-white/20 group-hover:text-white transition-colors" size={32} />}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
@@ -674,12 +795,17 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
       </div>
 
       {user.role === 'client' && (
-         <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
-            <h3 className="text-lg font-bold mb-4">Tu Plan Actual</h3>
-            {/* Logic to show athlete's plan would call ClientDetailView logic here */}
-            <div className="p-4 bg-white/5 rounded-xl text-center">
-               <p className="text-sm text-gray-400">Consulta la sección de Entreno o contacta a tu Coach.</p>
-            </div>
+         <div className="space-y-4">
+            <h3 className="text-xl font-bold border-b border-white/10 pb-2">Tu Protocolo</h3>
+            {athletePlan ? (
+              <PlanViewer plan={athletePlan} />
+            ) : (
+              <div className="p-8 bg-white/5 rounded-3xl border border-white/5 border-dashed text-center">
+                 <BrainCircuit className="mx-auto text-gray-600 mb-4" size={48} />
+                 <p className="text-gray-400 font-medium">Tu Coach aún no ha asignado un protocolo.</p>
+                 <p className="text-xs text-gray-600 mt-2">Mantente atento.</p>
+              </div>
+            )}
          </div>
       )}
     </div>
@@ -693,7 +819,11 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
     name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4
   });
 
-  useEffect(() => { setUsers(DataEngine.getUsers().filter(u => u.role === 'client')); }, []);
+  const refreshUsers = useCallback(() => {
+     setUsers(DataEngine.getUsers().filter(u => u.role === 'client'));
+  }, []);
+
+  useEffect(() => { refreshUsers(); }, [refreshUsers]);
 
   const handleCreateUser = async () => {
     if (!newUser.name) return;
@@ -703,8 +833,16 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
       daysPerWeek: newUser.daysPerWeek || 4, equipment: [], streak: 0, createdAt: new Date().toISOString()
     };
     await DataEngine.saveUser(userToSave);
-    setUsers(DataEngine.getUsers().filter(u => u.role === 'client'));
+    refreshUsers();
     setShowAddModal(false);
+  };
+
+  const handleDeleteUser = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (window.confirm("¿Estás seguro de eliminar a este atleta y su plan?")) {
+      DataEngine.deleteUser(id);
+      refreshUsers();
+    }
   };
 
   return (
@@ -733,7 +871,12 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
               <h3 className="font-bold text-sm text-white group-hover:text-red-400 transition-colors">{client.name}</h3>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider">{client.goal}</p>
             </div>
-            <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" size={20} />
+            <button 
+               onClick={(e) => handleDeleteUser(e, client.id)} 
+               className="p-2 z-20 text-gray-600 hover:text-red-500 hover:bg-white/10 rounded-full transition-colors"
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
         ))}
       </div>
@@ -765,7 +908,6 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
   const user = useMemo(() => DataEngine.getUserById(clientId), [clientId]);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showVideo, setShowVideo] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
   const refreshPlan = useCallback(() => setPlan(DataEngine.getPlan(clientId)), [clientId]);
@@ -869,167 +1011,121 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <CalendarDays size={18} className="text-red-500" />
-            {plan.title}
-          </h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            {plan.workouts.map((workout) => (
-              <div key={workout.id} className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-colors">
-                <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3">
-                  <h3 className="font-bold text-red-400 text-sm">DÍA {workout.day}: {workout.name.toUpperCase()}</h3>
-                  <Dumbbell size={16} className="text-gray-600" />
-                </div>
-                <div className="space-y-3">
-                  {workout.exercises.map((ex, idx) => (
-                    <div key={idx} onClick={() => setShowVideo(ex.name)} className="flex justify-between items-start text-sm group cursor-pointer">
-                      <div className="flex items-start gap-3">
-                        <span className="text-gray-600 font-mono text-xs w-4 mt-0.5">{idx + 1}</span>
-                        <div>
-                          <p className="font-medium group-hover:text-red-400 transition-colors">{ex.name}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                             <span className="bg-white/5 px-1.5 py-0.5 rounded">{ex.targetSets} Sets</span>
-                             <span>x</span>
-                             <span className="bg-white/5 px-1.5 py-0.5 rounded">{ex.targetReps} Reps</span>
-                             {ex.targetLoad && <span className="text-yellow-500 font-bold ml-1">@ {ex.targetLoad}</span>}
-                          </div>
-                        </div>
-                      </div>
-                      {ex.coachCue && <div className="hidden md:block text-[10px] text-gray-500 italic max-w-[150px] text-right">"{ex.coachCue}"</div>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {showVideo && (
-         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6" onClick={() => setShowVideo(null)}>
-            <div className="bg-[#111] w-full max-w-lg rounded-2xl overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
-               <div className="p-4 border-b border-white/10 flex justify-between items-center">
-                  <h3 className="font-bold">{showVideo}</h3>
-                  <button onClick={() => setShowVideo(null)}><X size={20} /></button>
-               </div>
-               <div className="aspect-video bg-black flex items-center justify-center">
-                  <a 
-                    href={DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl || `https://www.youtube.com/results?search_query=${showVideo}+exercise`} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="flex flex-col items-center gap-2 text-red-500 hover:text-red-400"
-                  >
-                    <Play size={48} />
-                    <span className="text-sm font-bold underline">VER EN YOUTUBE</span>
-                  </a>
-               </div>
-               <div className="p-4 bg-[#0F0F11]">
-                 <p className="text-xs text-gray-400">Toca el enlace para ver la técnica correcta del ejercicio.</p>
-               </div>
-            </div>
-         </div>
+         <PlanViewer plan={plan} />
       )}
     </div>
   );
 };
 
 const WorkoutsView = () => {
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('Todos');
+  const [isAddOpen, setIsAddOpen] = useState(false);
   const [newExercise, setNewExercise] = useState<Partial<Exercise>>({
-    name: '', muscleGroup: 'Pecho', videoUrl: ''
+    name: '', muscleGroup: 'Pecho', videoUrl: '', technique: ''
   });
-  const [searchTerm, setSearchTerm] = useState('');
-  const allExercises = DataEngine.getExercises();
 
-  const handleSaveExercise = () => {
-    if(!newExercise.name || !newExercise.videoUrl) return;
-    const ex: Exercise = {
+  useEffect(() => {
+    setExercises(DataEngine.getExercises());
+  }, []);
+
+  const handleAddExercise = () => {
+     if(!newExercise.name) return;
+     const ex: Exercise = {
        id: generateUUID(),
        name: newExercise.name,
        muscleGroup: newExercise.muscleGroup || 'Pecho',
-       videoUrl: newExercise.videoUrl,
-       technique: '', commonErrors: []
-    };
-    DataEngine.addExercise(ex);
-    setShowAddModal(false);
-    setNewExercise({ name: '', muscleGroup: 'Pecho', videoUrl: '' });
+       videoUrl: newExercise.videoUrl || '',
+       technique: newExercise.technique || '',
+       commonErrors: []
+     };
+     DataEngine.addExercise(ex);
+     setExercises(DataEngine.getExercises());
+     setIsAddOpen(false);
+     setNewExercise({ name: '', muscleGroup: 'Pecho', videoUrl: '', technique: '' });
   };
 
-  const filtered = allExercises.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()) || e.muscleGroup.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filtered = exercises.filter(e => 
+    (filter === 'Todos' || e.muscleGroup === filter) &&
+    e.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const categories = useMemo(() => {
+      const unique = Array.from(new Set(exercises.map(e => e.muscleGroup)));
+      return ['Todos', ...unique];
+  }, [exercises]);
 
   return (
-    <div className="p-4 animate-fade-in pb-20">
+    <div className="animate-fade-in pb-20">
       <div className="flex justify-between items-center mb-6">
-         <h3 className="text-xl font-bold">Biblioteca Global</h3>
-         <button onClick={() => setShowAddModal(true)} className="bg-red-600 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
-            <Plus size={16} /> NUEVO EJERCICIO
+         <h2 className="text-2xl font-bold">Biblioteca de Ejercicios</h2>
+         <button onClick={() => setIsAddOpen(true)} className="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
+           <Plus size={16} /> <span className="hidden md:inline">NUEVO EJERCICIO</span>
          </button>
       </div>
 
-      <div className="relative mb-6">
-         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-         <input 
-           className="w-full bg-[#0F0F11] border border-white/5 rounded-xl pl-10 pr-4 py-3 outline-none focus:border-red-500 transition-colors"
-           placeholder="Buscar por nombre o músculo..."
-           value={searchTerm}
-           onChange={(e) => setSearchTerm(e.target.value)}
-         />
+      <div className="flex flex-col md:flex-row gap-4 mb-6">
+         <div className="flex-1 bg-[#0F0F11] border border-white/5 rounded-xl flex items-center px-4 py-3">
+            <Search size={18} className="text-gray-500" />
+            <input 
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar por nombre..."
+              className="bg-transparent border-none outline-none text-sm ml-2 w-full placeholder-gray-600"
+            />
+         </div>
+         <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+           {categories.map(cat => (
+             <button 
+               key={cat} onClick={() => setFilter(cat)}
+               className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${filter === cat ? 'bg-white text-black' : 'bg-[#0F0F11] text-gray-400 border border-white/5 hover:border-white/20'}`}
+             >
+               {cat}
+             </button>
+           ))}
+         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
          {filtered.map(ex => (
-           <div 
-             key={ex.id} 
-             className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 transition-colors flex justify-between items-center group"
-           >
-             <div>
-               <div className="font-bold text-sm">{ex.name}</div>
-               <div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div>
-             </div>
-             <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-gray-600 hover:text-red-500 p-2">
-                <Youtube size={20} />
-             </a>
+           <div key={ex.id} className="bg-[#0F0F11] border border-white/5 rounded-xl p-4 hover:border-red-500/30 transition-colors group flex justify-between items-start">
+              <div>
+                 <h3 className="font-bold text-sm text-white group-hover:text-red-400 transition-colors">{ex.name}</h3>
+                 <span className="text-[10px] text-gray-500 uppercase bg-white/5 px-2 py-1 rounded mt-2 inline-block font-bold">{ex.muscleGroup}</span>
+              </div>
+              {ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-gray-600 hover:text-red-500 p-2 bg-white/5 rounded-lg"><Play size={16} /></a>}
            </div>
          ))}
       </div>
 
-      {showAddModal && (
-         <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4">
-             <div className="bg-[#111] w-full max-w-sm rounded-2xl p-6 border border-white/10">
-                <h3 className="font-bold text-lg mb-4">Agregar Ejercicio</h3>
-                <div className="space-y-3">
-                   <input className="w-full bg-black border border-white/10 rounded-lg p-3 outline-none" placeholder="Nombre del Ejercicio" value={newExercise.name} onChange={e => setNewExercise({...newExercise, name: e.target.value})} />
-                   <select className="w-full bg-black border border-white/10 rounded-lg p-3 outline-none" value={newExercise.muscleGroup} onChange={e => setNewExercise({...newExercise, muscleGroup: e.target.value})}>
-                      {['Pecho', 'Espalda', 'Cuadriceps', 'Isquiotibiales', 'Biceps', 'Triceps', 'Hombro', 'Glúteo', 'Pantorrilla', 'Abdomen', 'Funcionales', 'Isométricos'].map(m => <option key={m} value={m}>{m}</option>)}
-                   </select>
-                   <input className="w-full bg-black border border-white/10 rounded-lg p-3 outline-none" placeholder="URL de Youtube" value={newExercise.videoUrl} onChange={e => setNewExercise({...newExercise, videoUrl: e.target.value})} />
-                   <div className="flex gap-2 pt-2">
-                      <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-xs text-gray-400">CANCELAR</button>
-                      <button onClick={handleSaveExercise} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-xs">GUARDAR</button>
-                   </div>
-                </div>
-             </div>
-         </div>
+      {isAddOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+           <div className="bg-[#111] border border-white/10 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-fade-in-up">
+              <div className="flex justify-between items-center mb-4">
+                 <h3 className="text-lg font-bold">Nuevo Ejercicio</h3>
+                 <button onClick={() => setIsAddOpen(false)}><X size={20} className="text-gray-400" /></button>
+              </div>
+              <div className="space-y-4">
+                 <div>
+                    <label className="text-[10px] uppercase text-gray-500 font-bold">Nombre</label>
+                    <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none transition-colors" placeholder="Ej: Press Banca" value={newExercise.name} onChange={e => setNewExercise({...newExercise, name: e.target.value})} />
+                 </div>
+                 <div>
+                    <label className="text-[10px] uppercase text-gray-500 font-bold">Grupo Muscular</label>
+                    <select className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm text-gray-300 outline-none" value={newExercise.muscleGroup} onChange={e => setNewExercise({...newExercise, muscleGroup: e.target.value})}>
+                        {categories.filter(c => c !== 'Todos').map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value="Otro">Otro</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="text-[10px] uppercase text-gray-500 font-bold">Video URL</label>
+                    <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none transition-colors" placeholder="https://youtube.com..." value={newExercise.videoUrl} onChange={e => setNewExercise({...newExercise, videoUrl: e.target.value})} />
+                 </div>
+                 <button onClick={handleAddExercise} className="w-full py-3 rounded-xl bg-red-600 text-sm font-bold text-white hover:bg-red-500 transition-colors mt-2">GUARDAR EJERCICIO</button>
+              </div>
+           </div>
+        </div>
       )}
     </div>
   );
 };
-
-// SUB-COMPONENTS
-const NavButton = ({ active, onClick, icon, label }: any) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${active ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-    {icon} <span className="font-medium">{label}</span>
-  </button>
-);
-const MobileNavButton = ({ active, onClick, icon, label }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-1 p-2 w-16 transition-all ${active ? 'text-red-500' : 'text-gray-500'}`}>
-    {icon} <span className="text-[9px] font-bold">{label}</span>
-  </button>
-);
-const StatCard = ({ label, value, icon }: any) => (
-  <div className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex flex-col gap-2 hover:border-white/10 transition-colors">
-    <div className="flex justify-between items-start"><span className="text-gray-500 text-[10px] uppercase font-bold tracking-wider">{label}</span>{icon}</div>
-    <span className="text-lg md:text-2xl font-display font-bold truncate">{value}</span>
-  </div>
-);
