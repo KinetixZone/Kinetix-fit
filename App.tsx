@@ -7,7 +7,7 @@ import {
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
-  CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog
+  CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -167,6 +167,32 @@ const DataEngine = {
     // También borrar el plan asociado
     delete s[`PLAN_${userId}`];
     DataEngine.saveStore(s);
+  },
+
+  // --- PROGRESS TRACKING ---
+  toggleExerciseStatus: (userId: string, workoutId: string, exerciseIndex: number) => {
+    const s = DataEngine.getStore();
+    const key = `TRACK_${userId}`;
+    const tracking = s[key] ? JSON.parse(s[key]) : {};
+    
+    // Structure: { workoutId: [index1, index2] }
+    if (!tracking[workoutId]) tracking[workoutId] = [];
+    
+    if (tracking[workoutId].includes(exerciseIndex)) {
+       tracking[workoutId] = tracking[workoutId].filter((i: number) => i !== exerciseIndex);
+    } else {
+       tracking[workoutId].push(exerciseIndex);
+    }
+    
+    s[key] = JSON.stringify(tracking);
+    DataEngine.saveStore(s);
+  },
+
+  getCompletedExercises: (userId: string, workoutId: string): number[] => {
+    const s = DataEngine.getStore();
+    const key = `TRACK_${userId}`;
+    const tracking = s[key] ? JSON.parse(s[key]) : {};
+    return tracking[workoutId] || [];
   }
 };
 
@@ -212,66 +238,145 @@ const StatCard = ({ label, value, icon }: { label: string, value: string | numbe
   </div>
 );
 
-// --- PLAN VIEWER COMPONENT (REUSABLE) ---
-const PlanViewer = ({ plan }: { plan: Plan }) => {
+// --- PLAN VIEWER COMPONENT (REUSABLE & INTERACTIVE) ---
+const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'athlete' }) => {
   const [showVideo, setShowVideo] = useState<string | null>(null);
+  // Trigger para forzar re-render al marcar checkbox
+  const [updateTick, setUpdateTick] = useState(0); 
+
+  const handleToggle = (workoutId: string, index: number, e: React.MouseEvent) => {
+     e.stopPropagation();
+     if (mode !== 'athlete') return;
+     DataEngine.toggleExerciseStatus(plan.userId, workoutId, index);
+     setUpdateTick(prev => prev + 1);
+  };
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <h2 className="text-lg font-bold flex items-center gap-2 text-white">
-        <CalendarDays size={18} className="text-red-500" />
-        {plan.title}
-      </h2>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold flex items-center gap-2 text-white">
+          <CalendarDays size={20} className="text-red-500" />
+          {plan.title}
+        </h2>
+        {mode === 'athlete' && <span className="text-xs font-bold text-green-400 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/20 animate-pulse-subtle">MODO ENTRENAMIENTO</span>}
+      </div>
+
       <div className="grid md:grid-cols-2 gap-4">
-        {plan.workouts.map((workout) => (
-          <div key={workout.id} className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-colors">
-            <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3">
-              <h3 className="font-bold text-red-400 text-sm">DÍA {workout.day}: {workout.name.toUpperCase()}</h3>
-              <Dumbbell size={16} className="text-gray-600" />
-            </div>
-            <div className="space-y-3">
-              {workout.exercises.map((ex, idx) => (
-                <div key={idx} onClick={() => setShowVideo(ex.name)} className="flex justify-between items-start text-sm group cursor-pointer">
-                  <div className="flex items-start gap-3">
-                    <span className="text-gray-600 font-mono text-xs w-4 mt-0.5">{idx + 1}</span>
-                    <div>
-                      <p className="font-medium group-hover:text-red-400 transition-colors text-white">{ex.name}</p>
-                      <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                          <span className="bg-white/5 px-1.5 py-0.5 rounded">{ex.targetSets} Sets</span>
-                          <span>x</span>
-                          <span className="bg-white/5 px-1.5 py-0.5 rounded">{ex.targetReps} Reps</span>
-                          {ex.targetLoad && <span className="text-yellow-500 font-bold ml-1">@ {ex.targetLoad}</span>}
+        {plan.workouts.map((workout) => {
+          const completedIndices = DataEngine.getCompletedExercises(plan.userId, workout.id);
+          const progress = Math.round((completedIndices.length / workout.exercises.length) * 100) || 0;
+
+          return (
+            <div key={workout.id} className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all shadow-xl shadow-black/20 group relative overflow-hidden">
+              {/* Progress Bar for Athlete */}
+              {mode === 'athlete' && (
+                <div className="absolute top-0 left-0 right-0 h-1 bg-white/5">
+                   <div 
+                     className="h-full bg-gradient-to-r from-red-600 to-yellow-500 transition-all duration-500" 
+                     style={{ width: `${progress}%` }}
+                   />
+                </div>
+              )}
+
+              <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-3 pt-2">
+                <div>
+                   <h3 className="font-bold text-red-400 text-sm tracking-wider">DÍA {workout.day}: {workout.name.toUpperCase()}</h3>
+                   {mode === 'athlete' && <span className="text-[10px] text-gray-500 font-medium">{progress}% Completado</span>}
+                </div>
+                <Dumbbell size={18} className="text-gray-600" />
+              </div>
+
+              <div className="space-y-3">
+                {workout.exercises.map((ex, idx) => {
+                  const isDone = completedIndices.includes(idx);
+                  
+                  return (
+                    <div 
+                      key={idx} 
+                      onClick={() => setShowVideo(ex.name)} 
+                      className={`flex justify-between items-start text-sm cursor-pointer p-3 rounded-xl transition-all border ${isDone ? 'bg-green-500/5 border-green-500/20 opacity-75' : 'bg-transparent border-transparent hover:bg-white/5'}`}
+                    >
+                      <div className="flex items-start gap-3 flex-1">
+                        {/* Checkbox for Athlete */}
+                        {mode === 'athlete' ? (
+                           <button 
+                             onClick={(e) => handleToggle(workout.id, idx, e)}
+                             className={`mt-1 min-w-[20px] h-[20px] rounded-full flex items-center justify-center border transition-all ${isDone ? 'bg-green-500 border-green-500 text-black' : 'border-gray-600 text-transparent hover:border-white'}`}
+                           >
+                              <Check size={12} strokeWidth={4} />
+                           </button>
+                        ) : (
+                           <span className="text-gray-600 font-mono text-xs w-5 mt-1">{idx + 1}</span>
+                        )}
+                        
+                        <div className="flex-1">
+                          <p className={`font-bold text-base transition-colors ${isDone ? 'text-green-400 line-through decoration-green-500/50' : 'text-white'}`}>{ex.name}</p>
+                          
+                          {/* TARGET LOAD HIGHLIGHT */}
+                          {ex.targetLoad && (
+                             <div className="flex items-center gap-2 mt-1 mb-1">
+                                <span className="text-xs font-black text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
+                                   CARGA: {ex.targetLoad}
+                                </span>
+                             </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-400 mt-1">
+                              <span className="bg-white/5 px-2 py-1 rounded font-medium border border-white/5">{ex.targetSets} Sets</span>
+                              <span className="text-gray-600">x</span>
+                              <span className="bg-white/5 px-2 py-1 rounded font-medium border border-white/5">{ex.targetReps} Reps</span>
+                          </div>
+
+                          {ex.coachCue && (
+                            <div className="mt-2 text-xs text-blue-300 italic flex items-start gap-1 bg-blue-900/10 p-2 rounded-lg border border-blue-500/10">
+                               <Info size={12} className="mt-0.5 shrink-0" />
+                               <span>{ex.coachCue}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="text-gray-600 hover:text-white transition-colors pl-2 pt-1">
+                         <Play size={16} />
                       </div>
                     </div>
-                  </div>
-                  {ex.coachCue && <div className="hidden md:block text-[10px] text-gray-500 italic max-w-[150px] text-right">"{ex.coachCue}"</div>}
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
        {showVideo && (
-         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6" onClick={() => setShowVideo(null)}>
-            <div className="bg-[#111] w-full max-w-lg rounded-2xl overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
-               <div className="p-4 border-b border-white/10 flex justify-between items-center">
-                  <h3 className="font-bold text-white">{showVideo}</h3>
-                  <button onClick={() => setShowVideo(null)}><X size={20} className="text-white" /></button>
+         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}>
+            <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+               <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]">
+                  <h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3>
+                  <button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
                </div>
-               <div className="aspect-video bg-black flex items-center justify-center">
+               <div className="aspect-video bg-black flex items-center justify-center relative group">
+                  <div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" />
                   <a 
                     href={DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl || `https://www.youtube.com/results?search_query=${showVideo}+exercise`} 
                     target="_blank" 
                     rel="noreferrer"
-                    className="flex flex-col items-center gap-2 text-red-500 hover:text-red-400"
+                    className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"
                   >
-                    <Play size={48} />
-                    <span className="text-sm font-bold underline">VER EN YOUTUBE</span>
+                    <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40">
+                       <Play size={32} fill="white" className="ml-1" />
+                    </div>
+                    <span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span>
                   </a>
                </div>
-               <div className="p-4 bg-[#0F0F11]">
-                 <p className="text-xs text-gray-400">Toca el enlace para ver la técnica correcta del ejercicio.</p>
+               <div className="p-6 bg-[#0F0F11]">
+                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Instrucciones de Seguridad</h4>
+                 <p className="text-sm text-gray-300 leading-relaxed">
+                    Asegúrate de mantener una postura correcta durante todo el movimiento. 
+                    Si sientes dolor agudo (no muscular), detente inmediatamente.
+                    <br/><br/>
+                    <span className="text-yellow-500 font-bold">Tip Pro:</span> Controla la fase excéntrica (bajada) para mayor hipertrofia.
+                 </p>
                </div>
             </div>
          </div>
@@ -807,7 +912,7 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
          <div className="space-y-4">
             <h3 className="text-xl font-bold border-b border-white/10 pb-2">Tu Protocolo</h3>
             {athletePlan ? (
-              <PlanViewer plan={athletePlan} />
+              <PlanViewer plan={athletePlan} mode="athlete" />
             ) : (
               <div className="p-8 bg-white/5 rounded-3xl border border-white/5 border-dashed text-center">
                  <BrainCircuit className="mx-auto text-gray-600 mb-4" size={48} />
