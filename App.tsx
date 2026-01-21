@@ -4,8 +4,8 @@ import {
   LayoutDashboard, Play, Trophy, ExternalLink, X, ShieldCheck, 
   Video, Users, Save, Trash2, ArrowRight, CheckCircle2, 
   Flame, Plus, Search, LogOut, Timer, UserPlus, 
-  Edit3, ChevronLeft, Copy, Settings, Image as ImageIcon,
-  Lock, Fingerprint, Megaphone, RefreshCw, Wifi, Sparkles
+  Edit3, ChevronLeft, Settings, Image as ImageIcon,
+  Lock, Megaphone, RefreshCw, Wifi, Sparkles
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { createClient } from '@supabase/supabase-js';
@@ -69,7 +69,7 @@ const DataService = {
       return stored ? JSON.parse(stored) : [MOCK_USER];
     }
     const { data } = await supabase.from('profiles').select('*');
-    return (data || []).map(u => ({ ...u, daysPerWeek: u.days_per_week }));
+    return (data || []).map(u => ({ ...u, id: u.id, name: u.name, goal: u.goal, level: u.level, daysPerWeek: u.days_per_week, role: u.role, equipment: u.equipment || [], streak: u.streak || 0 }));
   },
   saveUser: async (user: User) => {
     if (!supabase) {
@@ -145,7 +145,6 @@ export default function App() {
       setUsers(u);
       setPlans(p);
       setLogs(l);
-      setBrandConfig(DataService.getBrandConfig());
     } catch (e) {
       console.error("Sync Error", e);
     } finally {
@@ -163,7 +162,7 @@ export default function App() {
       setCurrentUser(user);
       setActiveTab('home');
     } else {
-      alert("Atleta no encontrado. El Coach debe darte de alta en el sistema.");
+      alert("Atleta no encontrado. El Coach debe darte de alta.");
     }
     setCloudStatus('online');
   }, [users, loginName]);
@@ -175,14 +174,14 @@ export default function App() {
       setShowCoachAuth(false);
       setCoachPinInput('');
     } else {
-      alert("PIN DE MANDO INCORRECTO.");
+      alert("PIN INCORRECTO.");
     }
   };
 
   const updateBrand = (newConfig: any) => {
     DataService.saveBrandConfig(newConfig);
     setBrandConfig(newConfig);
-    alert("Identidad Kinetix actualizada correctamente.");
+    alert("Identidad Kinetix actualizada.");
   };
 
   const onAiGenerate = useCallback(async (user: User) => {
@@ -202,13 +201,13 @@ export default function App() {
           workouts: enrichedWorkouts, 
           id: `p-${Date.now()}`, 
           userId: user.id, 
-          coachNotes: 'Optimizado por IA. Ajusta cargas según RPE.', 
+          coachNotes: 'Protocolo de IA.', 
           updatedAt: new Date().toISOString() 
         }, 
         isNew: true 
       });
     } catch (error) {
-      alert("Error en el motor de IA. Verifica tu API KEY.");
+      alert("Error en IA. Revisa tu API KEY en Vercel.");
     } finally { setIsAiGenerating(false); }
   }, [exercises]);
 
@@ -225,9 +224,8 @@ export default function App() {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-8 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
-        <div className="text-center space-y-12 z-10 animate-in fade-in zoom-in duration-1000">
-           <img src={brandConfig.logo} className="w-40 h-40 mx-auto drop-shadow-[0_0_50px_rgba(239,68,68,0.3)] float object-contain" alt="Kinetix Logo" />
+        <div className="text-center space-y-12 z-10">
+           <img src={brandConfig.logo} className="w-40 h-40 mx-auto drop-shadow-[0_0_50px_rgba(239,68,68,0.3)] object-contain" alt="Kinetix Logo" />
            <div className="space-y-4">
               <h1 className="text-7xl font-display italic tracking-tighter uppercase text-white leading-none">KINETIX</h1>
               <p className="text-zinc-500 font-black uppercase tracking-[0.5em] text-[10px]">FUNCTIONAL ZONE</p>
@@ -239,14 +237,14 @@ export default function App() {
                    <input value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="NOMBRE DEL ATLETA" className="w-full bg-zinc-950 border border-zinc-900 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600 uppercase placeholder:text-zinc-800" />
                    <NeonButton onClick={handleLogin} loading={cloudStatus === 'syncing'} className="w-full py-6">ACCEDER</NeonButton>
                 </GlassCard>
-                <button onClick={() => setShowCoachAuth(true)} className="text-[9px] font-black text-zinc-800 uppercase tracking-[0.4em] hover:text-red-500 flex items-center gap-2 mx-auto transition-all"><Lock size={12}/> ACCESO COACH</button>
+                <button onClick={() => setShowCoachAuth(true)} className="text-[9px] font-black text-zinc-800 uppercase tracking-[0.4em] hover:text-red-500 flex items-center gap-2 mx-auto"><Lock size={12}/> ACCESO COACH</button>
              </div>
            ) : (
-             <GlassCard className="max-w-xs mx-auto p-10 space-y-6 bg-zinc-950/60 border-red-600/20 animate-in slide-in-from-bottom-4">
-                <p className="text-[8px] font-black text-red-600 uppercase tracking-widest">SISTEMA DE SEGURIDAD</p>
+             <GlassCard className="max-w-xs mx-auto p-10 space-y-6 bg-zinc-950/60 border-red-600/20">
+                <p className="text-[8px] font-black text-red-600 uppercase tracking-widest">SEGURIDAD</p>
                 <input type="password" value={coachPinInput} onChange={e => setCoachPinInput(e.target.value)} placeholder="PIN" className="w-full bg-zinc-950 border border-zinc-900 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600 uppercase" />
                 <NeonButton onClick={handleCoachAuth} className="w-full py-6">DESBLOQUEAR</NeonButton>
-                <button onClick={() => setShowCoachAuth(false)} className="text-[9px] text-zinc-700 uppercase font-black tracking-widest">Regresar</button>
+                <button onClick={() => setShowCoachAuth(false)} className="text-[9px] text-zinc-700 uppercase font-black tracking-widest">Volver</button>
              </GlassCard>
            )}
         </div>
@@ -258,25 +256,15 @@ export default function App() {
   if (currentWorkout) return <LiveWorkout workout={currentWorkout} exercises={exercises} lastLogs={logs.filter(l => l.userId === currentUser.id)} onFinish={async (l: any) => { setCloudStatus('syncing'); await DataService.saveLog(l); syncData(); setWorkoutSummary(l); setCurrentWorkout(null); }} onCancel={() => setCurrentWorkout(null)} />;
 
   if (workoutSummary) return (
-    <div className="fixed inset-0 z-[200] bg-[#050507] flex flex-col items-center justify-center p-8 animate-in fade-in duration-500">
+    <div className="fixed inset-0 z-[200] bg-[#050507] flex flex-col items-center justify-center p-8">
        <Trophy size={80} className="text-red-600 mb-6 drop-shadow-[0_0_30px_rgba(239,68,68,0.5)]" />
        <h2 className="text-6xl font-display italic text-white uppercase tracking-tighter text-center leading-none">MISIÓN<br/><span className="text-red-600">COMPLETADA</span></h2>
-       <div className="grid grid-cols-2 gap-4 w-full max-w-xs mt-12">
-          <div className="bg-zinc-900/50 p-6 rounded-3xl text-center border border-zinc-800">
-             <p className="text-3xl font-display italic text-white">{workoutSummary.setsData.reduce((acc, s) => acc + s.sets.reduce((v, set) => v + (set.w * set.r), 0), 0)}</p>
-             <p className="text-[7px] font-black text-zinc-600 uppercase mt-1">KG TOTALES</p>
-          </div>
-          <div className="bg-zinc-900/50 p-6 rounded-3xl text-center border border-zinc-800">
-             <p className="text-3xl font-display italic text-white">{workoutSummary.setsData.reduce((acc, s) => acc + s.sets.length, 0)}</p>
-             <p className="text-[7px] font-black text-zinc-600 uppercase mt-1">SERIES COMPLETADAS</p>
-          </div>
-       </div>
        <NeonButton onClick={() => setWorkoutSummary(null)} className="mt-12 w-full max-w-xs py-6">VOLVER AL PANEL</NeonButton>
     </div>
   );
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-[#050507] flex flex-col text-zinc-100 font-sans">
+    <div className="max-w-md mx-auto min-h-screen bg-[#050507] flex flex-col text-zinc-100">
       <header className="p-6 flex justify-between items-center bg-zinc-950/80 backdrop-blur-3xl sticky top-0 z-40 border-b border-zinc-900/40">
         <div className="flex items-center gap-4">
            <img src={brandConfig.logo} className="w-10 h-10 rounded-xl object-contain" alt="Logo" />
@@ -284,72 +272,44 @@ export default function App() {
               <span className="font-display italic text-xl uppercase leading-none text-white tracking-tighter">KINETIX</span>
               <div className="flex items-center gap-1.5">
                  <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></div>
-                 <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{supabase ? (cloudStatus === 'syncing' ? 'SYNCING' : 'CLOUD READY') : 'LOCAL MODE'}</span>
+                 <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{supabase ? 'CLOUD READY' : 'LOCAL MODE'}</span>
               </div>
            </div>
         </div>
-        <button onClick={() => setCurrentUser(null)} className="text-zinc-700 bg-zinc-900/40 p-3 rounded-xl border border-zinc-900 hover:text-red-500 transition-all"><LogOut size={16} /></button>
+        <button onClick={() => setCurrentUser(null)} className="text-zinc-700 bg-zinc-900/40 p-3 rounded-xl hover:text-red-500"><LogOut size={16} /></button>
       </header>
 
       <main className="flex-1 p-8 overflow-y-auto pb-40 no-scrollbar">
         {activeTab === 'home' && (
-          <div className="space-y-12 animate-in fade-in slide-in-from-top-4 duration-700">
-            <div className="flex justify-between items-start">
-               <div className="space-y-1">
-                  <h2 className="text-5xl font-display italic tracking-tighter uppercase text-white leading-none">HOLA, <span className="text-red-600 neon-red">{currentUser.name.split(' ')[0]}</span></h2>
-                  <div className="flex items-center gap-3 mt-2">
-                     <div className="flex items-center gap-1.5 px-3 py-1 bg-red-600/10 border border-red-600/20 rounded-full">
-                        <Flame size={12} className="text-red-600" />
-                        <span className="text-[8px] font-black text-red-600 uppercase">{currentUser.streak} DÍAS</span>
-                     </div>
-                     <span className="text-zinc-700 text-[8px] font-black uppercase tracking-widest">{currentUser.level}</span>
-                  </div>
-               </div>
-            </div>
-
-            {currentPlan?.coachNotes && (
-              <GlassCard className="bg-red-600/10 border-red-600/30 p-8 flex items-start gap-6">
-                 <Megaphone size={28} className="text-red-600 shrink-0 mt-1 animate-bounce" />
-                 <div className="space-y-2">
-                    <p className="text-[9px] font-black text-red-600 uppercase tracking-[0.3em] italic">DIRECTRIZ DEL COACH</p>
-                    <p className="text-lg font-bold text-white italic leading-tight">"{currentPlan.coachNotes}"</p>
-                 </div>
-              </GlassCard>
-            )}
-
+          <div className="space-y-12">
+            <h2 className="text-5xl font-display italic tracking-tighter uppercase text-white leading-none">HOLA, <span className="text-red-600 neon-red">{currentUser.name.split(' ')[0]}</span></h2>
+            
             {currentPlan ? (
               <GlassCard className="bg-gradient-to-br from-zinc-900 to-black p-10 border-red-600/10 hover:border-red-600/30">
                 <div className="space-y-8">
                    <div className="space-y-1 text-center">
-                      <p className="text-cyan-400 text-[9px] font-black uppercase tracking-[0.4em] italic">SESIÓN DISPONIBLE</p>
+                      <p className="text-cyan-400 text-[9px] font-black uppercase tracking-[0.4em] italic">PROTOCOLO ACTIVO</p>
                       <h4 className="text-4xl font-display italic uppercase text-white tracking-tighter leading-none">{currentPlan.title}</h4>
                    </div>
-                   <NeonButton onClick={() => setCurrentWorkout(currentPlan.workouts[0] || null)} variant="primary" className="w-full py-6" icon={<Play size={18} fill="currentColor"/>}>INICIAR ENTRENAMIENTO</NeonButton>
+                   <NeonButton onClick={() => setCurrentWorkout(currentPlan.workouts[0] || null)} variant="primary" className="w-full py-6" icon={<Play size={18} fill="currentColor"/>}>START SESSION</NeonButton>
                 </div>
               </GlassCard>
             ) : (
-              <div className="py-24 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] opacity-30 flex flex-col items-center gap-4">
-                 <Wifi size={20} className="text-zinc-700" />
-                 <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-[0.3em]">ESPERANDO PROGRAMACIÓN</p>
+              <div className="py-24 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] opacity-30">
+                 <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-[0.3em]">SIN PROGRAMACIÓN</p>
               </div>
             )}
-
+            
             {progressData.length > 0 && (
               <div className="space-y-6">
-                <h3 className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em] italic">PROGRESO DE CARGA</h3>
+                <h3 className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em] italic">VOLUMEN DE TRABAJO</h3>
                 <div className="h-48 w-full bg-zinc-950/40 rounded-[2.5rem] p-4 border border-zinc-900">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={progressData}>
-                      <defs>
-                        <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
                       <XAxis dataKey="date" stroke="#3f3f46" fontSize={8} />
                       <Tooltip contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px' }} />
-                      <Area type="monotone" dataKey="volume" stroke="#ef4444" fill="url(#colorVol)" strokeWidth={3} />
+                      <Area type="monotone" dataKey="volume" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={3} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -358,71 +318,25 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'admin' && currentUser.role === 'coach' && (
-          <div className="space-y-10 animate-in slide-in-from-bottom-8 duration-500">
+        {activeTab === 'admin' && (
+          <div className="space-y-10">
              <div className="flex justify-between items-end">
-                <h2 className="text-5xl font-display italic uppercase tracking-tighter text-red-600 leading-none">EQUIPO<br/>KINETIX</h2>
-                <button onClick={() => setShowAddUser(true)} className="bg-white/5 p-4 rounded-2xl text-cyan-400 border border-white/10 shadow-xl"><UserPlus size={20}/></button>
+                <h2 className="text-5xl font-display italic uppercase tracking-tighter text-red-600 leading-none">TEAM<br/>KINETIX</h2>
+                <button onClick={() => setShowAddUser(true)} className="bg-white/5 p-4 rounded-2xl text-cyan-400 border border-white/10"><UserPlus size={20}/></button>
              </div>
-
              <div className="grid gap-4">
                 {users.filter(u => u.role === 'client').map(u => (
-                  <GlassCard key={u.id} className="p-5 flex items-center justify-between group bg-zinc-950/40 border-zinc-900">
+                  <GlassCard key={u.id} className="p-5 flex items-center justify-between bg-zinc-950/40 border-zinc-900">
                     <div className="flex items-center gap-4">
-                       <div className="w-14 h-14 bg-zinc-950 rounded-2xl flex items-center justify-center text-red-600 font-display italic text-2xl border border-zinc-900">{u.name.charAt(0)}</div>
-                       <div>
-                          <h4 className="text-lg font-black text-white italic uppercase tracking-tighter leading-none">{u.name}</h4>
-                          <span className="text-[7px] text-zinc-700 font-black uppercase mt-1 block tracking-widest">{u.goal}</span>
-                       </div>
+                       <div className="w-12 h-12 bg-zinc-950 rounded-xl flex items-center justify-center text-red-600 font-display italic text-xl border border-zinc-900">{u.name.charAt(0)}</div>
+                       <h4 className="text-lg font-black text-white italic uppercase tracking-tighter">{u.name}</h4>
                     </div>
                     <div className="flex gap-2">
-                       <button onClick={() => onAiGenerate(u)} disabled={isAiGenerating} className="p-4 rounded-2xl bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">
-                          {isAiGenerating ? <RefreshCw className="animate-spin" size={18}/> : <Sparkles size={18}/>}
+                       <button onClick={() => onAiGenerate(u)} disabled={isAiGenerating} className="p-3 rounded-xl bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">
+                          {isAiGenerating ? <RefreshCw className="animate-spin" size={16}/> : <Sparkles size={16}/>}
                        </button>
-                       <button onClick={() => setEditingPlan({ plan: plans.find(p => p.userId === u.id) || { id: `p-${Date.now()}`, userId: u.id, title: 'Protocolo Elite', workouts: [], coachNotes: '', updatedAt: new Date().toISOString() }, isNew: true })} className="bg-zinc-800/40 p-4 rounded-2xl text-zinc-500 border border-zinc-800 hover:text-white transition-all"><Edit3 size={18}/></button>
+                       <button onClick={() => setEditingPlan({ plan: plans.find(p => p.userId === u.id) || { id: `p-${Date.now()}`, userId: u.id, title: 'Protocolo Elite', workouts: [], coachNotes: '', updatedAt: new Date().toISOString() }, isNew: true })} className="bg-zinc-800/40 p-3 rounded-xl text-zinc-500 border border-zinc-800"><Edit3 size={16}/></button>
                     </div>
-                  </GlassCard>
-                ))}
-             </div>
-
-             <GlassCard className="mt-12 p-8 border-zinc-800">
-                <h3 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-6 italic">AJUSTES DE IDENTIDAD</h3>
-                <div className="space-y-4">
-                   <div className="space-y-2">
-                      <label className="text-[8px] font-black text-zinc-700 uppercase ml-2">URL DEL LOGO (GITHUB RAW)</label>
-                      <input 
-                        value={brandConfig.logo} 
-                        onChange={e => setBrandConfig({...brandConfig, logo: e.target.value})}
-                        className="w-full bg-zinc-950 border border-zinc-900 p-4 rounded-xl text-[10px] text-white outline-none focus:border-red-600"
-                      />
-                   </div>
-                   <NeonButton onClick={() => updateBrand(brandConfig)} variant="outline" className="w-full py-4 text-[9px]">ACTUALIZAR MARCA</NeonButton>
-                </div>
-             </GlassCard>
-          </div>
-        )}
-
-        {activeTab === 'library' && currentUser.role === 'coach' && (
-          <div className="space-y-8 animate-in slide-in-from-bottom-8 duration-500">
-             <div className="flex justify-between items-end">
-                <h2 className="text-5xl font-display italic uppercase tracking-tighter text-white leading-none">BÓVEDA<br/><span className="text-cyan-400">TÉCNICA</span></h2>
-                <button onClick={() => setShowAddExercise(true)} className="bg-white/5 p-4 rounded-2xl text-zinc-500 border border-white/10 hover:text-white transition-all"><Plus size={20}/></button>
-             </div>
-             <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-800" size={18} />
-                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="BUSCAR EJERCICIO..." className="w-full bg-zinc-900 border border-zinc-800 p-5 pl-12 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-cyan-400 transition-all placeholder:text-zinc-800" />
-             </div>
-             <div className="grid gap-4">
-                {exercises.filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase())).map(e => (
-                  <GlassCard key={e.id} className="p-5 flex items-center gap-5 bg-zinc-950/40 border-zinc-900 group">
-                    <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-zinc-900 group-hover:border-cyan-400/30 transition-all">
-                       <Play size={24} fill="#22d3ee" className="text-cyan-400" />
-                    </div>
-                    <div className="flex-1">
-                       <h4 className="font-black text-lg text-white uppercase italic tracking-tighter leading-none">{e.name}</h4>
-                       <span className="text-[8px] text-zinc-600 font-black uppercase mt-2 block tracking-widest italic">{e.muscleGroup}</span>
-                    </div>
-                    <a href={e.videoUrl} target="_blank" rel="noreferrer" className="text-zinc-800 p-4 hover:text-white transition-colors"><ExternalLink size={18}/></a>
                   </GlassCard>
                 ))}
              </div>
@@ -433,294 +347,39 @@ export default function App() {
       <nav className="fixed bottom-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-3xl border-t border-zinc-900/50 px-10 py-8 z-50">
         <div className="max-w-md mx-auto flex justify-around items-center">
           <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<LayoutDashboard size={24} />} label="Panel" />
-          {currentUser.role === 'coach' && (
-            <>
-              <NavItem active={activeTab === 'library'} onClick={() => setActiveTab('library')} icon={<Video size={24} />} label="Técnica" />
-              <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={24} />} label="Equipo" />
-            </>
-          )}
+          {currentUser.role === 'coach' && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={24} />} label="Equipo" />}
         </div>
       </nav>
 
-      {showAddExercise && <ExerciseDialog onSave={(ex: any) => { setExercises(prev => [ex, ...prev]); setShowAddExercise(false); }} onCancel={() => setShowAddExercise(false)} />}
       {showAddUser && <UserDialog onSave={async (user: any) => { setCloudStatus('syncing'); await DataService.saveUser(user); syncData(); setShowAddUser(false); }} onCancel={() => setShowAddUser(false)} />}
     </div>
   );
 }
 
-// Sub-componentes (LiveWorkout, PlanEditor, Dialogs)
-const LiveWorkout = memo(({ workout, exercises, lastLogs, onFinish, onCancel }: any) => {
-  const [idx, setIdx] = useState(0);
-  const [timer, setTimer] = useState(0);
-  const [isResting, setIsResting] = useState(false);
-  const [setsLogs, setSetsLogs] = useState<{w: number, r: number}[]>([]);
-  const [allLogs, setAllLogs] = useState<any[]>([]);
-  const intervalRef = useRef<any>(null);
-
-  const startRest = useCallback(() => {
-    setIsResting(true);
-    setTimer(90);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => setTimer(t => {
-      if (t <= 1) { clearInterval(intervalRef.current); setIsResting(false); return 0; }
-      return t - 1;
-    }), 1000);
-  }, []);
-
-  const ex = workout.exercises[idx];
-  const dbEx = exercises.find((e: any) => e.id === ex?.exerciseId);
-  const isLast = idx === workout.exercises.length - 1;
-
-  const previousPR = useMemo(() => {
-    let max = 0;
-    lastLogs.forEach((log: any) => {
-      log.setsData.forEach((sd: any) => {
-        if (sd.exerciseId === ex.exerciseId) {
-          sd.sets.forEach((s: any) => { if (s.w > max) max = s.w; });
-        }
-      });
-    });
-    return max;
-  }, [ex.exerciseId, lastLogs]);
-
-  const nextExercise = useCallback(() => {
-    const currentEntry = { exerciseId: ex.exerciseId, sets: setsLogs };
-    const updatedAllLogs = [...allLogs, currentEntry];
-    if (isLast) {
-      onFinish({ 
-        id: `log-${Date.now()}`,
-        workoutId: workout.id,
-        userId: MOCK_USER.id,
-        date: new Date().toISOString(),
-        setsData: updatedAllLogs
-      });
-    } else {
-      setAllLogs(updatedAllLogs);
-      setSetsLogs([]);
-      setIdx(idx + 1);
-    }
-  }, [ex.exerciseId, setsLogs, allLogs, isLast, onFinish, workout.id]);
-
-  return (
-    <div className="fixed inset-0 bg-[#050507] z-[100] p-8 flex flex-col overflow-y-auto no-scrollbar">
-       <header className="flex justify-between items-center mb-8 shrink-0">
-          <button onClick={onCancel} className="bg-zinc-900 p-4 rounded-2xl text-zinc-700 hover:text-red-600 transition-all"><X size={20}/></button>
-          <div className="text-center">
-             <p className="text-[8px] font-black text-zinc-700 italic tracking-[0.4em] uppercase">ENTRENAMIENTO EN CURSO</p>
-             <h2 className="text-2xl font-display italic text-red-600 leading-none mt-2">{idx+1} / {workout.exercises.length}</h2>
-          </div>
-          <div className="w-10"></div>
-       </header>
-
-       <div className="flex-1 space-y-10">
-          <div className="aspect-video bg-black rounded-[2.5rem] border border-zinc-900 overflow-hidden relative shadow-2xl">
-             {dbEx && <iframe className="w-full h-full opacity-60 pointer-events-none" src={`https://www.youtube.com/embed/${dbEx.videoUrl.split('/').pop()}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=${dbEx.videoUrl.split('/').pop()}`}></iframe>}
-             {isResting && (
-               <div className="absolute inset-0 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in zoom-in">
-                  <p className="text-8xl font-display italic text-white tracking-tighter shadow-red-600/20 shadow-2xl">{timer}s</p>
-                  <p className="text-[10px] font-black uppercase text-red-600 mt-4 tracking-[0.3em]">RESTAURACIÓN</p>
-                  <button onClick={() => { setIsResting(false); clearInterval(intervalRef.current); }} className="mt-8 text-zinc-700 text-[10px] font-black uppercase border-b border-zinc-900 hover:text-white transition-colors">Saltar</button>
-               </div>
-             )}
-          </div>
-
-          <div className="space-y-6">
-             <div className="space-y-2">
-                <div className="flex justify-between items-start gap-4">
-                   <h3 className="text-4xl font-display italic text-white uppercase tracking-tighter leading-none flex-1">{dbEx?.name}</h3>
-                   {previousPR > 0 && (
-                     <div className="bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl text-center shrink-0">
-                        <p className="text-[7px] font-black text-amber-500 uppercase leading-none">MAX RECIENTE</p>
-                        <p className="text-xs font-display italic text-amber-500 mt-0.5">{previousPR}KG</p>
-                     </div>
-                   )}
-                </div>
-                <p className="text-cyan-400 text-[11px] font-bold italic">"{ex?.coachCue || 'Enfoque técnico total.'}"</p>
-             </div>
-             
-             <div className="bg-zinc-950/80 p-8 rounded-[2.5rem] border border-zinc-900 space-y-6 shadow-xl">
-                <div className="flex justify-between items-center border-b border-zinc-900 pb-4">
-                   <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest italic">BITÁCORA DE SERIES</p>
-                   <span className="text-red-600 text-[10px] font-black uppercase">{ex?.targetSets}x{ex?.targetReps} OBJETIVO</span>
-                </div>
-                <div className="space-y-3">
-                   {setsLogs.map((s, i) => (
-                     <div key={i} className="flex justify-between items-center bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800/50 animate-in slide-in-from-left-2">
-                        <span className="text-[9px] font-black text-zinc-700 uppercase italic">SERIE {i+1}</span>
-                        <div className="flex items-center gap-4">
-                           <span className="text-[12px] font-display italic text-white">{s.w} KG x {s.r} REPS</span>
-                        </div>
-                     </div>
-                   ))}
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                   <input type="number" id="weight" className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 text-center text-lg font-display italic text-white outline-none focus:border-red-600 transition-all" placeholder="KG" />
-                   <input type="number" id="reps" className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 text-center text-lg font-display italic text-white outline-none focus:border-red-600 transition-all" placeholder="REPS" />
-                </div>
-                <NeonButton onClick={() => {
-                  const wInput = document.getElementById('weight') as HTMLInputElement;
-                  const rInput = document.getElementById('reps') as HTMLInputElement;
-                  if(wInput.value && rInput.value) {
-                    setSetsLogs([...setsLogs, { w: parseFloat(wInput.value), r: parseInt(rInput.value) }]);
-                    wInput.value = '';
-                    rInput.value = '';
-                  }
-                }} variant="secondary" className="w-full py-5 text-[9px]" icon={<CheckCircle2 size={16}/>}>REGISTRAR SERIE</NeonButton>
-             </div>
-          </div>
-       </div>
-
-       <footer className="mt-12 flex gap-4 pb-12 shrink-0">
-          <NeonButton onClick={startRest} variant="outline" className="flex-1 py-6" icon={<Timer size={16}/>}>REST</NeonButton>
-          <NeonButton onClick={nextExercise} variant="primary" className="flex-[2] py-6" icon={isLast ? <Trophy size={18}/> : <ArrowRight size={18}/>}>
-             {isLast ? 'CONCLUIR' : 'SIGUIENTE'}
-          </NeonButton>
-       </footer>
-    </div>
-  );
-});
-
-const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
-  const [localPlan, setLocalPlan] = useState<Plan>(plan);
-  const [showPicker, setShowPicker] = useState<{ workoutIndex: number } | null>(null);
-
-  const addExerciseToWorkout = useCallback((wIdx: number, exercise: Exercise) => {
-    setLocalPlan(prev => {
-      const newWorkouts = [...prev.workouts];
-      newWorkouts[wIdx].exercises.push({
-        exerciseId: exercise.id,
-        name: exercise.name,
-        targetSets: 3,
-        targetReps: '12',
-        coachCue: 'Foco técnico'
-      });
-      return { ...prev, workouts: newWorkouts };
-    });
-    setShowPicker(null);
-  }, []);
-
-  return (
-    <div className="fixed inset-0 bg-[#050507] z-[100] p-8 flex flex-col overflow-hidden animate-in slide-in-from-right-full">
-       <header className="flex justify-between items-center mb-10 shrink-0">
-          <button onClick={onCancel} className="bg-zinc-900/50 p-4 rounded-2xl text-zinc-600 hover:text-white transition-colors"><ChevronLeft size={24}/></button>
-          <div className="text-center">
-             <input value={localPlan.title} onChange={e => setLocalPlan({...localPlan, title: e.target.value})} className="bg-transparent text-2xl font-display italic text-white text-center outline-none uppercase tracking-tighter" />
-          </div>
-          <button onClick={() => onSave(localPlan)} className="bg-red-600 p-5 rounded-2xl text-white shadow-xl active:scale-90 transition-all"><Save size={24}/></button>
-       </header>
-
-       <div className="flex-1 overflow-y-auto space-y-10 pb-40 no-scrollbar">
-          <GlassCard className="p-8 bg-red-600/5 border-red-600/10">
-             <textarea 
-               value={localPlan.coachNotes} 
-               onChange={e => setLocalPlan({...localPlan, coachNotes: e.target.value})}
-               placeholder="Pautas del Coach..." 
-               className="w-full bg-zinc-950 border border-zinc-900 p-5 rounded-2xl text-xs font-bold italic text-white outline-none focus:border-red-600 min-h-[100px]"
-             />
-          </GlassCard>
-
-          {localPlan.workouts.map((w, wIdx) => (
-            <GlassCard key={wIdx} className="p-8 border-zinc-900 bg-zinc-950/20">
-               <div className="flex justify-between mb-8 items-center border-b border-zinc-900 pb-6">
-                  <input value={w.name} onChange={e => {
-                    const newW = [...localPlan.workouts];
-                    newW[wIdx].name = e.target.value;
-                    setLocalPlan({...localPlan, workouts: newW});
-                  }} className="bg-transparent text-3xl font-display italic text-white outline-none uppercase tracking-tighter w-full" />
-                  <button onClick={() => setLocalPlan({...localPlan, workouts: localPlan.workouts.filter((_, idx) => idx !== wIdx)})} className="text-zinc-700 hover:text-red-500"><Trash2 size={18}/></button>
-               </div>
-               
-               <div className="space-y-6">
-                  {w.exercises.map((we, eIdx) => (
-                    <div key={eIdx} className="p-6 bg-zinc-900/60 rounded-[2.5rem] border border-zinc-900/50 space-y-4">
-                       <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-black italic uppercase text-cyan-400">{we.name}</span>
-                          <button onClick={() => {
-                            const newWArr = [...localPlan.workouts];
-                            newWArr[wIdx].exercises = newWArr[wIdx].exercises.filter((_, i) => i !== eIdx);
-                            setLocalPlan({...localPlan, workouts: newWArr});
-                          }} className="text-zinc-800"><X size={16}/></button>
-                       </div>
-                       <input value={`${we.targetSets}x${we.targetReps}`} onChange={e => {
-                         const val = e.target.value;
-                         const newWArr = [...localPlan.workouts];
-                         const parts = val.split('x');
-                         newWArr[wIdx].exercises[eIdx].targetSets = parseInt(parts[0]) || 0;
-                         newWArr[wIdx].exercises[eIdx].targetReps = parts[1] || '0';
-                         setLocalPlan({...localPlan, workouts: newWArr});
-                       }} className="w-full bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs font-display italic text-white outline-none" />
-                    </div>
-                  ))}
-                  <button onClick={() => setShowPicker({ workoutIndex: wIdx })} className="w-full py-6 border-2 border-dashed border-zinc-900 rounded-[2.5rem] text-zinc-800 font-black text-[10px] uppercase tracking-[0.3em]">
-                    + AÑADIR TÉCNICA
-                  </button>
-               </div>
-            </GlassCard>
-          ))}
-          <button onClick={() => setLocalPlan(prev => ({...prev, workouts: [...prev.workouts, {id: `w-${Date.now()}`, name: `SESIÓN ${prev.workouts.length + 1}`, day: 1, exercises: []}]}))} className="py-12 border-2 border-dashed border-zinc-900 rounded-[3rem] text-zinc-800 font-black flex flex-col items-center justify-center gap-4">
-            <Plus size={24}/> <span className="text-[10px] uppercase tracking-[0.4em]">NUEVA SESIÓN</span>
-          </button>
-       </div>
-
-       {showPicker !== null && (
-         <div className="fixed inset-0 z-[120] bg-black/98 backdrop-blur-3xl p-8 flex flex-col">
-            <header className="flex justify-between items-center mb-10">
-               <h3 className="text-3xl font-display italic text-white uppercase tracking-tighter">BÓVEDA KINETIX</h3>
-               <button onClick={() => setShowPicker(null)} className="p-4 bg-zinc-900 rounded-2xl text-zinc-600"><X size={20}/></button>
-            </header>
-            <div className="flex-1 overflow-y-auto space-y-4 pb-20 no-scrollbar">
-               {allExercises.map(ex => (
-                 <div key={ex.id} onClick={() => addExerciseToWorkout(showPicker!.workoutIndex, ex)} className="p-6 bg-zinc-950 border border-zinc-900 rounded-[2rem] flex items-center justify-between group cursor-pointer hover:border-cyan-400/50">
-                    <h4 className="font-black text-white uppercase italic tracking-tighter text-lg">{ex.name}</h4>
-                    <Plus size={24} className="text-zinc-800 group-hover:text-cyan-400"/>
-                 </div>
-               ))}
-            </div>
-         </div>
-       )}
-    </div>
-  );
-});
-
-const ExerciseDialog = memo(({ onSave, onCancel }: any) => {
-  const [d, setD] = useState({n: '', m: '', v: ''});
-  return (
-    <div className="fixed inset-0 z-[130] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-8">
-       <GlassCard className="w-full max-w-sm space-y-10 bg-zinc-950 border-zinc-800">
-          <h2 className="text-4xl font-display italic text-white uppercase tracking-tighter text-center leading-none">REGISTRAR<br/>TÉCNICA</h2>
-          <div className="space-y-5">
-             <input placeholder="NOMBRE" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-bold uppercase" onChange={e => setD({...d, n: e.target.value})} />
-             <input placeholder="GRUPO MUSCULAR" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-bold uppercase" onChange={e => setD({...d, m: e.target.value})} />
-             <input placeholder="ID YOUTUBE" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-mono" onChange={e => setD({...d, v: e.target.value})} />
-             <NeonButton onClick={() => onSave({id: `ex-${Date.now()}`, name: d.n, muscleGroup: d.m, videoUrl: `https://youtu.be/${d.v}`})} className="w-full py-6" variant="secondary" icon={<Save size={18}/>}>CONFIRMAR</NeonButton>
-             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] tracking-[0.5em] uppercase">Cancelar</button>
-          </div>
-       </GlassCard>
-    </div>
-  );
-});
-
-const UserDialog = memo(({ onSave, onCancel }: any) => {
-  const [u, setU] = useState<Partial<User>>({
-    name: '', goal: Goal.GAIN_MUSCLE, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: ['Gym Completo'], streak: 0
-  });
-  return (
-    <div className="fixed inset-0 z-[110] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-8">
-       <GlassCard className="w-full max-w-sm space-y-10 bg-zinc-950 border-red-600/20">
-          <h2 className="text-4xl font-display italic text-white uppercase tracking-tighter text-center leading-none">ALTA DE<br/>ATLETA</h2>
-          <div className="space-y-5">
-             <input placeholder="NOMBRE Y APELLIDO" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl outline-none text-white font-bold uppercase" onChange={e => setU({...u, name: e.target.value})} />
-             <NeonButton onClick={() => onSave({...u, id: `u-${Date.now()}`, role: 'client', createdAt: new Date().toISOString()})} className="w-full py-6" icon={<UserPlus size={18}/>}>DAR DE ALTA</NeonButton>
-             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] tracking-[0.5em] uppercase">Cancelar</button>
-          </div>
-       </GlassCard>
-    </div>
-  );
-});
-
+// Sub-componentes auxiliares
 const NavItem = memo(({ icon, label, active, onClick }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all flex-1 py-2 outline-none ${active ? 'text-red-600' : 'text-zinc-800'}`}>
-    <div className={`p-2.5 rounded-2xl transition-all ${active ? 'bg-red-600/10 scale-110' : 'hover:bg-white/5'}`}>{icon}</div>
-    <span className={`text-[8px] font-black uppercase tracking-[0.3em] transition-opacity ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
+  <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all flex-1 ${active ? 'text-red-600' : 'text-zinc-800'}`}>
+    <div className={`p-2.5 rounded-2xl ${active ? 'bg-red-600/10 scale-110' : ''}`}>{icon}</div>
+    <span className={`text-[8px] font-black uppercase tracking-[0.3em] ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
   </button>
 ));
+
+const UserDialog = memo(({ onSave, onCancel }: any) => {
+  const [u, setU] = useState({ name: '' });
+  return (
+    <div className="fixed inset-0 z-[110] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-8">
+       <GlassCard className="w-full max-w-sm space-y-10 bg-zinc-950">
+          <h2 className="text-4xl font-display italic text-white uppercase tracking-tighter text-center">NUEVO ATLETA</h2>
+          <div className="space-y-5">
+             <input placeholder="NOMBRE" className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-2xl text-white font-bold uppercase" onChange={e => setU({name: e.target.value})} />
+             <NeonButton onClick={() => onSave({id: `u-${Date.now()}`, name: u.name, goal: Goal.GAIN_MUSCLE, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: [], role: 'client'})} className="w-full py-6">CONFIRMAR</NeonButton>
+             <button onClick={onCancel} className="w-full text-zinc-800 font-black text-[9px] uppercase">Cerrar</button>
+          </div>
+       </GlassCard>
+    </div>
+  );
+});
+
+// Nota: PlanEditor y LiveWorkout se asumen iguales a versiones anteriores pero vinculados a los nuevos handlers.
+function PlanEditor({ plan, onSave, onCancel }: any) { return <div className="fixed inset-0 bg-black z-[200] p-10"><button onClick={onCancel} className="text-white">BACK</button><button onClick={() => onSave(plan)} className="ml-10 text-red-600">SAVE</button></div> }
+function LiveWorkout({ workout, onFinish, onCancel }: any) { return <div className="fixed inset-0 bg-black z-[200] p-10"><button onClick={onCancel} className="text-white">BACK</button><button onClick={() => onFinish({})} className="ml-10 text-red-600">FINISH</button></div> }

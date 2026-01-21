@@ -6,7 +6,7 @@ export async function generateSmartRoutine(user: User) {
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("API_KEY no configurada.");
+    throw new Error("API_KEY de Gemini no detectada. Configúrala en Vercel.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -19,8 +19,8 @@ export async function generateSmartRoutine(user: User) {
   - Equipamiento: ${user.equipment.join(', ')}
   
   REQUISITOS TÉCNICOS:
-  1. Títulos de los Workouts impactantes.
-  2. coachCue cortos (ej: "Foco excéntrico").
+  1. Títulos de los Workouts impactantes (ej: "SISTEMA A: POTENCIA").
+  2. coachCue cortos (ej: "Controlar el descenso").
   3. Usa SOLO estos IDs: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
   
   Responde con un JSON puro que siga el esquema proporcionado.`;
