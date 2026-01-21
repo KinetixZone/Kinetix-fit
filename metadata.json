@@ -1,0 +1,25 @@
+{
+  "name": "Kinetix Functional Zone",
+  "short_name": "Kinetix",
+  "description": "Plataforma de alto rendimiento para atletas y coaches de Kinetix.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050507",
+  "theme_color": "#ef4444",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
