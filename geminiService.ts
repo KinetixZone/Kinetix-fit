@@ -2,9 +2,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "./types";
 
 const getApiKey = () => {
+  // Intentamos obtener la llave de Vercel o del almacenamiento local de emergencia
   return (process?.env as any)?.API_KEY || 
-         (window as any)?.process?.env?.API_KEY || 
-         localStorage.getItem('KX_BACKUP_API_KEY') || 
+         localStorage.getItem('KX_CONFIG_API_KEY') || 
          '';
 };
 
@@ -12,15 +12,18 @@ export async function generateSmartRoutine(user: User) {
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    throw new Error("No se detectó la API_KEY. Por favor, usa el panel de configuración.");
+    throw new Error("API KEY no detectada. Por favor, configúrala en el panel de Ajustes.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Actúa como Master Coach de Kinetix Functional Zone.
-  Crea un plan para: Atleta: ${user.name}, Meta: ${user.goal}, Nivel: ${user.level}, Material: ${user.equipment.join(', ')}.
+  Atleta: ${user.name}
+  Meta: ${user.goal}
+  Nivel: ${user.level}
+  Material: ${user.equipment.join(', ')}
   
-  JSON Requerido:
+  Devuelve un JSON estrictamente válido:
   {
     "title": "NOMBRE DEL PLAN",
     "workouts": [
@@ -28,12 +31,12 @@ export async function generateSmartRoutine(user: User) {
         "name": "SESIÓN X",
         "day": 1,
         "exercises": [
-          { "exerciseId": "p1", "targetSets": 4, "targetReps": "12", "coachCue": "Instrucción" }
+          { "exerciseId": "p1", "targetSets": 4, "targetReps": "12", "coachCue": "Instrucción técnica" }
         ]
       }
     ]
   }
-  Usa solo IDs: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1.`;
+  Usa solo estos IDs: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -74,6 +77,6 @@ export async function generateSmartRoutine(user: User) {
     return JSON.parse(response.text);
   } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("Error en el motor de IA. Revisa tu API Key.");
+    throw new Error("Error en el motor de IA. Revisa tu API Key de Gemini.");
   }
 }

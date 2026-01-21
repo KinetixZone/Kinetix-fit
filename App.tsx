@@ -1,22 +1,20 @@
-import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, 
   Users, Save, Trash2, ArrowRight, CheckCircle2, 
   Plus, LogOut, UserPlus, 
   Edit3, ChevronLeft, RefreshCw, Sparkles, Activity,
-  AlertTriangle, MessageSquare, Database, Settings, ShieldAlert
+  AlertTriangle, MessageSquare, Database, Settings, ShieldAlert, Check
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { User, Plan, Workout, Exercise, Goal, UserLevel } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './geminiService';
 
-// --- SISTEMA DE CONFIGURACIÓN ROBUSTO ---
+// --- CONFIGURACIÓN ROBUSTA ---
 const getEnv = (key: string) => {
-  return (process?.env as any)?.[key] || 
-         (window as any)?.process?.env?.[key] || 
-         localStorage.getItem(`KX_BACKUP_${key}`) || 
-         '';
+  // Prioridad 1: process.env (Vercel) | Prioridad 2: localStorage (Bypass manual)
+  return (process?.env as any)?.[key] || localStorage.getItem(`KX_CONFIG_${key}`) || '';
 };
 
 const CONFIG = {
@@ -25,8 +23,11 @@ const CONFIG = {
   geminiKey: getEnv('API_KEY')
 };
 
-const isConfigComplete = !!(CONFIG.supabaseUrl && CONFIG.supabaseKey && CONFIG.geminiKey);
-const supabase = (CONFIG.supabaseUrl && CONFIG.supabaseKey) ? createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey) : null;
+// Determinar si el sistema tiene todo para funcionar en la nube
+const isCloudReady = !!(CONFIG.supabaseUrl && CONFIG.supabaseKey);
+const isAiReady = !!CONFIG.geminiKey;
+
+const supabase = isCloudReady ? createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey) : null;
 
 const DataService = {
   getPlans: async (): Promise<Plan[]> => {
@@ -78,7 +79,26 @@ const DataService = {
   }
 };
 
-// --- COMPONENTES UI ---
+// --- COMPONENTES UI ATÓMICOS ---
+
+// Input especial que no pierde el foco
+const StableInput = memo(({ value, onChange, placeholder, className }: any) => {
+  const [localValue, setLocalValue] = useState(value);
+  useEffect(() => { setLocalValue(value); }, [value]);
+  
+  return (
+    <input 
+      value={localValue} 
+      onChange={(e) => {
+        setLocalValue(e.target.value);
+        onChange(e.target.value);
+      }}
+      placeholder={placeholder}
+      className={className}
+    />
+  );
+});
+
 const NeonButton = memo(({ children, onClick, variant = 'primary', className = '', loading = false, icon, disabled = false }: any) => {
   const base = "relative overflow-hidden px-6 py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-3 text-[10px] uppercase tracking-[0.2em] active:scale-95 disabled:opacity-30 group shrink-0 select-none";
   const styles = {
@@ -108,7 +128,7 @@ export default function App() {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [coachPin, setCoachPin] = useState('');
   const [showCoachAuth, setShowCoachAuth] = useState(false);
-  const [showSetup, setShowSetup] = useState(!isConfigComplete);
+  const [showSetup, setShowSetup] = useState(!isCloudReady || !isAiReady);
 
   const [exercises] = useState<Exercise[]>(INITIAL_EXERCISES);
   const [users, setUsers] = useState<User[]>([]);
@@ -130,29 +150,31 @@ export default function App() {
     else { alert("Atleta no registrado."); }
   }, [users, loginName]);
 
+  // Pantalla de Configuración Manual (Solo si faltan las llaves)
   if (showSetup) {
     return (
       <div className="min-h-screen bg-[#050507] flex items-center justify-center p-8">
         <GlassCard className="w-full max-w-sm space-y-8 border-red-600/20">
           <div className="flex items-center gap-3 text-red-600">
             <ShieldAlert size={28} />
-            <h2 className="text-2xl font-display italic uppercase">SETUP REQUERIDO</h2>
+            <h2 className="text-2xl font-display italic uppercase">CONFIGURACIÓN</h2>
           </div>
           <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest leading-relaxed">
-            Vercel no está inyectando las llaves correctamente. Introdúcelas aquí una vez para activar el sistema.
+            Ingresa las llaves si el servidor no las provee. Se guardarán en este dispositivo.
           </p>
           <div className="space-y-4">
-            <SetupInput label="SUPABASE_URL" id="SUPABASE_URL" />
-            <SetupInput label="SUPABASE_ANON_KEY" id="SUPABASE_ANON_KEY" />
-            <SetupInput label="API_KEY (GEMINI)" id="API_KEY" />
+            <SetupInput label="SUPABASE_URL" envKey="SUPABASE_URL" />
+            <SetupInput label="SUPABASE_ANON_KEY" envKey="SUPABASE_ANON_KEY" />
+            <SetupInput label="API_KEY (GEMINI)" envKey="API_KEY" />
           </div>
           <NeonButton onClick={() => window.location.reload()} className="w-full py-6">GUARDAR Y RECARGAR</NeonButton>
-          <button onClick={() => setShowSetup(false)} className="w-full text-[9px] font-black text-zinc-700 uppercase tracking-widest">Ignorar (Modo Offline)</button>
+          <button onClick={() => setShowSetup(false)} className="w-full text-[9px] font-black text-zinc-700 uppercase tracking-widest">Entrar sin Configuración</button>
         </GlassCard>
       </div>
     );
   }
 
+  // Pantalla de Login
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-8">
@@ -166,11 +188,11 @@ export default function App() {
              <div className="space-y-6">
                 <GlassCard className="max-w-xs mx-auto p-10 space-y-6 border-zinc-800">
                    <input value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="NOMBRE DEL ATLETA" className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600 uppercase" />
-                   <NeonButton onClick={handleLogin} className="w-full py-6">ACCEDER AL PANEL</NeonButton>
+                   <NeonButton onClick={handleLogin} className="w-full py-6">ENTRAR</NeonButton>
                 </GlassCard>
                 <div className="flex flex-col gap-4">
                   <button onClick={() => setShowCoachAuth(true)} className="text-[9px] font-black text-zinc-800 uppercase tracking-widest hover:text-red-500 transition-all">ACCESO COACH</button>
-                  <button onClick={() => setShowSetup(true)} className="text-[8px] font-black text-zinc-900 uppercase tracking-widest flex items-center justify-center gap-2"><Settings size={12}/> Configuración</button>
+                  <button onClick={() => setShowSetup(true)} className="text-[8px] font-black text-zinc-900 uppercase tracking-widest flex items-center justify-center gap-2 opacity-50"><Settings size={12}/> Ajustes de Sistema</button>
                 </div>
              </div>
            ) : (
@@ -184,7 +206,7 @@ export default function App() {
                     setShowCoachAuth(false);
                   } else { alert("PIN Incorrecto"); }
                 }} className="w-full py-6">DESBLOQUEAR</NeonButton>
-                <button onClick={() => setShowCoachAuth(false)} className="text-[9px] text-zinc-700 uppercase font-black">Cerrar</button>
+                <button onClick={() => setShowCoachAuth(false)} className="text-[9px] text-zinc-700 uppercase font-black">Volver</button>
              </GlassCard>
            )}
         </div>
@@ -198,8 +220,8 @@ export default function App() {
         <div className="flex flex-col">
            <span className="font-display italic text-xl uppercase leading-none text-white tracking-tighter">KINETIX</span>
            <div className="flex items-center gap-1">
-             <div className={`w-1.5 h-1.5 rounded-full ${supabase ? 'bg-green-500' : 'bg-amber-500'}`}></div>
-             <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{supabase ? 'CLOUD SYNC' : 'LOCAL MODE'}</span>
+             <div className={`w-1.5 h-1.5 rounded-full ${isCloudReady ? 'bg-green-500' : 'bg-amber-500'}`}></div>
+             <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{isCloudReady ? 'CLOUD SYNC' : 'OFFLINE MODE'}</span>
            </div>
         </div>
         <button onClick={() => setCurrentUser(null)} className="text-zinc-700 hover:text-red-500 transition-all"><LogOut size={20} /></button>
@@ -212,14 +234,14 @@ export default function App() {
             {plans.find(p => p.userId === currentUser.id) ? (
               <GlassCard className="p-10 border-red-600/10">
                 <div className="text-center space-y-1 mb-8">
-                   <p className="text-cyan-400 text-[9px] font-black uppercase tracking-widest">TU PROGRAMACIÓN</p>
+                   <p className="text-cyan-400 text-[9px] font-black uppercase tracking-widest">PLAN ASIGNADO</p>
                    <h4 className="text-4xl font-display italic uppercase text-white tracking-tighter">{plans.find(p => p.userId === currentUser.id)?.title}</h4>
                 </div>
-                <NeonButton className="w-full py-6" icon={<Play size={18}/>}>INICIAR ENTRENAMIENTO</NeonButton>
+                <NeonButton className="w-full py-6" icon={<Play size={18}/>}>INICIAR SESIÓN</NeonButton>
               </GlassCard>
             ) : (
               <div className="py-24 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] opacity-30">
-                 <p className="text-[9px] text-zinc-600 uppercase font-black">Sin plan asignado...</p>
+                 <p className="text-[9px] text-zinc-600 uppercase font-black">Esperando entrenamiento...</p>
               </div>
             )}
           </div>
@@ -228,7 +250,7 @@ export default function App() {
         {activeTab === 'admin' && (
           <div className="space-y-10">
              <div className="flex justify-between items-end">
-                <h2 className="text-5xl font-display italic uppercase tracking-tighter text-red-600">TEAM</h2>
+                <h2 className="text-5xl font-display italic uppercase tracking-tighter text-red-600">ATLETAS</h2>
                 <button onClick={() => setShowAddUser(true)} className="bg-white/5 p-4 rounded-2xl text-cyan-400 border border-white/10"><UserPlus size={20}/></button>
              </div>
              <div className="grid gap-4">
@@ -240,6 +262,7 @@ export default function App() {
                     </div>
                     <div className="flex gap-2">
                        <button onClick={async () => {
+                         if (!isAiReady) { alert("Configura la API KEY para usar la IA."); return; }
                          setIsAiGenerating(true);
                          try {
                            const generated = await generateSmartRoutine(u);
@@ -266,8 +289,8 @@ export default function App() {
 
       <nav className="fixed bottom-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-3xl border-t border-zinc-900/50 px-10 py-8 z-50">
         <div className="max-w-md mx-auto flex justify-around items-center">
-          <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<LayoutDashboard size={24} />} label="Inicio" />
-          {currentUser.role === 'coach' && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={24} />} label="Gestión" />}
+          <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<LayoutDashboard size={24} />} label="Panel" />
+          {currentUser.role === 'coach' && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={24} />} label="Coaching" />}
         </div>
       </nav>
 
@@ -277,35 +300,43 @@ export default function App() {
   );
 }
 
-// --- EDITOR CORREGIDO (SOLUCIÓN SERIES/REPS) ---
+// --- EDITOR DE PLANES (FLUÍDO Y ESTABLE) ---
 const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
   const [localPlan, setLocalPlan] = useState<Plan>(() => JSON.parse(JSON.stringify(plan)));
   const [showPicker, setShowPicker] = useState<number | null>(null);
 
-  const updateEx = (wIdx: number, exIdx: number, field: string, value: string) => {
+  const updateExField = useCallback((wIdx: number, exIdx: number, field: string, value: string | number) => {
     setLocalPlan(prev => {
-      const copy = { ...prev };
-      const workouts = [...copy.workouts];
-      const exercises = [...workouts[wIdx].exercises];
-      exercises[exIdx] = { ...exercises[exIdx], [field]: value };
-      workouts[wIdx] = { ...workouts[wIdx], exercises };
-      copy.workouts = workouts;
+      const copy = JSON.parse(JSON.stringify(prev));
+      copy.workouts[wIdx].exercises[exIdx][field] = value;
       return copy;
     });
-  };
+  }, []);
 
   return (
     <div className="fixed inset-0 bg-[#050507] z-[150] p-8 flex flex-col animate-in slide-in-from-right-full duration-500 overflow-y-auto no-scrollbar pb-40">
        <header className="flex justify-between items-center mb-10 sticky top-0 bg-[#050507]/95 backdrop-blur-xl py-4 z-10 border-b border-zinc-900">
           <button onClick={onCancel} className="bg-zinc-900 p-4 rounded-2xl text-zinc-600"><ChevronLeft size={24}/></button>
-          <input value={localPlan.title} onChange={e => setLocalPlan({...localPlan, title: e.target.value})} className="bg-transparent text-xl font-display italic text-white text-center outline-none uppercase w-1/2" />
+          <input 
+            value={localPlan.title} 
+            onChange={e => setLocalPlan({...localPlan, title: e.target.value})} 
+            className="bg-transparent text-xl font-display italic text-white text-center outline-none uppercase w-1/2" 
+          />
           <button onClick={() => onSave(localPlan)} className="bg-red-600 p-5 rounded-2xl text-white shadow-xl active:scale-95 transition-all"><Save size={24}/></button>
        </header>
 
        <div className="space-y-8">
           {localPlan.workouts.map((w, wIdx) => (
              <GlassCard key={wIdx} className="space-y-6 border-zinc-900">
-                <input value={w.name} onChange={e => { const nw = [...localPlan.workouts]; nw[wIdx].name = e.target.value; setLocalPlan({...localPlan, workouts: nw}); }} className="bg-zinc-950 border border-zinc-900 p-4 rounded-xl text-lg font-display italic text-white outline-none w-full uppercase" />
+                <input 
+                  value={w.name} 
+                  onChange={e => {
+                    const nw = [...localPlan.workouts];
+                    nw[wIdx].name = e.target.value;
+                    setLocalPlan({...localPlan, workouts: nw});
+                  }} 
+                  className="bg-zinc-950 border border-zinc-900 p-4 rounded-xl text-lg font-display italic text-white outline-none w-full uppercase" 
+                />
                 <div className="space-y-4">
                    {w.exercises.map((ex, exIdx) => {
                      const dbEx = allExercises.find((e:any) => e.id === ex.exerciseId);
@@ -316,21 +347,39 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
                                <span className="text-[10px] font-black uppercase text-red-600">{dbEx?.name || ex.name}</span>
                                <span className="text-[7px] text-zinc-700 font-bold uppercase">{dbEx?.muscleGroup}</span>
                              </div>
-                             <button onClick={() => { const nw = [...localPlan.workouts]; nw[wIdx].exercises.splice(exIdx, 1); setLocalPlan({...localPlan, workouts: nw}); }} className="text-zinc-800"><X size={16}/></button>
+                             <button onClick={() => {
+                                const nw = JSON.parse(JSON.stringify(localPlan.workouts));
+                                nw[wIdx].exercises.splice(exIdx, 1);
+                                setLocalPlan({...localPlan, workouts: nw});
+                             }} className="text-zinc-800"><X size={16}/></button>
                           </div>
+                          
                           <div className="grid grid-cols-2 gap-3">
                              <div className="space-y-1">
                                 <p className="text-[7px] font-black text-zinc-700 uppercase ml-2">SERIES</p>
-                                <input value={ex.targetSets} onChange={e => updateEx(wIdx, exIdx, 'targetSets', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white font-bold text-center outline-none focus:border-red-600" />
+                                <StableInput 
+                                  value={ex.targetSets} 
+                                  onChange={(val: any) => updateExField(wIdx, exIdx, 'targetSets', parseInt(val) || 0)} 
+                                  className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white font-bold text-center outline-none focus:border-red-600" 
+                                />
                              </div>
                              <div className="space-y-1">
                                 <p className="text-[7px] font-black text-zinc-700 uppercase ml-2">REPS</p>
-                                <input value={ex.targetReps} onChange={e => updateEx(wIdx, exIdx, 'targetReps', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white font-bold text-center outline-none focus:border-red-600" />
+                                <StableInput 
+                                  value={ex.targetReps} 
+                                  onChange={(val: any) => updateExField(wIdx, exIdx, 'targetReps', val)} 
+                                  className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white font-bold text-center outline-none focus:border-red-600" 
+                                />
                              </div>
                           </div>
                           <div className="space-y-1">
                              <p className="text-[7px] font-black text-zinc-700 uppercase ml-2">COACH CUE</p>
-                             <input value={ex.coachCue || ''} onChange={e => updateEx(wIdx, exIdx, 'coachCue', e.target.value)} placeholder="Ej: Mantén el pecho alto..." className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white text-[10px] italic outline-none focus:border-cyan-400" />
+                             <StableInput 
+                               value={ex.coachCue || ''} 
+                               onChange={(val: any) => updateExField(wIdx, exIdx, 'coachCue', val)} 
+                               placeholder="Instrucción táctica..." 
+                               className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-white text-[10px] italic outline-none focus:border-cyan-400" 
+                             />
                           </div>
                        </div>
                      );
@@ -345,18 +394,21 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
        {showPicker !== null && (
          <div className="fixed inset-0 z-[200] bg-black/98 backdrop-blur-3xl p-8 flex flex-col">
             <header className="flex justify-between items-center mb-8 shrink-0">
-              <h3 className="text-2xl font-display italic text-white uppercase tracking-tighter">BIBLIOTECA</h3>
+              <h3 className="text-2xl font-display italic text-white uppercase tracking-tighter">LIBRERÍA</h3>
               <button onClick={() => setShowPicker(null)} className="text-white"><X size={24}/></button>
             </header>
-            <div className="flex-1 space-y-3 overflow-y-auto no-scrollbar">
+            <div className="flex-1 space-y-3 overflow-y-auto no-scrollbar pb-10">
               {allExercises.map((ex: any) => (
                 <div key={ex.id} onClick={() => {
-                   const nw = [...localPlan.workouts];
+                   const nw = JSON.parse(JSON.stringify(localPlan.workouts));
                    nw[showPicker].exercises.push({ exerciseId: ex.id, name: ex.name, targetSets: 4, targetReps: "12", coachCue: "" });
                    setLocalPlan({...localPlan, workouts: nw});
                    setShowPicker(null);
                 }} className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl flex justify-between items-center active:scale-95 transition-all">
-                  <div><p className="font-black text-white uppercase italic text-lg">{ex.name}</p><p className="text-[8px] font-bold text-zinc-600 uppercase">{ex.muscleGroup}</p></div>
+                  <div>
+                    <p className="font-black text-white uppercase italic text-lg">{ex.name}</p>
+                    <p className="text-[8px] font-bold text-zinc-600 uppercase">{ex.muscleGroup}</p>
+                  </div>
                   <Plus size={20} className="text-red-600" />
                 </div>
               ))}
@@ -367,13 +419,27 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
   );
 });
 
-// --- COMPONENTES AUXILIARES ---
-const SetupInput = ({ label, id }: { label: string, id: string }) => (
-  <div className="space-y-1">
-    <label className="text-[8px] font-black text-zinc-600 uppercase ml-2">{label}</label>
-    <input onBlur={(e) => localStorage.setItem(`KX_BACKUP_${id}`, e.target.value)} placeholder={`Pega tu ${label}`} className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl text-[10px] text-white outline-none focus:border-red-600 font-mono" />
-  </div>
-);
+// --- SUBCOMPONENTES AUXILIARES ---
+const SetupInput = ({ label, envKey }: { label: string, envKey: string }) => {
+  const [val, setVal] = useState(localStorage.getItem(`KX_CONFIG_${envKey}`) || '');
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-center px-2">
+        <label className="text-[8px] font-black text-zinc-600 uppercase">{label}</label>
+        {val && <Check size={10} className="text-green-500" />}
+      </div>
+      <input 
+        value={val}
+        onChange={(e) => {
+          setVal(e.target.value);
+          localStorage.setItem(`KX_CONFIG_${envKey}`, e.target.value);
+        }}
+        placeholder={`Pega tu ${label}`} 
+        className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-xl text-[10px] text-white outline-none focus:border-red-600 font-mono" 
+      />
+    </div>
+  );
+};
 
 const NavItem = memo(({ icon, label, active, onClick }: any) => (
   <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all flex-1 ${active ? 'text-red-600' : 'text-zinc-800'}`}>
@@ -387,11 +453,11 @@ const UserDialog = memo(({ onSave, onCancel }: any) => {
   return (
     <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-8 animate-in fade-in">
        <GlassCard className="w-full max-w-sm space-y-10 border-zinc-800">
-          <h2 className="text-4xl font-display italic text-white uppercase text-center leading-none">NUEVO ATLETA</h2>
+          <h2 className="text-4xl font-display italic text-white uppercase text-center leading-none">ALTA DE ATLETA</h2>
           <div className="space-y-5">
              <input placeholder="NOMBRE COMPLETO" className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600 uppercase" onChange={e => setU({name: e.target.value})} />
-             <NeonButton onClick={() => onSave({ id: `u-${Date.now()}`, name: u.name, goal: Goal.GAIN_MUSCLE, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: ['Todo'], role: 'client', streak: 0, createdAt: new Date().toISOString() })} className="w-full py-6">DAR DE ALTA</NeonButton>
-             <button onClick={onCancel} className="w-full text-zinc-700 font-black text-[9px] uppercase tracking-widest">Cerrar</button>
+             <NeonButton onClick={() => onSave({ id: `u-${Date.now()}`, name: u.name, goal: Goal.GAIN_MUSCLE, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: ['Todo'], role: 'client', streak: 0, createdAt: new Date().toISOString() })} className="w-full py-6">CREAR PERFIL</NeonButton>
+             <button onClick={onCancel} className="w-full text-zinc-700 font-black text-[9px] uppercase tracking-widest">Cancelar</button>
           </div>
        </GlassCard>
     </div>
