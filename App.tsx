@@ -5,7 +5,7 @@ import {
   Settings, Dumbbell, History, Zap, Check, ShieldAlert, BarChart3, Search, ChevronRight,
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
-  Wifi, WifiOff, AlertTriangle, Smartphone, Signal
+  Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -34,10 +34,10 @@ const isUUID = (str: string) => {
 // --- SYSTEM CONSTANTS ---
 // UUID Específico y válido para el Staff/Coach. No cambiar.
 const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
-const STORAGE_KEY = 'KINETIX_DATA_V3_COMMERCIAL'; // Nueva key para forzar limpieza de versiones viejas
-const SESSION_KEY = 'KINETIX_SESSION_V3';
+const STORAGE_KEY = 'KINETIX_DATA_PRO_V1'; 
+const SESSION_KEY = 'KINETIX_SESSION_PRO_V1';
 
-// --- DATA ENGINE (HYBRID CORE) ---
+// --- DATA ENGINE (HYBRID CORE - OFFLINE FIRST) ---
 const DataEngine = {
   getStore: () => {
     try {
@@ -59,14 +59,13 @@ const DataEngine = {
     // Inicializar DB local vacía o con defaults solo si no existe
     if (!store.USERS) {
       DataEngine.saveStore({
-        USERS: JSON.stringify([MOCK_USER]), // Usuario demo inicial
+        USERS: JSON.stringify([MOCK_USER]),
         EXERCISES: JSON.stringify(INITIAL_EXERCISES),
         LOGO_URL: 'https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png'
       });
     }
   },
   
-  // Getters seguros
   getUsers: (): User[] => {
     const s = DataEngine.getStore();
     return s.USERS ? JSON.parse(s.USERS) : [];
@@ -112,7 +111,7 @@ const DataEngine = {
         s.USERS = JSON.stringify(mappedUsers);
       }
 
-      // 2. PLANES (Carga optimizada con relaciones)
+      // 2. PLANES (Optimized Query)
       const { data: plans, error: pErr } = await supabase.from('plans').select(`
         *, 
         workouts (
@@ -163,7 +162,7 @@ const DataEngine = {
   },
 
   saveUser: async (user: User) => {
-    // 1. Guardar Local
+    // Local First
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
     const idx = users.findIndex((u: User) => u.id === user.id);
@@ -173,7 +172,7 @@ const DataEngine = {
 
     if (!isUUID(user.id)) return;
 
-    // 2. Guardar Cloud
+    // Background Cloud Sync
     try {
       await supabase.from('users').upsert({
         id: user.id,
@@ -198,8 +197,7 @@ const DataEngine = {
 
     try {
       const planUUID = isUUID(p.id) ? p.id : undefined;
-      // Upsert cabecera
-      const { data: planData, error: pErr } = await supabase.from('plans').upsert({
+      const { data: planData } = await supabase.from('plans').upsert({
         id: planUUID,
         title: p.title,
         user_id: p.userId,
@@ -207,7 +205,6 @@ const DataEngine = {
       }).select().single();
 
       if (planData) {
-        // Reemplazo limpio de workouts para evitar inconsistencias
         await supabase.from('workouts').delete().eq('plan_id', planData.id);
         
         for (const w of p.workouts) {
@@ -296,7 +293,7 @@ export default function App() {
   const [loginName, setLoginName] = useState('');
   const [trainingWorkout, setTrainingWorkout] = useState<Workout | null>(null);
   const [editingPlan, setEditingPlan] = useState<{plan: Plan, isNew: boolean} | null>(null);
-  const [inputModal, setInputModal] = useState<{title: string, placeholder: string, type?: string, callback: (v: string) => void} | null>(null);
+  const [inputModal, setInputModal] = useState<{title: string, placeholder: string, type?: string, inputMode?: "text"|"numeric", callback: (v: string) => void} | null>(null);
   const [toast, setToast] = useState<{msg: string, type: 'error' | 'success'} | null>(null);
 
   const notify = useCallback((msg: string, type: 'error' | 'success' = 'success') => {
@@ -314,11 +311,11 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // INICIO DE LA APLICACIÓN
+  // BOOTSTRAP
   useEffect(() => {
     DataEngine.init();
     
-    // Verificación de conectividad real
+    // Check Connectivity
     const checkConn = async () => {
       if (supabaseConnectionStatus.isConfigured) {
         const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
@@ -328,7 +325,6 @@ export default function App() {
     checkConn();
 
     const bootSequence = async () => {
-      // 1. Carga offline primero (UI instantánea)
       refreshData();
       
       const savedSession = localStorage.getItem(SESSION_KEY);
@@ -337,28 +333,28 @@ export default function App() {
            const user = JSON.parse(savedSession);
            setCurrentUser(user);
            setActiveTab(user.role === 'coach' ? 'admin' : 'home');
+           // Background Refresh if session exists
+           setTimeout(() => {
+             setSyncing(true);
+             DataEngine.pullFromCloud().then(() => {
+                refreshData();
+                setSyncing(false);
+             });
+           }, 1000);
          } catch(e) { localStorage.removeItem(SESSION_KEY); }
       }
-
       setIsReady(true);
-      
-      // 2. Sincronización silenciosa en background
-      setSyncing(true);
-      await DataEngine.pullFromCloud();
-      refreshData();
-      setSyncing(false);
     };
 
     bootSequence();
   }, [refreshData]);
 
-  // --- LOGIN STAFF/COACH (ARQUITECTURA COMERCIAL) ---
+  // --- COACH LOGIN (OPTIMISTIC UI PATTERN) ---
   const handleCoachLogin = async (pin: string) => {
     if (pin === 'KINETIX2025') {
-       notify("AUTENTICANDO...", 'success');
+       // 1. OPTIMISTIC UPDATE: Log in immediately, don't wait for network
        setLoading(true);
-
-       // 1. DEFINIR OBJETO COACH ESTÁNDAR
+       
        const coach: User = { 
          id: COACH_UUID, 
          name: 'HEAD COACH', 
@@ -372,54 +368,41 @@ export default function App() {
          createdAt: new Date().toISOString()
        };
 
-       // 2. INYECCIÓN FORZOSA EN NUBE (Upsert Directo)
-       // Esto garantiza que el coach EXISTA en la BD antes de cualquier lectura.
-       if (supabaseConnectionStatus.isConfigured) {
-         const { error } = await supabase.from('users').upsert({
-            id: coach.id,
-            name: coach.name,
-            email: coach.email,
-            role: coach.role
-         });
-         
-         if (error) {
-           console.error("Coach Auth Error:", error);
-           // No bloqueamos, permitimos entrar offline si falla la nube pero avisamos
-           notify("MODO OFFLINE (ERROR RED)", 'error'); 
-         }
-       }
-
-       // 3. SINCRONIZACIÓN PROFUNDA
-       // Descargamos todos los alumnos y planes
-       await DataEngine.pullFromCloud();
-       refreshData();
-       
-       setLoading(false);
        setCurrentUser(coach);
        localStorage.setItem(SESSION_KEY, JSON.stringify(coach));
        setActiveTab('admin');
-       notify("SISTEMA ONLINE");
+       notify("BIENVENIDO COACH");
+       setLoading(false);
+
+       // 2. BACKGROUND SYNC: Ensure consistency silently
+       if (supabaseConnectionStatus.isConfigured) {
+         setSyncing(true);
+         // Upsert Coach Identity
+         await supabase.from('users').upsert({
+            id: coach.id, name: coach.name, email: coach.email, role: coach.role
+         });
+         // Fetch latest data
+         await DataEngine.pullFromCloud();
+         refreshData();
+         setSyncing(false);
+       }
     } else {
       notify("PIN INCORRECTO", 'error');
     }
   };
 
-  // --- LOGIN ATLETA ---
+  // --- USER LOGIN ---
   const handleUserLogin = async () => {
     const input = loginName.trim().toLowerCase();
     if (!input) return;
     setLoading(true);
-    notify("BUSCANDO PERFIL...", 'success');
-
-    // 1. Intentar descargar última data
-    await DataEngine.pullFromCloud();
-    refreshData();
-
-    // 2. Búsqueda Local (Ya actualizada)
-    let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
     
-    // 3. Fallback: Consulta directa DB (Por si pull falló o es usuario nuevo)
+    // 1. Local Search First (Instant)
+    let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
+
+    // 2. Fallback: Network Search
     if (!found && supabaseConnectionStatus.isConfigured) {
+       notify("BUSCANDO EN LA NUBE...");
        try {
          const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
          if (data) {
@@ -428,8 +411,8 @@ export default function App() {
                goal: data.goal, level: data.level, daysPerWeek: data.days_per_week,
                equipment: data.equipment || [], streak: data.streak, createdAt: data.created_at
             };
-            DataEngine.saveUser(found); // Cachear
-            // Traer su plan específico
+            DataEngine.saveUser(found);
+            // Get Plan
             const { data: plans } = await supabase.from('plans').select('*, workouts(*)').eq('user_id', data.id);
             if (plans) await DataEngine.pullFromCloud(); 
          }
@@ -441,14 +424,17 @@ export default function App() {
     if (found) {
       setCurrentUser(found);
       localStorage.setItem(SESSION_KEY, JSON.stringify(found));
-      notify(`BIENVENIDO, ${found.name.toUpperCase()}`);
+      notify(`HOLA, ${found.name.split(' ')[0]}`);
       setActiveTab('home');
+      // Sync fresh data now that we are logged in
+      setSyncing(true);
+      DataEngine.pullFromCloud().then(() => { refreshData(); setSyncing(false); });
     } else {
       notify("USUARIO NO ENCONTRADO", 'error');
     }
   };
 
-  // --- CÁLCULO DE GRÁFICAS (MEMOIZADO) ---
+  // CHART DATA MEMO
   const chartData = useMemo(() => {
     if (!myLogs || myLogs.length === 0) return [];
     try {
@@ -457,7 +443,6 @@ export default function App() {
         let vol = 0;
         log.exercisesData?.forEach(ex => {
           ex.sets?.forEach(s => {
-             // Validación extra de datos
              if (s && s.done) vol += ((s.weight || 0) * (s.reps || 0));
           });
         });
@@ -477,16 +462,16 @@ export default function App() {
     <div className="max-w-md mx-auto min-h-screen bg-[#050507] flex flex-col text-zinc-100 font-sans selection:bg-red-600/30 overflow-x-hidden">
       
       {/* --- HEADER --- */}
-      <header className="p-6 flex justify-between items-center bg-zinc-950/90 backdrop-blur-3xl sticky top-0 z-[100] border-b border-white/5 shadow-2xl">
+      <header className="p-5 flex justify-between items-center bg-zinc-950/90 backdrop-blur-3xl sticky top-0 z-[100] border-b border-white/5 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(239,68,68,0.4)]">
-             <img src={DataEngine.getLogo()} className="w-7 h-7 object-contain" alt="K" />
+             <img src={DataEngine.getLogo()} className="w-6 h-6 object-contain" alt="K" />
           </div>
           <div className="flex flex-col">
-            <span className="font-display italic text-2xl uppercase text-white tracking-tighter leading-none neon-red">KINETIX</span>
+            <span className="font-display italic text-xl uppercase text-white tracking-tighter leading-none neon-red">KINETIX</span>
             <div className="flex items-center gap-2">
-               <span className={`text-[7px] font-black uppercase tracking-[0.4em] ${syncing ? 'text-yellow-500' : 'text-zinc-500'}`}>
-                 {syncing ? 'SYNCING CLOUD...' : 'SYSTEM READY'}
+               <span className={`text-[7px] font-black uppercase tracking-[0.4em] ${syncing ? 'text-yellow-500' : 'text-zinc-600'}`}>
+                 {syncing ? 'SINC...' : 'ONLINE'}
                </span>
             </div>
           </div>
@@ -499,55 +484,55 @@ export default function App() {
                setLoginName(''); 
                setActiveTab('home');
              }
-          }} className="bg-zinc-900 p-3 rounded-2xl text-zinc-600 hover:text-red-600 border border-white/5 transition-all">
+          }} className="bg-zinc-900 p-3 rounded-2xl text-zinc-500 hover:text-white border border-white/5 transition-all">
             <LogOut size={18}/>
           </button>
         )}
       </header>
 
-      <main className="flex-1 p-6 pb-32">
+      <main className="flex-1 p-5 pb-32">
         {!currentUser ? (
           // --- LOGIN SCREEN ---
-          <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-16 animate-in fade-in duration-1000">
+          <div className="min-h-[75vh] flex flex-col items-center justify-center space-y-12 animate-in fade-in duration-700">
              
              {/* LOGO HERO */}
-             <div className="relative group">
-                <div className="absolute -inset-20 bg-red-600 rounded-full blur-[140px] opacity-10 group-hover:opacity-30 transition-all"></div>
-                <div className="relative w-52 h-52 bg-zinc-900 rounded-[5rem] border border-white/10 flex items-center justify-center shadow-2xl overflow-hidden group-hover:scale-110 transition-transform duration-500">
-                   <img src={DataEngine.getLogo()} className="w-36 h-36 object-contain float" alt="Kinetix Logo" />
+             <div className="relative group scale-90">
+                <div className="absolute -inset-10 bg-red-600 rounded-full blur-[100px] opacity-20 group-hover:opacity-40 transition-all"></div>
+                <div className="relative w-44 h-44 bg-zinc-900 rounded-[3rem] border border-white/10 flex items-center justify-center shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500">
+                   <img src={DataEngine.getLogo()} className="w-28 h-28 object-contain float" alt="Kinetix Logo" />
                 </div>
              </div>
 
-             <div className="w-full space-y-12 px-4 text-center">
-                <div className="space-y-2">
-                  <h1 className="text-7xl font-display italic text-white uppercase tracking-tighter leading-none italic">ENTRAR</h1>
-                  <p className="text-zinc-700 font-black uppercase text-[10px] tracking-[0.5em]">ZONA DE ALTO RENDIMIENTO</p>
+             <div className="w-full space-y-10 px-2 text-center">
+                <div className="space-y-1">
+                  <h1 className="text-6xl font-display italic text-white uppercase tracking-tighter leading-none italic">ENTRAR</h1>
+                  <p className="text-zinc-600 font-black uppercase text-[10px] tracking-[0.4em]">PERFORMANCE ZONE</p>
                 </div>
                 
                 {/* LOGIN FORM */}
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <input 
-                    type="search" // Teclado móvil con 'Ir'
+                    type="search" 
                     value={loginName} 
                     onChange={e => setLoginName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleUserLogin()}
                     placeholder="ID DE ATLETA"
-                    className="w-full bg-zinc-900/50 border border-zinc-800 p-8 rounded-[3rem] text-center font-bold text-white outline-none focus:border-red-600 transition-all uppercase text-2xl placeholder:text-zinc-800 shadow-inner"
+                    className="w-full bg-zinc-900/50 border border-zinc-800 p-6 rounded-[2.5rem] text-center font-bold text-white text-xl outline-none focus:border-red-600 transition-all uppercase placeholder:text-zinc-700 shadow-inner"
                   />
                   <button 
                     onClick={handleUserLogin}
                     disabled={loading}
-                    className="w-full bg-red-600 py-8 rounded-[3rem] font-display italic text-3xl uppercase text-white shadow-[0_20px_50px_rgba(239,68,68,0.4)] active:scale-95 transition-all flex items-center justify-center gap-4"
+                    className="w-full bg-red-600 py-6 rounded-[2.5rem] font-display italic text-2xl uppercase text-white shadow-[0_15px_40px_rgba(239,68,68,0.3)] active:scale-95 transition-all flex items-center justify-center gap-3"
                   >
-                    {loading ? <RefreshCw className="animate-spin"/> : 'IDENTIFICARSE'}
+                    {loading ? <RefreshCw className="animate-spin" size={20}/> : 'ACCEDER'}
                   </button>
                   
-                  {/* DIAGNÓSTICO DE RED */}
-                  <div className="flex flex-col items-center gap-2 mt-4">
-                    <div className="flex justify-center items-center gap-3 bg-zinc-900/50 px-4 py-2 rounded-full border border-white/5">
-                       <Signal size={12} className={dbConnected ? 'text-green-500' : 'text-red-500'} />
-                       <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
-                         {supabaseConnectionStatus.isConfigured ? (dbConnected ? 'CONEXIÓN ESTABLE' : 'ERROR DE CONEXIÓN') : 'FALTAN LLAVES API'}
+                  {/* STATUS */}
+                  <div className="flex justify-center pt-2">
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-white/5">
+                       <Globe size={10} className={supabaseConnectionStatus.isConfigured ? 'text-green-500' : 'text-red-500'} />
+                       <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">
+                         {supabaseConnectionStatus.isConfigured ? 'SERVER CONNECTED' : 'SERVER OFFLINE'}
                        </span>
                     </div>
                   </div>
@@ -555,66 +540,61 @@ export default function App() {
              </div>
 
              {/* ACTIONS */}
-             <div className="flex gap-8 items-center">
+             <div className="flex gap-10 items-center pt-4">
                <button 
-                 onClick={() => {
-                   if(window.confirm("¿PROBLEMAS DE ACCESO? Esto borrará la memoria caché y recargará la app. ¿Continuar?")) {
-                     DataEngine.resetStore();
-                   }
-                 }}
-                 className="text-zinc-700 hover:text-red-600 transition-colors flex flex-col items-center gap-1"
+                 onClick={() => { if(window.confirm("¿Restaurar App de fábrica?")) DataEngine.resetStore(); }}
+                 className="flex flex-col items-center gap-1 text-zinc-700 hover:text-red-500 transition-colors"
                >
-                 <Trash2 size={20}/>
+                 <Trash2 size={18}/>
                  <span className="text-[8px] font-black uppercase tracking-widest">RESET</span>
                </button>
 
                <button 
                  onClick={() => setInputModal({
-                   title: 'ACCESO STAFF',
-                   placeholder: 'PIN MAESTRO',
+                   title: 'STAFF ACCESS',
+                   placeholder: 'PIN DE SEGURIDAD',
                    type: 'password',
+                   inputMode: 'numeric',
                    callback: handleCoachLogin
                  })}
-                 className="text-zinc-300 hover:text-white flex flex-col items-center gap-1 group"
+                 className="flex flex-col items-center gap-1 text-zinc-700 hover:text-white transition-colors"
                >
-                 <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 group-hover:border-red-600 transition-colors">
-                   <Lock size={20} className="text-red-600"/>
-                 </div>
-                 <span className="text-[8px] font-black uppercase tracking-widest mt-1">STAFF ONLY</span>
+                 <Lock size={18}/>
+                 <span className="text-[8px] font-black uppercase tracking-widest">STAFF</span>
                </button>
              </div>
           </div>
         ) : (
-          <div className="animate-in slide-in-from-bottom-8 duration-500">
+          <div className="animate-in slide-in-from-bottom-4 duration-500">
             {/* --- HOME TAB --- */}
             {activeTab === 'home' && (
-              <div className="space-y-10">
+              <div className="space-y-8">
                 <header className="text-left">
-                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-1">PERFORMANCE HUB</p>
-                   <h2 className="text-6xl font-display italic text-white uppercase leading-none tracking-tighter italic">
-                     HOLA, <span className="text-red-600">{currentUser.name.split(' ')[0]}</span>
+                   <p className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.3em] mb-1">DASHBOARD</p>
+                   <h2 className="text-5xl font-display italic text-white uppercase leading-none tracking-tighter italic">
+                     HOLA <span className="text-red-600">{currentUser.name.split(' ')[0]}</span>
                    </h2>
                    {!isUUID(currentUser.id) && (
-                     <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-600/30 rounded-2xl flex items-center gap-3">
-                       <AlertTriangle size={16} className="text-yellow-500"/>
-                       <p className="text-[9px] text-yellow-500 font-bold uppercase">CUENTA LOCAL - PIDE MIGRACIÓN AL COACH</p>
+                     <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex items-center gap-3">
+                       <AlertTriangle size={14} className="text-yellow-500"/>
+                       <p className="text-[8px] text-yellow-500 font-bold uppercase">CUENTA LOCAL - SINCRONIZACIÓN LIMITADA</p>
                      </div>
                    )}
                 </header>
 
                 {/* CHART */}
-                <div className="bg-zinc-900/40 p-8 rounded-[3.5rem] border border-white/5 space-y-8 shadow-2xl relative overflow-hidden">
+                <div className="bg-zinc-900/40 p-6 rounded-[3rem] border border-white/5 space-y-6 shadow-xl relative overflow-hidden">
                    <div className="flex justify-between items-center relative z-10">
-                      <div className="text-left">
-                        <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest flex items-center gap-2"><Activity size={14}/> VOLUMEN</p>
-                        <h4 className="text-2xl font-display italic text-white uppercase tracking-tighter italic">PROGRESO</h4>
+                      <div>
+                        <p className="text-[9px] text-cyan-400 font-black uppercase tracking-widest flex items-center gap-2"><Activity size={12}/> VOLUMEN TOTAL</p>
+                        <h4 className="text-xl font-display italic text-white uppercase tracking-tighter">PROGRESO</h4>
                       </div>
-                      <div className="bg-zinc-950 p-4 rounded-3xl border border-white/5 text-right min-w-[80px]">
-                         <p className="text-3xl font-display italic text-white leading-none">{myLogs.length}</p>
-                         <p className="text-[7px] text-zinc-600 font-black uppercase tracking-widest mt-1">SESIONES</p>
+                      <div className="bg-zinc-950 px-4 py-2 rounded-2xl border border-white/5 text-right">
+                         <p className="text-2xl font-display italic text-white leading-none">{myLogs.length}</p>
+                         <p className="text-[7px] text-zinc-600 font-black uppercase tracking-widest">SESIONES</p>
                       </div>
                    </div>
-                   <div className="h-44 w-full relative z-10">
+                   <div className="h-40 w-full relative z-10 -ml-2">
                       {chartData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                            <AreaChart data={chartData}>
@@ -626,45 +606,45 @@ export default function App() {
                               </defs>
                               <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
                               <XAxis dataKey="date" stroke="#3f3f46" fontSize={10} axisLine={false} tickLine={false} />
-                              <Area type="monotone" dataKey="vol" stroke="#ef4444" strokeWidth={4} fillOpacity={1} fill="url(#colorVol)" />
+                              <Area type="monotone" dataKey="vol" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorVol)" />
                            </AreaChart>
                         </ResponsiveContainer>
                       ) : (
-                        <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-zinc-800 rounded-[2.5rem] gap-3 text-zinc-800">
-                           <BarChart3 size={32}/>
-                           <p className="text-[9px] font-black uppercase tracking-widest text-center italic">SIN DATOS AÚN</p>
+                        <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-zinc-800 rounded-[2rem] gap-2 text-zinc-800">
+                           <BarChart3 size={24}/>
+                           <p className="text-[8px] font-black uppercase tracking-widest text-center italic">SIN DATOS AÚN</p>
                         </div>
                       )}
                    </div>
                 </div>
 
                 {/* WORKOUTS LIST */}
-                <div className="space-y-6 pb-12 text-left">
-                  <div className="flex justify-between items-center px-4">
-                     <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest italic">PROTOCOLO ACTIVO</p>
-                     <p className="text-[10px] font-black text-red-600 uppercase tracking-widest text-right max-w-[150px] truncate">{myPlan?.title || 'SIN PROGRAMA'}</p>
+                <div className="space-y-4 pb-12 text-left">
+                  <div className="flex justify-between items-center px-2">
+                     <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest italic">TU PLAN ACTUAL</p>
+                     <p className="text-[9px] font-black text-red-600 uppercase tracking-widest text-right max-w-[150px] truncate">{myPlan?.title || 'VACÍO'}</p>
                   </div>
-                  <div className="grid gap-4">
+                  <div className="grid gap-3">
                     {myPlan?.workouts.map(w => (
                       <button 
                         key={w.id} 
                         onClick={() => setTrainingWorkout(w)}
-                        className="w-full flex justify-between items-center p-8 bg-zinc-900/40 rounded-[3rem] border border-white/5 hover:border-red-600/30 transition-all active:scale-95 shadow-lg group"
+                        className="w-full flex justify-between items-center p-6 bg-zinc-900/40 rounded-[2.5rem] border border-white/5 hover:border-red-600/30 transition-all active:scale-95 shadow-md group"
                       >
-                        <div className="flex items-center gap-6">
-                           <div className="w-16 h-16 bg-zinc-950 rounded-2xl flex items-center justify-center font-display italic text-3xl text-zinc-800 group-hover:text-red-600 border border-white/5 transition-colors">{w.day}</div>
+                        <div className="flex items-center gap-5">
+                           <div className="w-14 h-14 bg-zinc-950 rounded-2xl flex items-center justify-center font-display italic text-2xl text-zinc-800 group-hover:text-red-600 border border-white/5 transition-colors">{w.day}</div>
                            <div className="text-left">
-                              <h4 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">{w.name}</h4>
-                              <p className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.2em]">{w.exercises.length} BLOQUES</p>
+                              <h4 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">{w.name}</h4>
+                              <p className="text-[9px] text-zinc-600 font-black uppercase tracking-[0.2em]">{w.exercises.length} EJERCICIOS</p>
                            </div>
                         </div>
-                        <div className="bg-zinc-950 p-5 rounded-2xl group-hover:bg-red-600 transition-all text-zinc-800 group-hover:text-white shadow-xl"><Play size={24}/></div>
+                        <div className="bg-zinc-950 p-4 rounded-xl group-hover:bg-red-600 transition-all text-zinc-800 group-hover:text-white shadow-lg"><Play size={20}/></div>
                       </button>
                     ))}
                     {!myPlan && (
-                      <div className="py-16 bg-zinc-900/10 border-2 border-dashed border-zinc-800 rounded-[4rem] text-center space-y-4">
-                         <ShieldAlert size={40} className="mx-auto text-zinc-800" />
-                         <p className="text-[11px] text-zinc-700 font-black uppercase tracking-widest px-10">SOLICITA TU PLAN IA AL HEAD COACH</p>
+                      <div className="py-12 bg-zinc-900/10 border-2 border-dashed border-zinc-800 rounded-[3rem] text-center space-y-3">
+                         <ShieldAlert size={32} className="mx-auto text-zinc-800" />
+                         <p className="text-[10px] text-zinc-600 font-black uppercase tracking-widest px-10">SIN PROTOCOLO ASIGNADO</p>
                       </div>
                     )}
                   </div>
@@ -674,11 +654,11 @@ export default function App() {
 
             {/* --- ADMIN TAB --- */}
             {activeTab === 'admin' && (
-              <div className="space-y-12 pb-24 text-left">
+              <div className="space-y-10 pb-24 text-left">
                 <header className="flex justify-between items-end">
                   <div className="space-y-1">
-                    <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.4em]">STATION COMMAND</p>
-                    <h2 className="text-7xl font-display italic text-red-600 uppercase tracking-tighter leading-none italic">COACH</h2>
+                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.4em]">STATION COMMAND</p>
+                    <h2 className="text-6xl font-display italic text-red-600 uppercase tracking-tighter leading-none italic">COACH</h2>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={async () => {
@@ -686,19 +666,19 @@ export default function App() {
                        await DataEngine.pullFromCloud();
                        refreshData();
                        setLoading(false);
-                       notify("DATOS SINCRONIZADOS");
-                    }} className="bg-zinc-900 p-6 rounded-[2rem] text-zinc-400 border border-zinc-800 hover:text-white shadow-xl transition-all">
-                      <RefreshCw className={loading ? 'animate-spin' : ''} size={28}/>
+                       notify("CLOUD SYNC OK");
+                    }} className="bg-zinc-900 p-5 rounded-[2rem] text-zinc-400 border border-zinc-800 hover:text-white shadow-lg transition-all active:scale-95">
+                      <RefreshCw className={loading ? 'animate-spin' : ''} size={24}/>
                     </button>
                   </div>
                 </header>
 
-                <div className="space-y-8">
-                   <div className="flex justify-between items-center px-4">
-                      <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-2"><Users size={14}/> ATLETAS ({allUsers.length - 1})</p>
+                <div className="space-y-6">
+                   <div className="flex justify-between items-center px-2">
+                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Users size={12}/> ATLETAS ({allUsers.length - 1})</p>
                       <button 
                         onClick={() => setInputModal({
-                          title: 'REGISTRO DE ATLETA',
+                          title: 'NUEVO ATLETA',
                           placeholder: 'NOMBRE COMPLETO',
                           callback: (name) => {
                             if (!name) return;
@@ -711,21 +691,21 @@ export default function App() {
                             };
                             DataEngine.saveUser(u);
                             refreshData();
-                            notify("ATLETA REGISTRADO");
+                            notify("GUARDADO LOCALMENTE");
                           }
                         })}
-                        className="bg-red-600 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg"
-                      ><Plus size={16}/> REGISTRAR</button>
+                        className="bg-red-600 text-white px-4 py-3 rounded-xl text-[9px] font-black uppercase flex items-center gap-2 shadow-lg active:scale-95"
+                      ><Plus size={14}/> REGISTRAR</button>
                    </div>
-                   <div className="grid gap-4">
+                   <div className="grid gap-3">
                       {allUsers.filter(u => u.role !== 'coach').map(u => (
-                        <div key={u.id} className="bg-zinc-900/40 p-8 rounded-[3.5rem] border border-white/5 flex flex-col md:flex-row md:items-center justify-between group shadow-xl gap-6">
-                           <div className="text-left space-y-2">
-                              <h4 className="text-3xl font-black text-white italic uppercase tracking-tighter leading-none">{u.name}</h4>
-                              <span className="text-[9px] text-zinc-700 font-black uppercase px-3 py-1 bg-zinc-950 rounded-xl border border-white/5">{u.level}</span>
-                              {!isUUID(u.id) && <span className="ml-2 text-[8px] text-red-500 bg-red-900/20 px-2 py-1 rounded">LEGACY ID</span>}
+                        <div key={u.id} className="bg-zinc-900/40 p-6 rounded-[3rem] border border-white/5 flex flex-col md:flex-row md:items-center justify-between group shadow-lg gap-4">
+                           <div className="text-left space-y-1">
+                              <h4 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none">{u.name}</h4>
+                              <span className="text-[8px] text-zinc-600 font-black uppercase px-2 py-1 bg-zinc-950 rounded-lg border border-white/5">{u.level}</span>
+                              {!isUUID(u.id) && <span className="ml-2 text-[8px] text-red-500 bg-red-900/20 px-2 py-1 rounded">OFFLINE ID</span>}
                            </div>
-                           <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+                           <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0 no-scrollbar">
                               <button 
                                 onClick={async () => {
                                   setLoading(true);
@@ -743,8 +723,8 @@ export default function App() {
                                   } catch (e: any) { notify(e.message, 'error'); }
                                   finally { setLoading(false); }
                                 }}
-                                className="p-5 bg-red-600/10 text-red-600 rounded-2xl border border-red-600/20 hover:bg-red-600 hover:text-white transition-all flex-shrink-0"
-                              ><Sparkles size={24}/></button>
+                                className="p-4 bg-red-600/10 text-red-600 rounded-2xl border border-red-600/20 hover:bg-red-600 hover:text-white transition-all flex-shrink-0"
+                              ><Sparkles size={20}/></button>
                               <button 
                                 onClick={() => {
                                   const plan = DataEngine.getPlan(u.id) || { 
@@ -756,12 +736,12 @@ export default function App() {
                                   };
                                   setEditingPlan({ plan, isNew: false });
                                 }}
-                                className="p-5 bg-zinc-800 text-zinc-500 rounded-2xl hover:bg-white hover:text-black transition-all flex-shrink-0"
-                              ><Edit3 size={24}/></button>
+                                className="p-4 bg-zinc-800 text-zinc-500 rounded-2xl hover:bg-white hover:text-black transition-all flex-shrink-0"
+                              ><Edit3 size={20}/></button>
                               <button 
                                 onClick={() => { if(window.confirm("¿BORRAR ATLETA?")) { DataEngine.deleteUser(u.id); refreshData(); notify("ELIMINADO"); } }}
-                                className="p-5 text-zinc-800 hover:text-red-600 transition-colors flex-shrink-0"
-                              ><Trash2 size={24}/></button>
+                                className="p-4 text-zinc-800 hover:text-red-600 transition-colors flex-shrink-0"
+                              ><Trash2 size={20}/></button>
                            </div>
                         </div>
                       ))}
@@ -775,26 +755,27 @@ export default function App() {
 
       {/* --- BOTTOM NAV --- */}
       {currentUser && !trainingWorkout && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-zinc-950/98 backdrop-blur-3xl border-t border-white/5 px-6 py-6 z-[100] flex justify-around shadow-2xl safe-area-bottom">
+        <nav className="fixed bottom-0 left-0 right-0 bg-zinc-950/98 backdrop-blur-3xl border-t border-white/5 px-6 py-4 z-[100] flex justify-around shadow-2xl safe-area-bottom pb-8">
           <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<LayoutDashboard size={24}/>} label="STATION" />
           {currentUser.role === 'coach' && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Users size={24}/>} label="STAFF" />}
           <NavItem active={activeTab === 'history'} onClick={() => {}} icon={<History size={24}/>} label="HISTORY" />
         </nav>
       )}
 
-      {/* --- MODALS --- */}
+      {/* --- INPUT MODAL (FIXED MOBILE) --- */}
       {inputModal && (
-        <div className="fixed inset-0 z-[550] bg-black/99 flex items-center justify-center p-6 animate-in fade-in">
-           <div className="w-full bg-zinc-900 border border-white/10 rounded-[4rem] p-10 space-y-10 shadow-[0_0_200px_rgba(239,68,68,0.4)]">
+        <div className="fixed inset-0 z-[550] bg-black/98 flex items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
+           <div className="w-full bg-zinc-900 border border-white/10 rounded-[3rem] p-8 space-y-8 shadow-[0_0_100px_rgba(239,68,68,0.2)]">
               <div className="text-center space-y-2">
-                 <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.8em] italic">{inputModal.title}</p>
-                 <h3 className="text-3xl font-display italic text-white uppercase tracking-tighter">KINETIX COMMAND</h3>
+                 <p className="text-[9px] font-black text-red-600 uppercase tracking-[0.6em] italic">{inputModal.title}</p>
+                 <h3 className="text-2xl font-display italic text-white uppercase tracking-tighter">COMMAND</h3>
               </div>
               <input 
                 autoFocus
                 type={inputModal.type || 'text'}
+                inputMode={inputModal.inputMode || 'text'}
                 placeholder={inputModal.placeholder}
-                className="w-full bg-zinc-950 border border-zinc-800 p-8 rounded-[2.5rem] text-center text-2xl font-bold outline-none focus:border-red-600 uppercase text-white shadow-inner"
+                className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-[2rem] text-center text-xl font-bold outline-none focus:border-red-600 uppercase text-white shadow-inner placeholder:text-zinc-800"
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
                     inputModal.callback((e.target as HTMLInputElement).value);
@@ -802,27 +783,29 @@ export default function App() {
                   }
                 }}
               />
-              <div className="grid grid-cols-2 gap-5">
-                 <button onClick={() => setInputModal(null)} className="py-7 bg-zinc-800 rounded-3xl font-black uppercase text-[10px] text-zinc-500">CERRAR</button>
+              <div className="grid grid-cols-2 gap-4">
+                 <button onClick={() => setInputModal(null)} className="py-5 bg-zinc-800 rounded-2xl font-black uppercase text-[10px] text-zinc-500">CANCELAR</button>
                  <button onClick={() => {
                     const val = (document.querySelector('input') as HTMLInputElement)?.value;
                     inputModal.callback(val);
                     setInputModal(null);
-                 }} className="py-7 bg-red-600 rounded-3xl font-black uppercase text-[10px] text-white">CONFIRMAR</button>
+                 }} className="py-5 bg-red-600 rounded-2xl font-black uppercase text-[10px] text-white">CONFIRMAR</button>
               </div>
            </div>
         </div>
       )}
 
+      {/* --- TOAST --- */}
       {toast && (
-        <div className="fixed top-12 left-6 right-6 z-[600] animate-in slide-in-from-top">
-           <div className={`${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} p-6 rounded-[3rem] flex items-center justify-between shadow-2xl border border-white/10 backdrop-blur-3xl`}>
-              <p className="text-[11px] font-black uppercase tracking-widest text-white italic">{toast.msg}</p>
-              <button onClick={() => setToast(null)} className="p-2 bg-white/20 rounded-full text-white"><X size={14}/></button>
+        <div className="fixed top-4 left-4 right-4 z-[600] animate-in slide-in-from-top duration-300">
+           <div className={`${toast.type === 'error' ? 'bg-red-600/90' : 'bg-green-600/90'} p-5 rounded-[2rem] flex items-center justify-between shadow-2xl border border-white/10 backdrop-blur-md`}>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white italic">{toast.msg}</p>
+              <button onClick={() => setToast(null)} className="p-2 bg-black/20 rounded-full text-white hover:bg-black/40"><X size={14}/></button>
            </div>
         </div>
       )}
 
+      {/* --- SUB-COMPONENTS --- */}
       {trainingWorkout && <TrainingSession logo={logo} workout={trainingWorkout} exercises={exercises} userId={currentUser?.id || ''} notify={notify} onClose={(did, log) => { if(did && log) { DataEngine.saveLog(log); refreshData(); } setTrainingWorkout(null); }} logs={myLogs} />}
       {editingPlan && <PlanEditor plan={editingPlan.plan} allExercises={exercises} onSave={(p: Plan) => { DataEngine.savePlan(p); refreshData(); setEditingPlan(null); notify("PROTOCOLO SINCRONIZADO"); }} onCancel={() => setEditingPlan(null)} loading={loading} />}
     </div>
@@ -830,9 +813,9 @@ export default function App() {
 }
 
 const NavItem = memo(({ icon, label, active, onClick }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all flex-1 ${active ? 'text-red-600' : 'text-zinc-800'}`}>
-    <div className={`p-4 rounded-3xl transition-all ${active ? 'bg-red-600/15 scale-110 border border-red-600/30' : ''}`}>{icon}</div>
-    <span className={`text-[9px] font-black uppercase tracking-[0.6em] ${active ? 'opacity-100' : 'opacity-30'}`}>{label}</span>
+  <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all flex-1 ${active ? 'text-red-600' : 'text-zinc-700'}`}>
+    <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-red-600/15 scale-110 border border-red-600/30' : ''}`}>{icon}</div>
+    <span className={`text-[8px] font-black uppercase tracking-[0.6em] ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
   </button>
 ));
 
@@ -848,28 +831,28 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
   };
   return (
     <div className="fixed inset-0 z-[300] bg-[#050507] flex flex-col animate-in slide-in-from-bottom overflow-y-auto pb-40 no-scrollbar">
-       <header className="p-10 flex justify-between items-center sticky top-0 bg-[#050507]/98 backdrop-blur-2xl z-10 border-b border-zinc-900 shadow-2xl">
+       <header className="p-6 flex justify-between items-center sticky top-0 bg-[#050507]/98 backdrop-blur-2xl z-10 border-b border-zinc-900 shadow-2xl">
           <div className="text-left flex items-center gap-4">
-             <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center"><img src={logo} className="w-8 h-8 object-contain" /></div>
-             <h3 className="text-3xl font-display italic text-white uppercase tracking-tighter leading-none italic max-w-[200px] truncate">{workout.name}</h3>
+             <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center"><img src={logo} className="w-6 h-6 object-contain" /></div>
+             <h3 className="text-2xl font-display italic text-white uppercase tracking-tighter leading-none italic max-w-[200px] truncate">{workout.name}</h3>
           </div>
-          <button onClick={() => onClose(false)} className="bg-zinc-900 p-6 rounded-full text-zinc-500 shadow-xl"><X size={32}/></button>
+          <button onClick={() => onClose(false)} className="bg-zinc-900 p-4 rounded-full text-zinc-500 shadow-xl"><X size={24}/></button>
        </header>
-       <div className="p-6 space-y-16 mt-8">
+       <div className="p-6 space-y-12 mt-4">
           {workout.exercises.map((ex: any, exIdx: number) => {
             const exInfo = exercises.find((e:any) => e.id === ex.exerciseId);
             return (
-              <div key={exIdx} className="space-y-10 text-left border-l-4 border-red-600 pl-8">
-                <h4 className="text-3xl font-black text-white italic uppercase tracking-tighter leading-none italic">{exInfo?.name || ex.name}</h4>
-                <div className="grid gap-5">
+              <div key={exIdx} className="space-y-6 text-left border-l-2 border-red-600 pl-6">
+                <h4 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none italic">{exInfo?.name || ex.name}</h4>
+                <div className="grid gap-4">
                    {sessionLogs[exIdx].sets.map((set: any, setIdx: number) => (
-                     <div key={setIdx} className={`p-6 rounded-[3rem] border transition-all flex items-center justify-between gap-6 ${set.done ? 'bg-green-600/10 border-green-500/30 shadow-xl' : 'bg-zinc-900/40 border-white/5'}`}>
-                        <div className={`w-14 h-14 rounded-[1.5rem] flex items-center justify-center font-display italic text-3xl ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5'}`}>{setIdx + 1}</div>
-                        <div className="flex-1 flex gap-4">
-                           <input type="number" placeholder="KG" value={set.weight || ''} onChange={e => updateSet(exIdx, setIdx, 'weight', parseFloat(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-3xl text-center text-white text-2xl font-bold shadow-inner" />
-                           <input type="number" placeholder="REPS" value={set.reps || ''} onChange={e => updateSet(exIdx, setIdx, 'reps', parseInt(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-3xl text-center text-white text-2xl font-bold shadow-inner" />
+                     <div key={setIdx} className={`p-5 rounded-[2rem] border transition-all flex items-center justify-between gap-4 ${set.done ? 'bg-green-600/10 border-green-500/30 shadow-xl' : 'bg-zinc-900/40 border-white/5'}`}>
+                        <div className={`w-10 h-10 rounded-[1rem] flex items-center justify-center font-display italic text-xl ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5'}`}>{setIdx + 1}</div>
+                        <div className="flex-1 flex gap-3">
+                           <input type="number" placeholder="KG" value={set.weight || ''} onChange={e => updateSet(exIdx, setIdx, 'weight', parseFloat(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-2xl text-center text-white text-xl font-bold shadow-inner" />
+                           <input type="number" placeholder="REPS" value={set.reps || ''} onChange={e => updateSet(exIdx, setIdx, 'reps', parseInt(e.target.value))} className="w-full bg-zinc-950 border border-zinc-800 p-4 rounded-2xl text-center text-white text-xl font-bold shadow-inner" />
                         </div>
-                        <button onClick={() => updateSet(exIdx, setIdx, 'done', !set.done)} className={`p-8 rounded-[2rem] transition-all shadow-2xl ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5'}`}><Check size={32}/></button>
+                        <button onClick={() => updateSet(exIdx, setIdx, 'done', !set.done)} className={`p-6 rounded-[1.5rem] transition-all shadow-2xl ${set.done ? 'bg-green-600 text-white' : 'bg-zinc-950 text-zinc-800 border border-white/5'}`}><Check size={24}/></button>
                      </div>
                    ))}
                 </div>
@@ -885,7 +868,7 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
                date: new Date().toISOString(), 
                exercisesData: sessionLogs 
              }); 
-          }} className="w-full py-16 bg-red-600 rounded-[5rem] font-display italic text-4xl uppercase text-white shadow-[0_30px_70px_rgba(239,68,68,0.5)] mt-20 mb-32 italic">FINALIZAR SESIÓN</button>
+          }} className="w-full py-12 bg-red-600 rounded-[3rem] font-display italic text-3xl uppercase text-white shadow-[0_20px_60px_rgba(239,68,68,0.4)] mt-12 mb-20 italic">FINALIZAR SESIÓN</button>
        </div>
     </div>
   );
@@ -918,43 +901,42 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
     if(!window.confirm("¿ELIMINAR DÍA?")) return;
     const nw = [...local.workouts];
     nw.splice(wIdx, 1);
-    // Reordenar días
     nw.forEach((w, i) => w.day = i + 1);
     setLocal({...local, workouts: nw});
   }
 
   return (
-    <div className="fixed inset-0 bg-[#050507] z-[350] p-6 flex flex-col animate-in slide-in-from-right overflow-y-auto pb-48 no-scrollbar">
-       <header className="flex justify-between items-center mb-10 sticky top-0 bg-[#050507]/95 backdrop-blur-3xl py-6 z-10 border-b border-white/5">
-          <button onClick={onCancel} className="bg-zinc-900 p-6 rounded-full text-zinc-500 shadow-xl"><ChevronLeft size={32}/></button>
-          <input value={local.title} onChange={e => setLocal({...local, title: e.target.value})} className="bg-transparent text-2xl font-display italic text-white text-center outline-none uppercase tracking-tighter w-full border-b border-zinc-900 italic" />
-          <button onClick={() => onSave(local)} disabled={loading} className="bg-red-600 p-6 rounded-full text-white shadow-xl">
-            {loading ? <RefreshCw className="animate-spin" size={32}/> : <Save size={32}/>}
+    <div className="fixed inset-0 bg-[#050507] z-[350] p-4 flex flex-col animate-in slide-in-from-right overflow-y-auto pb-48 no-scrollbar">
+       <header className="flex justify-between items-center mb-8 sticky top-0 bg-[#050507]/95 backdrop-blur-3xl py-4 z-10 border-b border-white/5">
+          <button onClick={onCancel} className="bg-zinc-900 p-5 rounded-full text-zinc-500 shadow-xl"><ChevronLeft size={24}/></button>
+          <input value={local.title} onChange={e => setLocal({...local, title: e.target.value})} className="bg-transparent text-xl font-display italic text-white text-center outline-none uppercase tracking-tighter w-full border-b border-zinc-900 italic" />
+          <button onClick={() => onSave(local)} disabled={loading} className="bg-red-600 p-5 rounded-full text-white shadow-xl">
+            {loading ? <RefreshCw className="animate-spin" size={24}/> : <Save size={24}/>}
           </button>
        </header>
-       <div className="space-y-16">
+       <div className="space-y-12">
           {local.workouts.map((w, wIdx) => (
-             <div key={wIdx} className="bg-zinc-900/30 p-8 rounded-[4rem] border border-white/5 space-y-12 shadow-2xl relative">
-                <button onClick={() => removeDay(wIdx)} className="absolute top-8 right-8 text-zinc-700 hover:text-red-600"><Trash2/></button>
-                <input value={w.name} onChange={e => { const nw = [...local.workouts]; nw[wIdx].name = e.target.value; setLocal({...local, workouts: nw}); }} className="bg-transparent border-b border-zinc-800 p-4 text-3xl font-display italic text-white outline-none w-full uppercase italic pr-12" />
-                <div className="space-y-10">
+             <div key={wIdx} className="bg-zinc-900/30 p-6 rounded-[3rem] border border-white/5 space-y-8 shadow-2xl relative">
+                <button onClick={() => removeDay(wIdx)} className="absolute top-6 right-6 text-zinc-700 hover:text-red-600"><Trash2/></button>
+                <input value={w.name} onChange={e => { const nw = [...local.workouts]; nw[wIdx].name = e.target.value; setLocal({...local, workouts: nw}); }} className="bg-transparent border-b border-zinc-800 p-2 text-2xl font-display italic text-white outline-none w-full uppercase italic pr-12" />
+                <div className="space-y-6">
                    {w.exercises.map((ex, exIdx) => (
-                     <div key={exIdx} className="p-8 bg-zinc-950/80 rounded-[3rem] border border-white/5 space-y-8 shadow-2xl relative group">
-                        <button onClick={() => removeExercise(wIdx, exIdx)} className="absolute top-6 right-6 text-zinc-800 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><X/></button>
-                        <span className="text-2xl font-black uppercase text-white tracking-tighter italic block pr-10">{allExercises.find((e:any) => e.id === ex.exerciseId)?.name || ex.name}</span>
-                        <div className="grid grid-cols-2 gap-6">
-                           <div className="space-y-2">
-                             <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest pl-2">SETS</span>
-                             <input value={ex.targetSets} type="number" onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetSets = parseInt(e.target.value) || 0; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-[2.5rem] text-white font-bold text-center text-3xl" />
+                     <div key={exIdx} className="p-6 bg-zinc-950/80 rounded-[2.5rem] border border-white/5 space-y-6 shadow-2xl relative group">
+                        <button onClick={() => removeExercise(wIdx, exIdx)} className="absolute top-4 right-4 text-zinc-800 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><X/></button>
+                        <span className="text-xl font-black uppercase text-white tracking-tighter italic block pr-10">{allExercises.find((e:any) => e.id === ex.exerciseId)?.name || ex.name}</span>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="space-y-1">
+                             <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest pl-2">SETS</span>
+                             <input value={ex.targetSets} type="number" onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetSets = parseInt(e.target.value) || 0; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-[2rem] text-white font-bold text-center text-2xl" />
                            </div>
-                           <div className="space-y-2">
-                             <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest pl-2">REPS</span>
-                             <input value={ex.targetReps} onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetReps = e.target.value; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-6 rounded-[2.5rem] text-white font-bold text-center text-3xl" />
+                           <div className="space-y-1">
+                             <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest pl-2">REPS</span>
+                             <input value={ex.targetReps} onChange={e => { const nw = [...local.workouts]; nw[wIdx].exercises[exIdx].targetReps = e.target.value; setLocal({...local, workouts: nw}); }} className="w-full bg-zinc-900 border border-zinc-800 p-4 rounded-[2rem] text-white font-bold text-center text-2xl" />
                            </div>
                         </div>
                      </div>
                    ))}
-                   <button onClick={() => setAddingExerciseTo(wIdx)} className="w-full py-10 bg-zinc-900 rounded-[3rem] text-xs font-black text-zinc-500 uppercase flex items-center justify-center gap-4 hover:bg-zinc-800 hover:text-white transition-all"><Plus size={20}/> EJERCICIO</button>
+                   <button onClick={() => setAddingExerciseTo(wIdx)} className="w-full py-8 bg-zinc-900 rounded-[2.5rem] text-xs font-black text-zinc-500 uppercase flex items-center justify-center gap-3 hover:bg-zinc-800 hover:text-white transition-all"><Plus size={18}/> EJERCICIO</button>
                 </div>
              </div>
           ))}
@@ -963,20 +945,20 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
              name: `DÍA ${local.workouts.length+1}`, 
              day: local.workouts.length+1, 
              exercises: [] 
-          }]})} className="w-full py-20 border-2 border-dashed border-zinc-800 rounded-[6rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-8 shadow-2xl italic"><Plus size={64}/> AÑADIR DÍA</button>
+          }]})} className="w-full py-16 border-2 border-dashed border-zinc-800 rounded-[4rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-4 shadow-2xl italic"><Plus size={48}/> AÑADIR DÍA</button>
        </div>
 
        {addingExerciseTo !== null && (
-         <div className="fixed inset-0 z-[400] bg-black/95 flex flex-col p-6 animate-in fade-in">
-            <header className="flex justify-between items-center mb-8">
-               <h3 className="text-3xl font-display italic text-white uppercase">SELECCIONAR</h3>
-               <button onClick={() => setAddingExerciseTo(null)} className="p-4 bg-zinc-800 rounded-full"><X/></button>
+         <div className="fixed inset-0 z-[400] bg-black/98 flex flex-col p-4 animate-in fade-in">
+            <header className="flex justify-between items-center mb-6">
+               <h3 className="text-2xl font-display italic text-white uppercase">SELECCIONAR</h3>
+               <button onClick={() => setAddingExerciseTo(null)} className="p-3 bg-zinc-800 rounded-full"><X/></button>
             </header>
-            <div className="grid gap-4 overflow-y-auto pb-20 no-scrollbar">
+            <div className="grid gap-3 overflow-y-auto pb-20 no-scrollbar">
                {allExercises.map((ex: Exercise) => (
-                 <button key={ex.id} onClick={() => addExercise(addingExerciseTo, ex)} className="p-6 bg-zinc-900 rounded-[3rem] text-left hover:bg-zinc-800 hover:border-red-600 border border-transparent transition-all">
+                 <button key={ex.id} onClick={() => addExercise(addingExerciseTo, ex)} className="p-5 bg-zinc-900 rounded-[2.5rem] text-left hover:bg-zinc-800 hover:border-red-600 border border-transparent transition-all">
                     <h4 className="text-lg font-bold text-white uppercase">{ex.name}</h4>
-                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">{ex.muscleGroup}</p>
+                    <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mt-1">{ex.muscleGroup}</p>
                  </button>
                ))}
             </div>
