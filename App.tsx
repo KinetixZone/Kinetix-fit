@@ -7,7 +7,7 @@ import {
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
-  CalendarDays, Trophy, Pencil
+  CalendarDays, Trophy, Pencil, Menu, Youtube
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -35,8 +35,8 @@ const isUUID = (str: string) => {
 
 // --- SYSTEM CONSTANTS ---
 const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
-const STORAGE_KEY = 'KINETIX_DATA_PRO_V1'; 
-const SESSION_KEY = 'KINETIX_SESSION_PRO_V1';
+const STORAGE_KEY = 'KINETIX_DATA_PRO_V2'; // Updated Key for migration
+const SESSION_KEY = 'KINETIX_SESSION_PRO_V2';
 
 // --- DATA ENGINE (CLOUD FIRST HYBRID) ---
 const DataEngine = {
@@ -55,13 +55,26 @@ const DataEngine = {
   
   init: () => {
     const store = DataEngine.getStore();
+    
+    // Inicializar Usuarios si no existen
     if (!store.USERS) {
-      DataEngine.saveStore({
-        USERS: JSON.stringify([MOCK_USER]),
-        EXERCISES: JSON.stringify(INITIAL_EXERCISES),
-        LOGO_URL: 'https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png'
-      });
+      store.USERS = JSON.stringify([MOCK_USER]);
     }
+
+    // Fusión Inteligente de Ejercicios: 
+    // Mantiene los creados por el usuario y asegura que estén los de la DB inicial
+    const storedExercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
+    const mergedExercises = [...INITIAL_EXERCISES];
+    
+    // Agregar ejercicios custom que no estén en la base inicial
+    storedExercises.forEach((se: Exercise) => {
+      if (!mergedExercises.find(me => me.id === se.id)) {
+        mergedExercises.push(se);
+      }
+    });
+
+    store.EXERCISES = JSON.stringify(mergedExercises);
+    DataEngine.saveStore(store);
   },
   
   getUsers: (): User[] => {
@@ -74,6 +87,24 @@ const DataEngine = {
     return users.find(u => u.id === id);
   },
 
+  getUserByEmail: (email: string): User | undefined => {
+    const users = DataEngine.getUsers();
+    return users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  },
+
+  getExercises: (): Exercise[] => {
+    const s = DataEngine.getStore();
+    return s.EXERCISES ? JSON.parse(s.EXERCISES) : INITIAL_EXERCISES;
+  },
+
+  addExercise: (exercise: Exercise) => {
+    const s = DataEngine.getStore();
+    const current = s.EXERCISES ? JSON.parse(s.EXERCISES) : [];
+    current.push(exercise);
+    s.EXERCISES = JSON.stringify(current);
+    DataEngine.saveStore(s);
+  },
+
   getPlan: (uid: string): Plan | null => {
     const s = DataEngine.getStore();
     const p = s[`PLAN_${uid}`];
@@ -84,40 +115,24 @@ const DataEngine = {
     const s = DataEngine.getStore();
     s[`PLAN_${plan.userId}`] = JSON.stringify(plan);
     DataEngine.saveStore(s);
-    
-    if (supabaseConnectionStatus.isConfigured) {
-       console.log("Saving plan to cloud...", plan);
-    }
   },
 
   pullFromCloud: async () => {
-    if (!supabaseConnectionStatus.isConfigured) {
-      return false;
-    }
+    if (!supabaseConnectionStatus.isConfigured) return false;
     try {
       const s = DataEngine.getStore();
       const { data: users } = await supabase.from('users').select('*');
       if (users) {
         const mappedUsers = users.map(u => ({
-             id: u.id,
-             name: u.name,
-             email: u.email,
-             role: u.role,
-             goal: u.goal,
-             level: u.level,
-             daysPerWeek: u.days_per_week,
-             equipment: u.equipment || [],
-             streak: u.streak,
-             createdAt: u.created_at
+             id: u.id, name: u.name, email: u.email, role: u.role, goal: u.goal,
+             level: u.level, daysPerWeek: u.days_per_week, equipment: u.equipment || [],
+             streak: u.streak, createdAt: u.created_at
         }));
         s.USERS = JSON.stringify(mappedUsers);
       }
       DataEngine.saveStore(s);
       return true;
-    } catch (e) {
-      console.error("Sync Failed", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   saveUser: async (user: User) => {
@@ -127,22 +142,6 @@ const DataEngine = {
     if (idx >= 0) users[idx] = user; else users.push(user);
     s.USERS = JSON.stringify(users);
     DataEngine.saveStore(s);
-
-    if (supabaseConnectionStatus.isConfigured && isUUID(user.id)) {
-      try {
-        await supabase.from('users').upsert({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          goal: user.goal,
-          level: user.level,
-          days_per_week: user.daysPerWeek,
-          equipment: user.equipment,
-          streak: user.streak
-        });
-      } catch(e) { console.error("Cloud Error", e); }
-    }
   }
 };
 
@@ -158,22 +157,44 @@ const ConnectionStatus = () => {
   );
 };
 
-const LoginPage = ({ onLogin }: { onLogin: (role: 'coach' | 'client') => void }) => {
+// LOGIN PAGE
+const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
+  const [mode, setMode] = useState<'coach' | 'athlete'>('coach');
   const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleCoachSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    await new Promise(r => setTimeout(r, 600)); 
-    const cleanPin = pin.trim();
-    if (cleanPin === '2025' || cleanPin === 'KINETIX2025') {
+    await new Promise(r => setTimeout(r, 800)); 
+    if (pin.trim() === '2025' || pin.trim() === 'KINETIX2025') {
       await DataEngine.pullFromCloud();
-      onLogin('coach');
+      const coachUser: User = {
+        id: COACH_UUID, name: 'COACH KINETIX', email: 'staff@kinetix.com',
+        role: 'coach', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED,
+        daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString()
+      };
+      onLogin(coachUser);
     } else {
       setError(true);
       setPin('');
+    }
+    setIsLoading(false);
+  };
+
+  const handleAthleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    await new Promise(r => setTimeout(r, 800));
+    
+    // Buscar atleta localmente
+    const user = DataEngine.getUserByEmail(email);
+    if (user) {
+      onLogin(user);
+    } else {
+      setError(true);
     }
     setIsLoading(false);
   };
@@ -184,30 +205,63 @@ const LoginPage = ({ onLogin }: { onLogin: (role: 'coach' | 'client') => void })
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="w-full max-w-sm z-10 animate-fade-in-up">
-        <div className="mb-12 text-center">
+        <div className="mb-8 text-center">
           <h1 className="font-display text-5xl italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-500 neon-red mb-2">
             KINETIX
           </h1>
           <p className="text-gray-500 tracking-[0.2em] text-xs font-bold">HIGH PERFORMANCE ZONE</p>
         </div>
 
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-1 shadow-2xl mb-6 flex">
+           <button 
+             onClick={() => { setMode('coach'); setError(false); }}
+             className={`flex-1 py-3 text-sm font-bold rounded-2xl transition-all ${mode === 'coach' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+           >
+             STAFF COACH
+           </button>
+           <button 
+             onClick={() => { setMode('athlete'); setError(false); }}
+             className={`flex-1 py-3 text-sm font-bold rounded-2xl transition-all ${mode === 'athlete' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+           >
+             ACCESO ATLETA
+           </button>
+        </div>
+
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">PIN de Acceso</label>
-              <input
-                type="tel" inputMode="numeric" pattern="[0-9]*" 
-                value={pin} onChange={(e) => { setError(false); setPin(e.target.value); }}
-                placeholder="• • • •"
-                className={`w-full bg-black/40 border-2 ${error ? 'border-red-500 text-red-500' : 'border-white/10 focus:border-red-500 text-white'} rounded-xl px-4 py-4 text-center text-3xl tracking-[1em] font-display font-bold outline-none transition-all placeholder-gray-700`}
-                maxLength={4} autoFocus autoComplete="off"
-              />
-            </div>
-            {error && <div className="text-red-500 text-xs font-bold text-center">PIN INCORRECTO</div>}
-            <button type="submit" disabled={isLoading} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-red-900/20">
-              {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR</span><ArrowRight size={20} /></>}
-            </button>
-          </form>
+          {mode === 'coach' ? (
+            <form onSubmit={handleCoachSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">PIN Staff</label>
+                <input
+                  type="tel" inputMode="numeric" pattern="[0-9]*" 
+                  value={pin} onChange={(e) => { setError(false); setPin(e.target.value); }}
+                  placeholder="• • • •"
+                  className={`w-full bg-black/40 border-2 ${error ? 'border-red-500 text-red-500' : 'border-white/10 focus:border-red-500 text-white'} rounded-xl px-4 py-4 text-center text-3xl tracking-[1em] font-display font-bold outline-none transition-all placeholder-gray-700`}
+                  maxLength={4} autoFocus autoComplete="off"
+                />
+              </div>
+              {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">PIN INCORRECTO</div>}
+              <button type="submit" disabled={isLoading} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-red-900/20">
+                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR COMO COACH</span><ArrowRight size={20} /></>}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleAthleteSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">Email Registrado</label>
+                <input
+                  type="email"
+                  value={email} onChange={(e) => { setError(false); setEmail(e.target.value); }}
+                  placeholder="atleta@kinetix.com"
+                  className={`w-full bg-black/40 border-2 ${error ? 'border-red-500 text-red-500' : 'border-white/10 focus:border-blue-500 text-white'} rounded-xl px-4 py-4 text-lg font-medium outline-none transition-all placeholder-gray-700`}
+                />
+              </div>
+              {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">USUARIO NO ENCONTRADO</div>}
+              <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
+                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR COMO ATLETA</span><ArrowRight size={20} /></>}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
@@ -220,6 +274,11 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string>('Todos');
+
+  // Load exercises from DataEngine (merged DB)
+  const allExercises = useMemo(() => DataEngine.getExercises(), []);
+  const categories = useMemo(() => ['Todos', ...Array.from(new Set(allExercises.map(e => e.muscleGroup)))], [allExercises]);
 
   const handleAddWorkout = () => {
     const newWorkout: Workout = {
@@ -264,13 +323,19 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   };
 
   const filteredExercises = useMemo(() => {
-    if (!searchQuery) return INITIAL_EXERCISES;
-    return INITIAL_EXERCISES.filter(ex => ex.name.toLowerCase().includes(searchQuery.toLowerCase()) || ex.muscleGroup.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [searchQuery]);
+    let filtered = allExercises;
+    if (activeCategory !== 'Todos') {
+      filtered = filtered.filter(ex => ex.muscleGroup === activeCategory);
+    }
+    if (searchQuery) {
+      filtered = filtered.filter(ex => ex.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
+    return filtered;
+  }, [searchQuery, activeCategory, allExercises]);
 
   return (
-    <div className="bg-[#0A0A0C] min-h-screen fixed inset-0 z-50 overflow-y-auto pb-20">
-      <div className="sticky top-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-40">
+    <div className="bg-[#0A0A0C] min-h-screen fixed inset-0 z-50 overflow-y-auto pb-20 flex flex-col">
+      <div className="sticky top-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-40 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={onCancel}><X size={24} className="text-gray-400" /></button>
           <input 
@@ -281,11 +346,11 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
           />
         </div>
         <button onClick={() => onSave(editedPlan)} className="bg-red-600 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
-          <Save size={16} /> GUARDAR
+          <Save size={16} /> <span className="hidden sm:inline">GUARDAR</span>
         </button>
       </div>
 
-      <div className="p-4 max-w-4xl mx-auto">
+      <div className="p-4 max-w-4xl mx-auto w-full flex-1">
         {/* Workout Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-4">
           {editedPlan.workouts.map((w, idx) => (
@@ -302,7 +367,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
           </button>
         </div>
 
-        {editedPlan.workouts[selectedWorkoutIndex] && (
+        {editedPlan.workouts[selectedWorkoutIndex] ? (
           <div className="space-y-4 animate-fade-in">
              <input 
                value={editedPlan.workouts[selectedWorkoutIndex].name}
@@ -342,7 +407,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] text-gray-500 uppercase font-bold text-yellow-500">Peso/Carga</label>
+                      <label className="text-[10px] text-gray-500 uppercase font-bold text-yellow-500">Carga</label>
                       <input 
                         type="text" 
                         value={ex.targetLoad || ''}
@@ -354,7 +419,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                   </div>
                   
                   <div>
-                    <label className="text-[10px] text-gray-500 uppercase font-bold">Notas Técnicas (Coach Cue)</label>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold">Notas Técnicas</label>
                     <input 
                       type="text" 
                       value={ex.coachCue || ''}
@@ -373,12 +438,14 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                <Plus size={20} /> AÑADIR EJERCICIO
              </button>
           </div>
+        ) : (
+          <div className="text-center text-gray-500 mt-10">Agrega un día de entrenamiento para comenzar.</div>
         )}
       </div>
 
       {/* Exercise Selector Modal */}
       {showExerciseSelector && (
-        <div className="fixed inset-0 bg-black/90 z-[60] flex flex-col animate-fade-in">
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col animate-fade-in">
           <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]">
              <button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24} /></button>
              <div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2">
@@ -392,17 +459,39 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                />
              </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 grid gap-2">
+          
+          {/* Categories */}
+          <div className="flex gap-2 overflow-x-auto p-2 border-b border-white/5 no-scrollbar bg-[#0A0A0C]">
+             {categories.map(cat => (
+               <button 
+                 key={cat}
+                 onClick={() => setActiveCategory(cat)}
+                 className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeCategory === cat ? 'bg-red-600 text-white' : 'bg-white/5 text-gray-400'}`}
+               >
+                 {cat}
+               </button>
+             ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 grid gap-2 pb-20">
             {filteredExercises.map(ex => (
               <button 
                 key={ex.id}
                 onClick={() => handleAddExercise(ex)}
-                className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors"
+                className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors flex justify-between items-center"
               >
-                <div className="font-bold">{ex.name}</div>
-                <div className="text-xs text-gray-500 uppercase">{ex.muscleGroup}</div>
+                <div>
+                  <div className="font-bold text-sm">{ex.name}</div>
+                  <div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div>
+                </div>
+                <Plus size={18} className="text-gray-600" />
               </button>
             ))}
+            {filteredExercises.length === 0 && (
+              <div className="text-center text-gray-500 mt-10">
+                No se encontraron ejercicios en esta categoría.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -413,7 +502,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
 // --- MAIN APP ---
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'workouts'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'workouts' | 'profile'>('dashboard');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [triggerUpdate, setTriggerUpdate] = useState(0); 
 
@@ -427,14 +516,10 @@ export default function App() {
     return () => window.removeEventListener('storage-update', handleStorageUpdate);
   }, []);
 
-  const handleLogin = useCallback((role: 'coach' | 'client') => {
-    const coachUser: User = {
-      id: COACH_UUID, name: 'COACH KINETIX', email: 'staff@kinetix.com',
-      role: 'coach', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED,
-      daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString()
-    };
-    setCurrentUser(coachUser);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(coachUser));
+  const handleLogin = useCallback((user: User) => {
+    setCurrentUser(user);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    setActiveTab('dashboard');
   }, []);
 
   const handleLogout = () => {
@@ -462,10 +547,12 @@ export default function App() {
            <span className="font-display font-bold italic tracking-tighter">KINETIX</span>
         </div>
         <div className="flex items-center gap-3">
-           <button onClick={() => DataEngine.pullFromCloud()} className="p-2 bg-white/5 rounded-full active:bg-white/10">
-              <RefreshCw size={16} className="text-gray-400" />
-           </button>
-           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-gray-700 to-gray-800 border border-white/20 flex items-center justify-center font-bold text-xs">
+           {currentUser.role === 'coach' && (
+             <button onClick={() => DataEngine.pullFromCloud()} className="p-2 bg-white/5 rounded-full active:bg-white/10">
+                <RefreshCw size={16} className="text-gray-400" />
+             </button>
+           )}
+           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-gray-700 to-gray-800 border border-white/20 flex items-center justify-center font-bold text-xs" onClick={() => setActiveTab('profile')}>
              {currentUser.name[0]}
            </div>
         </div>
@@ -479,7 +566,9 @@ export default function App() {
         </div>
         <nav className="flex-1 px-4 space-y-2">
           <NavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={20} />} label="Dashboard" />
-          <NavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+          {currentUser.role === 'coach' && (
+             <NavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+          )}
           <NavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />
         </nav>
         <div className="p-4 border-t border-white/5">
@@ -491,24 +580,46 @@ export default function App() {
 
       {/* CONTENT */}
       <main className="md:ml-64 p-4 md:p-8 max-w-7xl mx-auto min-h-[calc(100vh-80px)]">
-        {activeTab === 'dashboard' && <DashboardView user={currentUser} onNavigateToClients={() => setActiveTab('clients')} />}
+        {activeTab === 'dashboard' && <DashboardView user={currentUser} onNavigateToClients={() => setActiveTab(currentUser.role === 'coach' ? 'clients' : 'workouts')} />}
         
-        {activeTab === 'clients' && !selectedClientId && (
+        {activeTab === 'clients' && currentUser.role === 'coach' && !selectedClientId && (
           <ClientsView onSelectClient={navigateToClient} />
         )}
         
-        {activeTab === 'clients' && selectedClientId && (
+        {activeTab === 'clients' && currentUser.role === 'coach' && selectedClientId && (
           <ClientDetailView clientId={selectedClientId} onBack={() => setSelectedClientId(null)} />
         )}
         
         {activeTab === 'workouts' && <WorkoutsView />}
+        
+        {activeTab === 'profile' && (
+          <div className="animate-fade-in p-4">
+             <h2 className="text-2xl font-bold mb-6">Mi Perfil</h2>
+             <div className="bg-[#0F0F11] rounded-2xl p-6 border border-white/5 mb-6">
+                <div className="flex items-center gap-4 mb-4">
+                   <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center text-xl font-bold">{currentUser.name[0]}</div>
+                   <div>
+                      <h3 className="font-bold text-lg">{currentUser.name}</h3>
+                      <p className="text-gray-400 text-sm">{currentUser.email}</p>
+                      <span className="text-[10px] uppercase bg-white/10 px-2 py-1 rounded mt-1 inline-block">{currentUser.role}</span>
+                   </div>
+                </div>
+             </div>
+             <button onClick={handleLogout} className="w-full bg-red-600/10 text-red-500 py-4 rounded-xl font-bold border border-red-500/20 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2">
+                <LogOut size={20} /> CERRAR SESIÓN
+             </button>
+          </div>
+        )}
       </main>
 
       {/* MOBILE NAV */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-t border-white/10 flex justify-around p-4 z-50 pb-safe shadow-2xl">
-        <MobileNavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={24} />} label="Inicio" />
-        <MobileNavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={24} />} label="Atletas" />
-        <MobileNavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={24} />} label="Entreno" />
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-t border-white/10 flex justify-around p-2 z-50 pb-safe shadow-2xl">
+        <MobileNavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={20} />} label="Inicio" />
+        {currentUser.role === 'coach' && (
+           <MobileNavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
+        )}
+        <MobileNavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Entreno" />
+        <MobileNavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<Menu size={20} />} label="Perfil" />
       </nav>
     </div>
   );
@@ -524,19 +635,40 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
           <div className="flex items-center gap-2 mb-2 text-red-400 font-bold text-sm tracking-wider uppercase">
              <Activity size={16} /> Panel de Control
           </div>
-          <h2 className="text-3xl md:text-4xl font-display font-bold italic mb-2">HOLA, COACH</h2>
-          <p className="text-gray-400 max-w-md text-sm">Gestiona tus atletas de alto rendimiento y genera protocolos con IA.</p>
+          <h2 className="text-3xl md:text-4xl font-display font-bold italic mb-2">HOLA, {user.name.split(' ')[0]}</h2>
+          <p className="text-gray-400 max-w-md text-sm">
+            {user.role === 'coach' ? 'Gestiona tus atletas de alto rendimiento.' : 'Tu transformación comienza hoy.'}
+          </p>
         </div>
         <div className="absolute right-[-20px] top-[-20px] w-40 h-40 bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
         <ChevronRight className="absolute right-6 top-1/2 -translate-y-1/2 text-white/20 group-hover:text-white transition-colors" size={32} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <StatCard label="Atletas" value={DataEngine.getUsers().length - 1} icon={<Users size={18} className="text-blue-400" />} />
-        <StatCard label="Planes Activos" value="12" icon={<CalendarDays size={18} className="text-green-400" />} />
-        <StatCard label="Ejercicios" value={INITIAL_EXERCISES.length} icon={<Dumbbell size={18} className="text-purple-400" />} />
-        <StatCard label="Efectividad" value="98%" icon={<Trophy size={18} className="text-yellow-400" />} />
+        {user.role === 'coach' ? (
+           <>
+            <StatCard label="Atletas" value={DataEngine.getUsers().length - 1} icon={<Users size={18} className="text-blue-400" />} />
+            <StatCard label="Planes Activos" value="12" icon={<CalendarDays size={18} className="text-green-400" />} />
+           </>
+        ) : (
+           <>
+            <StatCard label="Racha" value={`${user.streak} días`} icon={<Zap size={18} className="text-yellow-400" />} />
+            <StatCard label="Nivel" value={user.level} icon={<Trophy size={18} className="text-purple-400" />} />
+           </>
+        )}
+        <StatCard label="Ejercicios DB" value={DataEngine.getExercises().length} icon={<Dumbbell size={18} className="text-gray-400" />} />
+        <StatCard label="Estado" value="Activo" icon={<CheckCircle2 size={18} className="text-green-400" />} />
       </div>
+
+      {user.role === 'client' && (
+         <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
+            <h3 className="text-lg font-bold mb-4">Tu Plan Actual</h3>
+            {/* Logic to show athlete's plan would call ClientDetailView logic here */}
+            <div className="p-4 bg-white/5 rounded-xl text-center">
+               <p className="text-sm text-gray-400">Consulta la sección de Entreno o contacta a tu Coach.</p>
+            </div>
+         </div>
+      )}
     </div>
   );
 };
@@ -766,7 +898,7 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                </div>
                <div className="aspect-video bg-black flex items-center justify-center">
                   <a 
-                    href={INITIAL_EXERCISES.find(e => e.name === showVideo)?.videoUrl || `https://www.youtube.com/results?search_query=${showVideo}+exercise`} 
+                    href={DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl || `https://www.youtube.com/results?search_query=${showVideo}+exercise`} 
                     target="_blank" 
                     rel="noreferrer"
                     className="flex flex-col items-center gap-2 text-red-500 hover:text-red-400"
@@ -785,28 +917,87 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
   );
 };
 
-const WorkoutsView = () => (
-  <div className="grid gap-3 p-4 animate-fade-in">
-    <h3 className="text-xl font-bold mb-4">Biblioteca de Ejercicios</h3>
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-       {INITIAL_EXERCISES.map(ex => (
-         <a 
-           key={ex.id} 
-           href={ex.videoUrl} 
-           target="_blank" 
-           rel="noreferrer"
-           className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 transition-colors flex justify-between items-center group"
-         >
-           <div>
-             <div className="font-bold text-sm">{ex.name}</div>
-             <div className="text-xs text-gray-500 uppercase">{ex.muscleGroup}</div>
+const WorkoutsView = () => {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newExercise, setNewExercise] = useState<Partial<Exercise>>({
+    name: '', muscleGroup: 'Pecho', videoUrl: ''
+  });
+  const [searchTerm, setSearchTerm] = useState('');
+  const allExercises = DataEngine.getExercises();
+
+  const handleSaveExercise = () => {
+    if(!newExercise.name || !newExercise.videoUrl) return;
+    const ex: Exercise = {
+       id: generateUUID(),
+       name: newExercise.name,
+       muscleGroup: newExercise.muscleGroup || 'Pecho',
+       videoUrl: newExercise.videoUrl,
+       technique: '', commonErrors: []
+    };
+    DataEngine.addExercise(ex);
+    setShowAddModal(false);
+    setNewExercise({ name: '', muscleGroup: 'Pecho', videoUrl: '' });
+  };
+
+  const filtered = allExercises.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()) || e.muscleGroup.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  return (
+    <div className="p-4 animate-fade-in pb-20">
+      <div className="flex justify-between items-center mb-6">
+         <h3 className="text-xl font-bold">Biblioteca Global</h3>
+         <button onClick={() => setShowAddModal(true)} className="bg-red-600 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
+            <Plus size={16} /> NUEVO EJERCICIO
+         </button>
+      </div>
+
+      <div className="relative mb-6">
+         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+         <input 
+           className="w-full bg-[#0F0F11] border border-white/5 rounded-xl pl-10 pr-4 py-3 outline-none focus:border-red-500 transition-colors"
+           placeholder="Buscar por nombre o músculo..."
+           value={searchTerm}
+           onChange={(e) => setSearchTerm(e.target.value)}
+         />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+         {filtered.map(ex => (
+           <div 
+             key={ex.id} 
+             className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 transition-colors flex justify-between items-center group"
+           >
+             <div>
+               <div className="font-bold text-sm">{ex.name}</div>
+               <div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div>
+             </div>
+             <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-gray-600 hover:text-red-500 p-2">
+                <Youtube size={20} />
+             </a>
            </div>
-           <Play size={16} className="text-gray-600 group-hover:text-red-500" />
-         </a>
-       ))}
+         ))}
+      </div>
+
+      {showAddModal && (
+         <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4">
+             <div className="bg-[#111] w-full max-w-sm rounded-2xl p-6 border border-white/10">
+                <h3 className="font-bold text-lg mb-4">Agregar Ejercicio</h3>
+                <div className="space-y-3">
+                   <input className="w-full bg-black border border-white/10 rounded-lg p-3 outline-none" placeholder="Nombre del Ejercicio" value={newExercise.name} onChange={e => setNewExercise({...newExercise, name: e.target.value})} />
+                   <select className="w-full bg-black border border-white/10 rounded-lg p-3 outline-none" value={newExercise.muscleGroup} onChange={e => setNewExercise({...newExercise, muscleGroup: e.target.value})}>
+                      {['Pecho', 'Espalda', 'Cuadriceps', 'Isquiotibiales', 'Biceps', 'Triceps', 'Hombro', 'Glúteo', 'Pantorrilla', 'Abdomen', 'Funcionales', 'Isométricos'].map(m => <option key={m} value={m}>{m}</option>)}
+                   </select>
+                   <input className="w-full bg-black border border-white/10 rounded-lg p-3 outline-none" placeholder="URL de Youtube" value={newExercise.videoUrl} onChange={e => setNewExercise({...newExercise, videoUrl: e.target.value})} />
+                   <div className="flex gap-2 pt-2">
+                      <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-xs text-gray-400">CANCELAR</button>
+                      <button onClick={handleSaveExercise} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-xs">GUARDAR</button>
+                   </div>
+                </div>
+             </div>
+         </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 // SUB-COMPONENTS
 const NavButton = ({ active, onClick, icon, label }: any) => (
@@ -815,13 +1006,13 @@ const NavButton = ({ active, onClick, icon, label }: any) => (
   </button>
 );
 const MobileNavButton = ({ active, onClick, icon, label }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-1 p-2 transition-all ${active ? 'text-red-500' : 'text-gray-500'}`}>
-    {icon} <span className="text-[10px] font-bold">{label}</span>
+  <button onClick={onClick} className={`flex flex-col items-center gap-1 p-2 w-16 transition-all ${active ? 'text-red-500' : 'text-gray-500'}`}>
+    {icon} <span className="text-[9px] font-bold">{label}</span>
   </button>
 );
 const StatCard = ({ label, value, icon }: any) => (
   <div className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex flex-col gap-2 hover:border-white/10 transition-colors">
     <div className="flex justify-between items-start"><span className="text-gray-500 text-[10px] uppercase font-bold tracking-wider">{label}</span>{icon}</div>
-    <span className="text-2xl font-display font-bold">{value}</span>
+    <span className="text-lg md:text-2xl font-display font-bold truncate">{value}</span>
   </div>
 );
