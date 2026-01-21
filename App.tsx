@@ -5,7 +5,7 @@ import {
   Settings, Dumbbell, History, Zap, Check, ShieldAlert, BarChart3, Search, ChevronRight,
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
-  Wifi, WifiOff, AlertTriangle, Smartphone
+  Wifi, WifiOff, AlertTriangle, Smartphone, Signal
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -31,13 +31,13 @@ const isUUID = (str: string) => {
   return regex.test(str);
 };
 
-// ID FIJO PARA EL HEAD COACH (UUID VÁLIDO)
-const COACH_UUID = '99999999-9999-9999-9999-999999999999';
+// --- SYSTEM CONSTANTS ---
+// UUID Específico y válido para el Staff/Coach. No cambiar.
+const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
+const STORAGE_KEY = 'KINETIX_DATA_V3_COMMERCIAL'; // Nueva key para forzar limpieza de versiones viejas
+const SESSION_KEY = 'KINETIX_SESSION_V3';
 
-// --- KINETIX HYBRID ENGINE V17.0 (MOBILE ROBUST) ---
-const STORAGE_KEY = 'KINETIX_DATA_V2'; // Changed key to force refresh on deploy
-const SESSION_KEY = 'KINETIX_SESSION_V2';
-
+// --- DATA ENGINE (HYBRID CORE) ---
 const DataEngine = {
   getStore: () => {
     try {
@@ -48,23 +48,25 @@ const DataEngine = {
   saveStore: (data: any) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) { console.error("Storage Full", e); }
+    } catch (e) { console.error("Storage Limit Reached", e); }
   },
   resetStore: () => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(SESSION_KEY);
+    localStorage.clear();
     window.location.reload();
   },
   init: () => {
     const store = DataEngine.getStore();
+    // Inicializar DB local vacía o con defaults solo si no existe
     if (!store.USERS) {
       DataEngine.saveStore({
-        USERS: JSON.stringify([MOCK_USER]),
+        USERS: JSON.stringify([MOCK_USER]), // Usuario demo inicial
         EXERCISES: JSON.stringify(INITIAL_EXERCISES),
         LOGO_URL: 'https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png'
       });
     }
   },
+  
+  // Getters seguros
   getUsers: (): User[] => {
     const s = DataEngine.getStore();
     return s.USERS ? JSON.parse(s.USERS) : [];
@@ -85,15 +87,14 @@ const DataEngine = {
     return l ? JSON.parse(l) : [];
   },
 
-  // SYNC CORE
+  // --- SINCRONIZACIÓN MAESTRA ---
   pullFromCloud: async () => {
     if (!supabaseConnectionStatus.isConfigured) return false;
-    console.log("CLOUD: Pulling data...");
     
     try {
       const s = DataEngine.getStore();
       
-      // 1. Users
+      // 1. USUARIOS
       const { data: users, error: uErr } = await supabase.from('users').select('*');
       if (users && !uErr) {
         const mappedUsers = users.map(u => ({
@@ -111,7 +112,7 @@ const DataEngine = {
         s.USERS = JSON.stringify(mappedUsers);
       }
 
-      // 2. Plans (Optimized fetch)
+      // 2. PLANES (Carga optimizada con relaciones)
       const { data: plans, error: pErr } = await supabase.from('plans').select(`
         *, 
         workouts (
@@ -125,7 +126,6 @@ const DataEngine = {
       
       if (plans && !pErr) {
         plans.forEach((p: any) => {
-          // Reconstruct Plan Object
           const fullPlan: Plan = {
             id: p.id,
             title: p.title,
@@ -148,7 +148,7 @@ const DataEngine = {
         });
       }
 
-      // 3. Exercises
+      // 3. EJERCICIOS
       const { data: exercises } = await supabase.from('exercises').select('*');
       if (exercises && exercises.length > 0) {
         s.EXERCISES = JSON.stringify(exercises);
@@ -163,7 +163,7 @@ const DataEngine = {
   },
 
   saveUser: async (user: User) => {
-    // Local
+    // 1. Guardar Local
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
     const idx = users.findIndex((u: User) => u.id === user.id);
@@ -173,7 +173,7 @@ const DataEngine = {
 
     if (!isUUID(user.id)) return;
 
-    // Cloud
+    // 2. Guardar Cloud
     try {
       await supabase.from('users').upsert({
         id: user.id,
@@ -190,16 +190,15 @@ const DataEngine = {
   },
 
   savePlan: async (p: Plan) => {
-    // Local
     const s = DataEngine.getStore();
     s[`PLAN_${p.userId}`] = JSON.stringify(p);
     DataEngine.saveStore(s);
     
     if (!isUUID(p.userId)) return;
 
-    // Cloud
     try {
       const planUUID = isUUID(p.id) ? p.id : undefined;
+      // Upsert cabecera
       const { data: planData, error: pErr } = await supabase.from('plans').upsert({
         id: planUUID,
         title: p.title,
@@ -208,7 +207,7 @@ const DataEngine = {
       }).select().single();
 
       if (planData) {
-        // Full replacement strategy for workouts to avoid complexity
+        // Reemplazo limpio de workouts para evitar inconsistencias
         await supabase.from('workouts').delete().eq('plan_id', planData.id);
         
         for (const w of p.workouts) {
@@ -315,77 +314,124 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Boot Sequence
+  // INICIO DE LA APLICACIÓN
   useEffect(() => {
     DataEngine.init();
     
-    // Check connection
-    if (supabaseConnectionStatus.isConfigured) {
-      supabase.from('users').select('count', { count: 'exact', head: true })
-        .then(({ error }) => setDbConnected(!error))
-        .catch(() => setDbConnected(false));
-    }
+    // Verificación de conectividad real
+    const checkConn = async () => {
+      if (supabaseConnectionStatus.isConfigured) {
+        const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+        setDbConnected(!error);
+      }
+    };
+    checkConn();
 
-    const initApp = async () => {
-      // 1. Load Local Session
-      const saved = localStorage.getItem(SESSION_KEY);
-      if (saved) {
+    const bootSequence = async () => {
+      // 1. Carga offline primero (UI instantánea)
+      refreshData();
+      
+      const savedSession = localStorage.getItem(SESSION_KEY);
+      if (savedSession) {
          try {
-           const user = JSON.parse(saved);
+           const user = JSON.parse(savedSession);
            setCurrentUser(user);
            setActiveTab(user.role === 'coach' ? 'admin' : 'home');
          } catch(e) { localStorage.removeItem(SESSION_KEY); }
       }
 
-      // 2. Refresh Data in Background
-      refreshData();
       setIsReady(true);
       
-      // 3. Try Cloud Sync (Non-blocking)
+      // 2. Sincronización silenciosa en background
       setSyncing(true);
       await DataEngine.pullFromCloud();
       refreshData();
       setSyncing(false);
     };
 
-    initApp();
+    bootSequence();
   }, [refreshData]);
 
-  // LOGIN HANDLERS
-  const handleLogin = async () => {
+  // --- LOGIN STAFF/COACH (ARQUITECTURA COMERCIAL) ---
+  const handleCoachLogin = async (pin: string) => {
+    if (pin === 'KINETIX2025') {
+       notify("AUTENTICANDO...", 'success');
+       setLoading(true);
+
+       // 1. DEFINIR OBJETO COACH ESTÁNDAR
+       const coach: User = { 
+         id: COACH_UUID, 
+         name: 'HEAD COACH', 
+         email: 'staff@kinetix.com',
+         role: 'coach', 
+         goal: Goal.PERFORMANCE, 
+         level: UserLevel.ADVANCED,
+         daysPerWeek: 7, 
+         equipment: ['Full Box'], 
+         streak: 100, 
+         createdAt: new Date().toISOString()
+       };
+
+       // 2. INYECCIÓN FORZOSA EN NUBE (Upsert Directo)
+       // Esto garantiza que el coach EXISTA en la BD antes de cualquier lectura.
+       if (supabaseConnectionStatus.isConfigured) {
+         const { error } = await supabase.from('users').upsert({
+            id: coach.id,
+            name: coach.name,
+            email: coach.email,
+            role: coach.role
+         });
+         
+         if (error) {
+           console.error("Coach Auth Error:", error);
+           // No bloqueamos, permitimos entrar offline si falla la nube pero avisamos
+           notify("MODO OFFLINE (ERROR RED)", 'error'); 
+         }
+       }
+
+       // 3. SINCRONIZACIÓN PROFUNDA
+       // Descargamos todos los alumnos y planes
+       await DataEngine.pullFromCloud();
+       refreshData();
+       
+       setLoading(false);
+       setCurrentUser(coach);
+       localStorage.setItem(SESSION_KEY, JSON.stringify(coach));
+       setActiveTab('admin');
+       notify("SISTEMA ONLINE");
+    } else {
+      notify("PIN INCORRECTO", 'error');
+    }
+  };
+
+  // --- LOGIN ATLETA ---
+  const handleUserLogin = async () => {
     const input = loginName.trim().toLowerCase();
     if (!input) return;
     setLoading(true);
+    notify("BUSCANDO PERFIL...", 'success');
 
-    notify("BUSCANDO...", 'success');
-    
-    // 1. Force Sync first
+    // 1. Intentar descargar última data
     await DataEngine.pullFromCloud();
     refreshData();
 
-    // 2. Find User
-    const users = DataEngine.getUsers();
-    let found = users.find((u: User) => u.name.toLowerCase().includes(input));
+    // 2. Búsqueda Local (Ya actualizada)
+    let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
     
-    // 3. Last Resort: Direct Cloud Query
+    // 3. Fallback: Consulta directa DB (Por si pull falló o es usuario nuevo)
     if (!found && supabaseConnectionStatus.isConfigured) {
        try {
          const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
          if (data) {
             found = {
-               id: data.id,
-               name: data.name,
-               email: data.email,
-               role: data.role,
-               goal: data.goal,
-               level: data.level,
-               daysPerWeek: data.days_per_week,
-               equipment: data.equipment || [],
-               streak: data.streak,
-               createdAt: data.created_at
+               id: data.id, name: data.name, email: data.email, role: data.role,
+               goal: data.goal, level: data.level, daysPerWeek: data.days_per_week,
+               equipment: data.equipment || [], streak: data.streak, createdAt: data.created_at
             };
-            DataEngine.saveUser(found);
-            await DataEngine.pullFromCloud(); // Fetch their plan
+            DataEngine.saveUser(found); // Cachear
+            // Traer su plan específico
+            const { data: plans } = await supabase.from('plans').select('*, workouts(*)').eq('user_id', data.id);
+            if (plans) await DataEngine.pullFromCloud(); 
          }
        } catch (e) {}
     }
@@ -398,60 +444,31 @@ export default function App() {
       notify(`BIENVENIDO, ${found.name.toUpperCase()}`);
       setActiveTab('home');
     } else {
-      notify("ATLETA NO ENCONTRADO", 'error');
+      notify("USUARIO NO ENCONTRADO", 'error');
     }
   };
 
-  const handleCoachLogin = async (pin: string) => {
-    if (pin === 'KINETIX2025') {
-       notify("INICIANDO SISTEMA...", 'success');
-       setLoading(true);
-
-       // COACH OBJECT
-       const coach: User = { 
-         id: COACH_UUID, 
-         name: 'HEAD COACH', email: 'staff@kinetix.com',
-         role: 'coach', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED,
-         daysPerWeek: 7, equipment: ['Full Box'], streak: 100, createdAt: new Date().toISOString()
-       };
-
-       // CRITICAL: ENSURE COACH EXISTS IN CLOUD
-       await DataEngine.saveUser(coach);
-       
-       // CRITICAL: FETCH EVERYTHING FOR THE COACH
-       await DataEngine.pullFromCloud();
-       refreshData();
-       
-       setLoading(false);
-       setCurrentUser(coach);
-       localStorage.setItem(SESSION_KEY, JSON.stringify(coach));
-       setActiveTab('admin');
-       notify("MODO COACH ACTIVADO");
-    } else {
-      notify("PIN INCORRECTO", 'error');
-    }
-  };
-
-  // --- CHART DATA (FIXED) ---
+  // --- CÁLCULO DE GRÁFICAS (MEMOIZADO) ---
   const chartData = useMemo(() => {
     if (!myLogs || myLogs.length === 0) return [];
-    
-    const points = myLogs.map(log => {
-      const d = new Date(log.date);
-      let vol = 0;
-      log.exercisesData?.forEach(ex => {
-        ex.sets?.forEach(s => {
-          if (s.done) vol += (Math.max(s.weight, 1) * s.reps);
+    try {
+      const points = myLogs.map(log => {
+        const d = new Date(log.date);
+        let vol = 0;
+        log.exercisesData?.forEach(ex => {
+          ex.sets?.forEach(s => {
+             // Validación extra de datos
+             if (s && s.done) vol += ((s.weight || 0) * (s.reps || 0));
+          });
         });
+        return { 
+          rawDate: d,
+          date: `${d.getDate()}/${d.getMonth()+1}`, 
+          vol 
+        };
       });
-      return { 
-        rawDate: d,
-        date: `${d.getDate()}/${d.getMonth()+1}`, 
-        vol 
-      };
-    });
-    
-    return points.sort((a,b) => a.rawDate.getTime() - b.rawDate.getTime());
+      return points.sort((a,b) => a.rawDate.getTime() - b.rawDate.getTime());
+    } catch(e) { return []; }
   }, [myLogs]);
 
   if (!isReady) return <div className="min-h-screen bg-[#050507] flex items-center justify-center"><RefreshCw className="animate-spin text-red-600" size={40}/></div>;
@@ -468,13 +485,21 @@ export default function App() {
           <div className="flex flex-col">
             <span className="font-display italic text-2xl uppercase text-white tracking-tighter leading-none neon-red">KINETIX</span>
             <div className="flex items-center gap-2">
-               <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.4em]">STATION {syncing ? 'SYNCING...' : 'ONLINE'}</span>
-               {syncing && <RefreshCw size={8} className="animate-spin text-red-600"/>}
+               <span className={`text-[7px] font-black uppercase tracking-[0.4em] ${syncing ? 'text-yellow-500' : 'text-zinc-500'}`}>
+                 {syncing ? 'SYNCING CLOUD...' : 'SYSTEM READY'}
+               </span>
             </div>
           </div>
         </div>
         {currentUser && (
-          <button onClick={() => { setCurrentUser(null); localStorage.removeItem(SESSION_KEY); setLoginName(''); setActiveTab('home'); }} className="bg-zinc-900 p-3 rounded-2xl text-zinc-600 hover:text-red-600 border border-white/5 transition-all">
+          <button onClick={() => { 
+             if(window.confirm("¿Cerrar sesión?")) {
+               setCurrentUser(null); 
+               localStorage.removeItem(SESSION_KEY); 
+               setLoginName(''); 
+               setActiveTab('home');
+             }
+          }} className="bg-zinc-900 p-3 rounded-2xl text-zinc-600 hover:text-red-600 border border-white/5 transition-all">
             <LogOut size={18}/>
           </button>
         )}
@@ -485,7 +510,7 @@ export default function App() {
           // --- LOGIN SCREEN ---
           <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-16 animate-in fade-in duration-1000">
              
-             {/* LOGO */}
+             {/* LOGO HERO */}
              <div className="relative group">
                 <div className="absolute -inset-20 bg-red-600 rounded-full blur-[140px] opacity-10 group-hover:opacity-30 transition-all"></div>
                 <div className="relative w-52 h-52 bg-zinc-900 rounded-[5rem] border border-white/10 flex items-center justify-center shadow-2xl overflow-hidden group-hover:scale-110 transition-transform duration-500">
@@ -502,45 +527,45 @@ export default function App() {
                 {/* LOGIN FORM */}
                 <div className="space-y-5">
                   <input 
-                    type="search" // Better for mobile keyboard
+                    type="search" // Teclado móvil con 'Ir'
                     value={loginName} 
                     onChange={e => setLoginName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    onKeyDown={e => e.key === 'Enter' && handleUserLogin()}
                     placeholder="ID DE ATLETA"
                     className="w-full bg-zinc-900/50 border border-zinc-800 p-8 rounded-[3rem] text-center font-bold text-white outline-none focus:border-red-600 transition-all uppercase text-2xl placeholder:text-zinc-800 shadow-inner"
                   />
                   <button 
-                    onClick={handleLogin}
+                    onClick={handleUserLogin}
                     disabled={loading}
                     className="w-full bg-red-600 py-8 rounded-[3rem] font-display italic text-3xl uppercase text-white shadow-[0_20px_50px_rgba(239,68,68,0.4)] active:scale-95 transition-all flex items-center justify-center gap-4"
                   >
                     {loading ? <RefreshCw className="animate-spin"/> : 'IDENTIFICARSE'}
                   </button>
                   
-                  {/* STATUS INDICATOR */}
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="flex justify-center items-center gap-3">
-                       <span className={`w-2 h-2 rounded-full ${dbConnected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></span>
-                       <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">
-                         {supabaseConnectionStatus.isConfigured ? (dbConnected ? 'CLOUD CONNECTED' : 'CLOUD UNREACHABLE') : 'MISSING API KEYS'}
+                  {/* DIAGNÓSTICO DE RED */}
+                  <div className="flex flex-col items-center gap-2 mt-4">
+                    <div className="flex justify-center items-center gap-3 bg-zinc-900/50 px-4 py-2 rounded-full border border-white/5">
+                       <Signal size={12} className={dbConnected ? 'text-green-500' : 'text-red-500'} />
+                       <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
+                         {supabaseConnectionStatus.isConfigured ? (dbConnected ? 'CONEXIÓN ESTABLE' : 'ERROR DE CONEXIÓN') : 'FALTAN LLAVES API'}
                        </span>
                     </div>
                   </div>
                 </div>
              </div>
 
-             {/* FOOTER ACTIONS */}
-             <div className="flex gap-6 items-center">
+             {/* ACTIONS */}
+             <div className="flex gap-8 items-center">
                <button 
                  onClick={() => {
-                   if(window.confirm("¿RESETEAR APP? Esto borrará datos locales corruptos.")) {
+                   if(window.confirm("¿PROBLEMAS DE ACCESO? Esto borrará la memoria caché y recargará la app. ¿Continuar?")) {
                      DataEngine.resetStore();
                    }
                  }}
-                 className="p-3 text-zinc-800 hover:text-red-600 transition-colors"
-                 title="Hard Reset"
+                 className="text-zinc-700 hover:text-red-600 transition-colors flex flex-col items-center gap-1"
                >
-                 <Trash2 size={16}/>
+                 <Trash2 size={20}/>
+                 <span className="text-[8px] font-black uppercase tracking-widest">RESET</span>
                </button>
 
                <button 
@@ -550,9 +575,12 @@ export default function App() {
                    type: 'password',
                    callback: handleCoachLogin
                  })}
-                 className="text-[10px] font-black text-zinc-800 uppercase tracking-[0.5em] hover:text-red-600 flex items-center gap-2 transition-colors"
+                 className="text-zinc-300 hover:text-white flex flex-col items-center gap-1 group"
                >
-                 <Lock size={12}/> STAFF LOGIN
+                 <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 group-hover:border-red-600 transition-colors">
+                   <Lock size={20} className="text-red-600"/>
+                 </div>
+                 <span className="text-[8px] font-black uppercase tracking-widest mt-1">STAFF ONLY</span>
                </button>
              </div>
           </div>
@@ -562,12 +590,15 @@ export default function App() {
             {activeTab === 'home' && (
               <div className="space-y-10">
                 <header className="text-left">
-                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-1">DATA PERFORMANCE</p>
+                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-1">PERFORMANCE HUB</p>
                    <h2 className="text-6xl font-display italic text-white uppercase leading-none tracking-tighter italic">
                      HOLA, <span className="text-red-600">{currentUser.name.split(' ')[0]}</span>
                    </h2>
                    {!isUUID(currentUser.id) && (
-                     <p className="text-[9px] text-yellow-500 font-bold mt-2 flex items-center gap-2"><AlertTriangle size={10}/> CUENTA LOCAL - PIDE AL COACH QUE TE MIGRE</p>
+                     <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-600/30 rounded-2xl flex items-center gap-3">
+                       <AlertTriangle size={16} className="text-yellow-500"/>
+                       <p className="text-[9px] text-yellow-500 font-bold uppercase">CUENTA LOCAL - PIDE MIGRACIÓN AL COACH</p>
+                     </div>
                    )}
                 </header>
 
@@ -576,7 +607,7 @@ export default function App() {
                    <div className="flex justify-between items-center relative z-10">
                       <div className="text-left">
                         <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest flex items-center gap-2"><Activity size={14}/> VOLUMEN</p>
-                        <h4 className="text-2xl font-display italic text-white uppercase tracking-tighter italic">RENDIMIENTO</h4>
+                        <h4 className="text-2xl font-display italic text-white uppercase tracking-tighter italic">PROGRESO</h4>
                       </div>
                       <div className="bg-zinc-950 p-4 rounded-3xl border border-white/5 text-right min-w-[80px]">
                          <p className="text-3xl font-display italic text-white leading-none">{myLogs.length}</p>
@@ -601,7 +632,7 @@ export default function App() {
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-zinc-800 rounded-[2.5rem] gap-3 text-zinc-800">
                            <BarChart3 size={32}/>
-                           <p className="text-[9px] font-black uppercase tracking-widest text-center italic">PENDIENTE DE TU PRIMERA SESIÓN</p>
+                           <p className="text-[9px] font-black uppercase tracking-widest text-center italic">SIN DATOS AÚN</p>
                         </div>
                       )}
                    </div>
