@@ -16,10 +16,6 @@ import { generateSmartRoutine } from './geminiService';
 const DEFAULT_LOGO = "https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png";
 const DEFAULT_PIN = "KINETIX2025";
 
-/**
- * 🌐 KINETIX DATA SERVICE
- * Centraliza la persistencia en LocalStorage para el MVP.
- */
 const DataService = {
   getPlans: async (): Promise<Plan[]> => JSON.parse(localStorage.getItem('kx_plans') || '[]'),
   savePlan: async (plan: Plan) => {
@@ -47,7 +43,6 @@ const DataService = {
   saveBrandConfig: (config: { logo: string, pin: string }) => localStorage.setItem('kx_brand', JSON.stringify(config))
 };
 
-// --- COMPONENTES UI REUTILIZABLES ---
 const NeonButton = memo(({ children, onClick, variant = 'primary', className = '', loading = false, icon, disabled = false }: any) => {
   const base = "relative overflow-hidden px-6 py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-3 text-[10px] uppercase tracking-[0.2em] active:scale-95 disabled:opacity-30 group shrink-0 select-none";
   const styles = {
@@ -86,7 +81,10 @@ export default function App() {
   const [coachPinInput, setCoachPinInput] = useState('');
   const [brandConfig, setBrandConfig] = useState(DataService.getBrandConfig());
 
-  const [exercises, setExercises] = useState<Exercise[]>(() => JSON.parse(localStorage.getItem('kx_exercises') || JSON.stringify(INITIAL_EXERCISES)));
+  const [exercises, setExercises] = useState<Exercise[]>(() => {
+    const stored = localStorage.getItem('kx_exercises');
+    return stored ? JSON.parse(stored) : INITIAL_EXERCISES;
+  });
   const [users, setUsers] = useState<User[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
@@ -168,7 +166,6 @@ export default function App() {
     })).slice(-10);
   }, [logs, currentUser]);
 
-  // LOGIN SCREEN
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-8 relative overflow-hidden">
@@ -201,7 +198,6 @@ export default function App() {
     );
   }
 
-  // FLUJOS DE ACTIVIDAD
   if (editingPlan) return <PlanEditor plan={editingPlan.plan} allExercises={exercises} onSave={async (p: any) => { setCloudStatus('syncing'); await DataService.savePlan(p); setPlans(prev => [p, ...prev.filter(x => x.userId !== p.userId)]); setEditingPlan(null); setCloudStatus('online'); }} onCancel={() => setEditingPlan(null)} />;
   if (currentWorkout) return <LiveWorkout workout={currentWorkout} exercises={exercises} lastLogs={logs.filter(l => l.userId === currentUser.id)} onFinish={async (l: any) => { setCloudStatus('syncing'); await DataService.saveLog(l); setLogs([l, ...logs]); setWorkoutSummary(l); setCurrentWorkout(null); setCloudStatus('online'); }} onCancel={() => setCurrentWorkout(null)} />;
 
@@ -224,14 +220,14 @@ export default function App() {
   );
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-[#050507] flex flex-col text-zinc-100 font-sans selection:bg-red-600/40">
+    <div className="max-w-md mx-auto min-h-screen bg-[#050507] flex flex-col text-zinc-100 font-sans">
       <header className="p-6 flex justify-between items-center bg-zinc-950/80 backdrop-blur-3xl sticky top-0 z-40 border-b border-zinc-900/40">
         <div className="flex items-center gap-4">
            <img src={brandConfig.logo} className="w-10 h-10 rounded-xl object-contain" alt="Logo" />
            <div className="flex flex-col">
               <span className="font-display italic text-xl uppercase leading-none text-white tracking-tighter">KINETIX</span>
               <div className="flex items-center gap-1.5">
-                 <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 'bg-green-500 shadow-[0_0_5px_#22c55e]'}`}></div>
+                 <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></div>
                  <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{cloudStatus === 'syncing' ? 'SYNCING' : 'READY'}</span>
               </div>
            </div>
@@ -253,13 +249,10 @@ export default function App() {
                      <span className="text-zinc-700 text-[8px] font-black uppercase tracking-widest">{currentUser.level}</span>
                   </div>
                </div>
-               <div className="bg-zinc-900/50 p-4 rounded-3xl border border-zinc-800 text-zinc-500 shadow-xl">
-                  {currentUser.role === 'coach' ? <ShieldCheck size={20} className="text-red-600"/> : <Fingerprint size={20} />}
-               </div>
             </div>
 
             {currentPlan?.coachNotes && (
-              <GlassCard className="bg-red-600/10 border-red-600/30 p-8 flex items-start gap-6 shadow-[0_0_30px_rgba(239,68,68,0.1)] group">
+              <GlassCard className="bg-red-600/10 border-red-600/30 p-8 flex items-start gap-6">
                  <Megaphone size={28} className="text-red-600 shrink-0 mt-1 animate-bounce" />
                  <div className="space-y-2">
                     <p className="text-[9px] font-black text-red-600 uppercase tracking-[0.3em] italic">DIRECTRIZ DEL COACH</p>
@@ -269,7 +262,7 @@ export default function App() {
             )}
 
             {currentPlan ? (
-              <GlassCard className="bg-gradient-to-br from-zinc-900 to-black p-10 border-red-600/10 hover:border-red-600/30 transition-all">
+              <GlassCard className="bg-gradient-to-br from-zinc-900 to-black p-10 border-red-600/10 hover:border-red-600/30">
                 <div className="space-y-8">
                    <div className="space-y-1 text-center">
                       <p className="text-cyan-400 text-[9px] font-black uppercase tracking-[0.4em] italic">SESIÓN DISPONIBLE</p>
@@ -287,10 +280,7 @@ export default function App() {
 
             {progressData.length > 0 && (
               <div className="space-y-6">
-                <div className="flex justify-between items-end">
-                   <h3 className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em] italic">PROGRESO DE CARGA</h3>
-                   <span className="text-[9px] font-black text-red-600">KG TOTALES</span>
-                </div>
+                <h3 className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em] italic">PROGRESO DE CARGA</h3>
                 <div className="h-48 w-full bg-zinc-950/40 rounded-[2.5rem] p-4 border border-zinc-900">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={progressData}>
@@ -301,9 +291,9 @@ export default function App() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
-                      <XAxis dataKey="date" stroke="#3f3f46" fontSize={8} tickLine={false} axisLine={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px', fontSize: '10px' }} />
-                      <Area type="monotone" dataKey="volume" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={3} />
+                      <XAxis dataKey="date" stroke="#3f3f46" fontSize={8} />
+                      <Tooltip contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px' }} />
+                      <Area type="monotone" dataKey="volume" stroke="#ef4444" fill="url(#colorVol)" strokeWidth={3} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -315,11 +305,8 @@ export default function App() {
         {activeTab === 'admin' && currentUser.role === 'coach' && (
           <div className="space-y-10 animate-in slide-in-from-bottom-8 duration-500">
              <div className="flex justify-between items-end">
-                <div className="space-y-1">
-                   <h2 className="text-5xl font-display italic uppercase tracking-tighter text-red-600 leading-none">EQUIPO<br/>KINETIX</h2>
-                   <p className="text-zinc-800 text-[9px] font-black uppercase tracking-[0.3em] italic">GESTIÓN DE ATLETAS</p>
-                </div>
-                <button onClick={() => setShowAddUser(true)} className="bg-white/5 p-4 rounded-2xl text-cyan-400 border border-white/10 hover:bg-cyan-400 hover:text-black transition-all shadow-xl"><UserPlus size={20}/></button>
+                <h2 className="text-5xl font-display italic uppercase tracking-tighter text-red-600 leading-none">EQUIPO<br/>KINETIX</h2>
+                <button onClick={() => setShowAddUser(true)} className="bg-white/5 p-4 rounded-2xl text-cyan-400 border border-white/10 shadow-xl"><UserPlus size={20}/></button>
              </div>
 
              <div className="grid gap-4">
@@ -333,46 +320,13 @@ export default function App() {
                        </div>
                     </div>
                     <div className="flex gap-2">
-                       <button onClick={() => onAiGenerate(u)} disabled={isAiGenerating} className="p-4 rounded-2xl bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-400 hover:text-black transition-all">
+                       <button onClick={() => onAiGenerate(u)} disabled={isAiGenerating} className="p-4 rounded-2xl bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">
                           {isAiGenerating ? <RefreshCw className="animate-spin" size={18}/> : <Sparkles size={18}/>}
                        </button>
                        <button onClick={() => setEditingPlan({ plan: plans.find(p => p.userId === u.id) || { id: `p-${Date.now()}`, userId: u.id, title: 'Protocolo Elite', workouts: [], coachNotes: '', updatedAt: new Date().toISOString() }, isNew: true })} className="bg-zinc-800/40 p-4 rounded-2xl text-zinc-500 border border-zinc-800 hover:text-white transition-all"><Edit3 size={18}/></button>
                     </div>
                   </GlassCard>
                 ))}
-             </div>
-
-             <div className="pt-10 border-t border-zinc-900 space-y-8">
-                <div className="flex items-center gap-3">
-                   <Settings size={20} className="text-zinc-600" />
-                   <h3 className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em] italic">AJUSTES DE IDENTIDAD</h3>
-                </div>
-                <GlassCard className="p-8 space-y-6 bg-zinc-950 border-zinc-900">
-                   <div className="space-y-2">
-                      <label className="text-[7px] font-black text-zinc-700 uppercase tracking-widest ml-1">URL DEL LOGO (RAW PNG/JPG)</label>
-                      <div className="flex gap-4">
-                         <div className="flex-1 relative">
-                            <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-800" size={16} />
-                            <input id="brand-logo" defaultValue={brandConfig.logo} className="w-full bg-zinc-900 border border-zinc-800 p-5 pl-12 rounded-2xl text-[10px] text-white outline-none focus:border-red-600" placeholder="https://..." />
-                         </div>
-                         <div className="w-16 h-16 bg-black rounded-2xl border border-zinc-800 flex items-center justify-center p-2">
-                            <img src={brandConfig.logo} className="w-full h-full object-contain opacity-50" alt="Preview" />
-                         </div>
-                      </div>
-                   </div>
-                   <div className="space-y-2">
-                      <label className="text-[7px] font-black text-zinc-700 uppercase tracking-widest ml-1">PIN DE SEGURIDAD COACH</label>
-                      <div className="relative">
-                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-800" size={16} />
-                         <input id="brand-pin" defaultValue={brandConfig.pin} className="w-full bg-zinc-900 border border-zinc-800 p-5 pl-12 rounded-2xl text-[10px] text-white outline-none focus:border-red-600 font-mono" placeholder="KINETIX2025" />
-                      </div>
-                   </div>
-                   <NeonButton onClick={() => {
-                     const logoInput = document.getElementById('brand-logo') as HTMLInputElement;
-                     const pinInput = document.getElementById('brand-pin') as HTMLInputElement;
-                     updateBrand({ logo: logoInput.value, pin: pinInput.value });
-                   }} className="w-full py-5" variant="accent">ACTUALIZAR MARCA</NeonButton>
-                </GlassCard>
              </div>
           </div>
         )}
@@ -422,8 +376,6 @@ export default function App() {
     </div>
   );
 }
-
-// --- SUBCOMPONENTES AUXILIARES ---
 
 const LiveWorkout = memo(({ workout, exercises, lastLogs, onFinish, onCancel }: any) => {
   const [idx, setIdx] = useState(0);
@@ -478,7 +430,7 @@ const LiveWorkout = memo(({ workout, exercises, lastLogs, onFinish, onCancel }: 
   }, [ex.exerciseId, setsLogs, allLogs, isLast, onFinish, workout.id]);
 
   return (
-    <div className="fixed inset-0 bg-[#050507] z-[100] p-8 flex flex-col overflow-y-auto no-scrollbar selection:bg-red-600/30">
+    <div className="fixed inset-0 bg-[#050507] z-[100] p-8 flex flex-col overflow-y-auto no-scrollbar">
        <header className="flex justify-between items-center mb-8 shrink-0">
           <button onClick={onCancel} className="bg-zinc-900 p-4 rounded-2xl text-zinc-700 hover:text-red-600 transition-all"><X size={20}/></button>
           <div className="text-center">
@@ -718,7 +670,7 @@ const UserDialog = memo(({ onSave, onCancel }: any) => {
 
 const NavItem = memo(({ icon, label, active, onClick }: any) => (
   <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all flex-1 py-2 outline-none ${active ? 'text-red-600' : 'text-zinc-800'}`}>
-    <div className={`p-2.5 rounded-2xl transition-all ${active ? 'bg-red-600/10 scale-110 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : 'hover:bg-white/5'}`}>{icon}</div>
+    <div className={`p-2.5 rounded-2xl transition-all ${active ? 'bg-red-600/10 scale-110' : 'hover:bg-white/5'}`}>{icon}</div>
     <span className={`text-[8px] font-black uppercase tracking-[0.3em] transition-opacity ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
   </button>
 ));
