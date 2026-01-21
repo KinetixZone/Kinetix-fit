@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "./types";
 
@@ -6,24 +5,37 @@ export async function generateSmartRoutine(user: User) {
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("API_KEY de Gemini no detectada. Configúrala en Vercel.");
+    throw new Error("Falta la API_KEY de Gemini.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Como Master Coach de Kinetix Functional Zone, genera un protocolo de entrenamiento profesional en ESPAÑOL para:
-  - Atleta: ${user.name}
+  const prompt = `Actúa como Master Coach de Kinetix Functional Zone. Diseña un protocolo de entrenamiento profesional en ESPAÑOL para este atleta:
+  - Nombre: ${user.name}
   - Objetivo: ${user.goal}
   - Nivel: ${user.level}
-  - Frecuencia: ${user.daysPerWeek} sesiones semanales
-  - Equipamiento: ${user.equipment.join(', ')}
+  - Frecuencia: ${user.daysPerWeek} días/semana
+  - Equipo: ${user.equipment.join(', ')}
   
-  REQUISITOS TÉCNICOS:
-  1. Títulos de los Workouts impactantes (ej: "SISTEMA A: POTENCIA").
-  2. coachCue cortos (ej: "Controlar el descenso").
-  3. Usa SOLO estos IDs: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
-  
-  Responde con un JSON puro que siga el esquema proporcionado.`;
+  ESTRUCTURA JSON REQUERIDA:
+  {
+    "title": "Protocolo de Alto Impacto",
+    "workouts": [
+      {
+        "name": "Día 1: Empuje de Potencia",
+        "day": 1,
+        "exercises": [
+          { "exerciseId": "p1", "targetSets": 4, "targetReps": "8-10", "coachCue": "Foco en el control excéntrico" }
+        ]
+      }
+    ]
+  }
+
+  REGLAS:
+  1. Usa solo IDs válidos: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
+  2. Títulos en MAYÚSCULAS e impactantes.
+  3. coachCue cortos (máx 5 palabras).
+  4. Devuelve ÚNICAMENTE el JSON.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
