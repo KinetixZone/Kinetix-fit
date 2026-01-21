@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, Trophy, X, 
   Users, Save, Trash2, ArrowRight, CheckCircle2, 
   Flame, Plus, LogOut, Timer, UserPlus, 
   Edit3, ChevronLeft, Lock, Megaphone, 
-  RefreshCw, Sparkles, Activity
+  RefreshCw, Sparkles, Activity, AlertTriangle
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { createClient } from '@supabase/supabase-js';
@@ -16,7 +15,8 @@ import { generateSmartRoutine } from './geminiService';
 // --- CONFIGURACIÓN DE SUPABASE ---
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+const isConfigured = !!(supabaseUrl && supabaseKey);
+const supabase = isConfigured ? createClient(supabaseUrl, supabaseKey) : null;
 
 const DataService = {
   getPlans: async (): Promise<Plan[]> => {
@@ -66,7 +66,6 @@ const DataService = {
   getUsers: async (): Promise<User[]> => {
     if (!supabase) {
       const stored = localStorage.getItem('kx_users');
-      // Fix: MOCK_USER now implements the User interface correctly in constants.ts
       return stored ? JSON.parse(stored) : [MOCK_USER as User];
     }
     try {
@@ -282,7 +281,6 @@ export default function App() {
 
   const handleCoachLogin = () => {
     if (coachPin === 'KINETIX2025') {
-      // Mock coach needs to match the User interface
       setCurrentUser({
         ...(MOCK_USER as User),
         role: 'coach',
@@ -307,8 +305,8 @@ export default function App() {
         updatedAt: new Date().toISOString()
       };
       setEditingPlan({ plan: enrichedPlan, isNew: true });
-    } catch (error) {
-      alert("Error con la IA de Google. Revisa tu llave API.");
+    } catch (error: any) {
+      alert(`Error IA: ${error.message || 'Falta configuración en Vercel'}`);
     } finally { setIsAiGenerating(false); }
   }, []);
 
@@ -325,6 +323,16 @@ export default function App() {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-8">
+        {!isConfigured && (
+          <div className="absolute top-8 left-8 right-8 bg-amber-600/10 border border-amber-600/30 p-4 rounded-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
+             <AlertTriangle className="text-amber-500" size={20} />
+             <div className="flex-1">
+                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Aviso: Modo Local</p>
+                <p className="text-[8px] text-amber-500/70 font-bold uppercase">Configura SUPABASE_URL en Vercel para guardar datos permanentemente.</p>
+             </div>
+          </div>
+        )}
+        
         <div className="text-center space-y-12 animate-in zoom-in duration-1000">
            <div className="space-y-4">
               <h1 className="text-7xl font-display italic tracking-tighter uppercase text-white leading-none">KINETIX</h1>
@@ -372,8 +380,8 @@ export default function App() {
         <div className="flex flex-col">
            <span className="font-display italic text-xl uppercase leading-none text-white tracking-tighter">KINETIX</span>
            <div className="flex items-center gap-1">
-             <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'online' ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`}></div>
-             <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{cloudStatus === 'online' ? 'CLOUD READY' : 'SYNCING...'}</span>
+             <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'online' ? (isConfigured ? 'bg-green-500' : 'bg-amber-500') : 'bg-cyan-500 animate-pulse'}`}></div>
+             <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{isConfigured ? (cloudStatus === 'online' ? 'CLOUD READY' : 'SYNCING...') : 'LOCAL STORAGE'}</span>
            </div>
         </div>
         <button onClick={() => setCurrentUser(null)} className="text-zinc-700 hover:text-red-500 transition-all"><LogOut size={20} /></button>
