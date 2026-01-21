@@ -1,13 +1,11 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "./types";
 
 export async function generateSmartRoutine(user: User) {
-  // En Vercel, process.env.API_KEY se inyecta automáticamente
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("API_KEY no configurada. Verifica las variables de entorno en Vercel.");
+    throw new Error("Falta la API_KEY en las variables de entorno de Vercel.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -19,10 +17,24 @@ export async function generateSmartRoutine(user: User) {
   - Frecuencia: ${user.daysPerWeek} días/semana
   - Equipo: ${user.equipment.join(', ')}
   
+  ESTRUCTURA REQUERIDA (JSON):
+  {
+    "title": "NOMBRE DEL PLAN (Ej: PROTOCOLO ALPHA)",
+    "workouts": [
+      {
+        "name": "NOMBRE DE LA SESIÓN (Ej: EMPUJE Y POTENCIA)",
+        "day": 1,
+        "exercises": [
+          { "exerciseId": "ID", "targetSets": 4, "targetReps": "10-12", "coachCue": "CONSEJO TÉCNICO CORTO" }
+        ]
+      }
+    ]
+  }
+
   REGLAS:
-  1. Usa solo IDs válidos: p1, p2, p3, p4 (Pecho), c1, c2, c3 (Pierna), e1, e2, e3 (Espalda), i1, i2 (Isquios), b1 (Biceps), t1 (Triceps), g1, g2 (Glúteo), a1 (Abdomen).
-  2. Títulos en MAYÚSCULAS.
-  3. coachCue cortos (máx 5 palabras).
+  1. Usa solo estos IDs: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
+  2. Títulos en MAYÚSCULAS e impactantes.
+  3. coachCue máximo 6 palabras.
   4. Devuelve ÚNICAMENTE el JSON.`;
 
   const response = await ai.models.generateContent({

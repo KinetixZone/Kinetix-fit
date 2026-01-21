@@ -35,13 +35,16 @@ export const EXERCISES_DB: Exercise[] = [
   { id: 'a1', name: 'Crunch', muscleGroup: 'Abdomen', videoUrl: 'https://youtu.be/9VopAXZSZDA', technique: 'Flexión abdominal controlada.', commonErrors: ['Tirar del cuello con las manos'] }
 ];
 
+// Actualizado para cumplir con la interfaz User
 export const MOCK_USER = {
   id: 'u1',
   name: 'Alex Guerrero',
   email: 'alex@example.com',
   goal: Goal.GAIN_MUSCLE,
   level: UserLevel.INTERMEDIATE,
+  role: 'client' as const,
   daysPerWeek: 4,
   equipment: ['Barra', 'Mancuernas', 'Bancos', 'Poleas'],
-  streak: 5
+  streak: 5,
+  createdAt: new Date().toISOString()
 };
