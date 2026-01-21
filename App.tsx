@@ -15,7 +15,24 @@ import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
-// --- KINETIX HYBRID ENGINE V14.2 (MOBILE SYNC FIX) ---
+// --- UTILS ---
+// Generador de UUID v4 compatible con navegadores antiguos si crypto no está disponible
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+const isUUID = (str: string) => {
+  const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return regex.test(str);
+};
+
+// --- KINETIX HYBRID ENGINE V14.4 (UUID FIX) ---
 const STORAGE_KEY = 'KINETIX_CLOUD_SYNC_V1';
 const SESSION_KEY = 'KINETIX_ACTIVE_SESSION_V2';
 
@@ -65,9 +82,8 @@ const DataEngine = {
         const s = DataEngine.getStore();
         // Mezclar usuarios locales y nube (prioridad nube)
         const localUsers = JSON.parse(s.USERS || '[]');
-        const mergedUsers = [...users]; 
         
-        // Mapear datos de DB a estructura local si es necesario y combinar
+        // Mapear datos de DB a estructura local
         const dbUsersFormatted = users.map(u => ({
              id: u.id,
              name: u.name,
@@ -81,7 +97,7 @@ const DataEngine = {
              createdAt: u.created_at
         }));
 
-        // Mantener usuarios locales que no estén en la nube (como el mock inicial)
+        // Mantener usuarios locales que no estén en la nube
         localUsers.forEach((lu: User) => {
           if (!dbUsersFormatted.find((mu:any) => mu.id === lu.id)) dbUsersFormatted.push(lu);
         });
@@ -115,17 +131,21 @@ const DataEngine = {
       s.USERS = JSON.stringify([...users, user]);
       DataEngine.saveStore(s);
     } else {
-      // Update local if exists
       const idx = users.findIndex((u: User) => u.id === user.id);
       users[idx] = user;
       s.USERS = JSON.stringify(users);
       DataEngine.saveStore(s);
     }
 
-    // 2. Cloud
+    // 2. Cloud - SOLO SI EL ID ES UN UUID VÁLIDO
+    if (!isUUID(user.id)) {
+      console.warn("No se puede sincronizar usuario a la nube: ID inválido (no es UUID)", user.id);
+      return; 
+    }
+
     try {
       const { error } = await supabase.from('users').upsert({
-        id: user.id.length < 10 ? undefined : user.id, // Dejar que Supabase genere UUID si es ID corto (mock)
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -145,17 +165,26 @@ const DataEngine = {
     s[`PLAN_${p.userId}`] = JSON.stringify(p);
     DataEngine.saveStore(s);
     
-    // 2. Cloud
+    // 2. Cloud - VALIDAR IDs
+    if (!isUUID(p.userId)) {
+      console.warn("No se puede guardar plan en nube: Usuario ID no es UUID");
+      return;
+    }
+
     try {
+      // Usar un ID válido para el plan si el local no lo es
+      const planUUID = isUUID(p.id) ? p.id : undefined;
+
       // Primero crear el plan cabecera
       const { data: planData, error: pErr } = await supabase.from('plans').upsert({
+        id: planUUID,
         title: p.title,
         user_id: p.userId,
         updated_at: new Date().toISOString()
       }).select().single();
 
       if (planData && !pErr) {
-        // Borrar workouts viejos de este plan (estrategia simple de reemplazo)
+        // Borrar workouts viejos de este plan
         await supabase.from('workouts').delete().eq('plan_id', planData.id);
         
         for (const w of p.workouts) {
@@ -176,6 +205,8 @@ const DataEngine = {
             await supabase.from('workout_exercises').insert(exercisesPayload);
           }
         }
+      } else {
+        console.error("Error saving plan header", pErr);
       }
     } catch (e) { console.error("Cloud Plan Save Error", e); }
   },
@@ -189,10 +220,12 @@ const DataEngine = {
     DataEngine.saveStore(s);
 
     // 2. Cloud
+    if (!isUUID(l.userId)) return;
+
     try {
       const { data: logData } = await supabase.from('workout_logs').insert({
         user_id: l.userId,
-        workout_id: l.workoutId.length > 10 ? l.workoutId : null, // Solo si es UUID válido
+        workout_id: isUUID(l.workoutId) ? l.workoutId : null,
         date: l.date
       }).select().single();
 
@@ -223,9 +256,11 @@ const DataEngine = {
     delete s[`LOGS_${uid}`];
     DataEngine.saveStore(s);
     // Cloud Delete
-    supabase.from('users').delete().eq('id', uid).then(({error}) => {
-       if(error) console.error("Cloud Delete Error", error);
-    });
+    if (isUUID(uid)) {
+      supabase.from('users').delete().eq('id', uid).then(({error}) => {
+         if(error) console.error("Cloud Delete Error", error);
+      });
+    }
   },
 
   saveLogo: (url: string) => {
@@ -245,7 +280,7 @@ const DataEngine = {
   },
   
   downloadSQL: () => {
-     // (Código existente)
+     // ...
   }
 };
 
@@ -321,13 +356,13 @@ export default function App() {
     if (!input) return;
     setLoading(true);
 
-    // 1. Intentar sincronizar primero por si es un dispositivo nuevo
+    // 1. Intentar sincronizar primero
     await DataEngine.pullFromCloud();
     
-    // 2. Buscar localmente (ahora actualizado)
+    // 2. Buscar localmente
     let found = DataEngine.getUsers().find((u: User) => u.name.toLowerCase().includes(input));
     
-    // 3. Si sigue sin estar local, intento directo a DB (Fail-safe)
+    // 3. Fallback a nube
     if (!found) {
        const { data } = await supabase.from('users').select('*').ilike('name', `%${input}%`).single();
        if (data) {
@@ -563,7 +598,14 @@ export default function App() {
                           placeholder: 'NOMBRE COMPLETO',
                           callback: (name) => {
                             if (!name) return;
-                            const u: User = { ...MOCK_USER, id: `u-${Date.now()}`, name, streak: 0, createdAt: new Date().toISOString() };
+                            // FIX: Generar UUID válido para usuarios nuevos
+                            const u: User = { 
+                              ...MOCK_USER, 
+                              id: generateUUID(), 
+                              name, 
+                              streak: 0, 
+                              createdAt: new Date().toISOString() 
+                            };
                             DataEngine.saveUser(u);
                             sync();
                             notify("NUEVO ATLETA KINETIX");
@@ -578,6 +620,10 @@ export default function App() {
                            <div className="text-left space-y-2">
                               <h4 className="text-3xl font-black text-white italic uppercase tracking-tighter leading-none">{u.name}</h4>
                               <span className="text-[9px] text-zinc-700 font-black uppercase px-3 py-1 bg-zinc-950 rounded-xl border border-white/5">{u.level}</span>
+                              {/* Indicador visual si el usuario tiene ID inválido (solo local) */}
+                              {!isUUID(u.id) && (
+                                <span className="ml-2 text-[8px] text-red-500 bg-red-900/20 px-2 py-1 rounded">LOCAL ONLY</span>
+                              )}
                            </div>
                            <div className="flex gap-2">
                               <button 
@@ -585,7 +631,16 @@ export default function App() {
                                   setLoading(true);
                                   try {
                                     const res = await generateSmartRoutine(u);
-                                    setEditingPlan({ plan: { ...res, id: `p-${Date.now()}`, userId: u.id, updatedAt: new Date().toISOString() }, isNew: true });
+                                    // FIX: Generar UUID válido para planes nuevos
+                                    setEditingPlan({ 
+                                      plan: { 
+                                        ...res, 
+                                        id: generateUUID(), 
+                                        userId: u.id, 
+                                        updatedAt: new Date().toISOString() 
+                                      }, 
+                                      isNew: true 
+                                    });
                                   } catch (e: any) { notify(e.message, 'error'); }
                                   finally { setLoading(false); }
                                 }}
@@ -593,7 +648,14 @@ export default function App() {
                               ><Sparkles size={24}/></button>
                               <button 
                                 onClick={() => {
-                                  const plan = DataEngine.getPlan(u.id) || { id: `p-${Date.now()}`, userId: u.id, title: 'KINETIX ELITE PROTOCOL', workouts: [], updatedAt: new Date().toISOString() };
+                                  // FIX: Generar UUID si el plan no existe
+                                  const plan = DataEngine.getPlan(u.id) || { 
+                                    id: generateUUID(), 
+                                    userId: u.id, 
+                                    title: 'KINETIX ELITE PROTOCOL', 
+                                    workouts: [], 
+                                    updatedAt: new Date().toISOString() 
+                                  };
                                   setEditingPlan({ plan, isNew: false });
                                 }}
                                 className="p-5 bg-zinc-800 text-zinc-500 rounded-2xl hover:bg-white hover:text-black transition-all"
@@ -714,7 +776,17 @@ const TrainingSession = memo(({ workout, exercises, userId, notify, onClose, log
               </div>
             );
           })}
-          <button onClick={() => { notify("ENTRENAMIENTO FINALIZADO"); onClose(true, { id: `log-${Date.now()}`, userId, workoutId: workout.id, date: new Date().toISOString(), exercisesData: sessionLogs }); }} className="w-full py-16 bg-red-600 rounded-[5rem] font-display italic text-4xl uppercase text-white shadow-[0_30px_70px_rgba(239,68,68,0.5)] mt-20 mb-32 italic">FINALIZAR SESIÓN</button>
+          <button onClick={() => { 
+             notify("ENTRENAMIENTO FINALIZADO"); 
+             onClose(true, { 
+               // FIX: Generar UUID para Logs
+               id: generateUUID(), 
+               userId, 
+               workoutId: workout.id, 
+               date: new Date().toISOString(), 
+               exercisesData: sessionLogs 
+             }); 
+          }} className="w-full py-16 bg-red-600 rounded-[5rem] font-display italic text-4xl uppercase text-white shadow-[0_30px_70px_rgba(239,68,68,0.5)] mt-20 mb-32 italic">FINALIZAR SESIÓN</button>
        </div>
     </div>
   );
@@ -787,7 +859,13 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel, loading }: any)
                 </div>
              </div>
           ))}
-          <button onClick={() => setLocal({...local, workouts: [...local.workouts, { id: `w-${Date.now()}`, name: `DÍA ${local.workouts.length+1}`, day: local.workouts.length+1, exercises: [] }]})} className="w-full py-20 border-2 border-dashed border-zinc-800 rounded-[6rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-8 shadow-2xl italic"><Plus size={64}/> AÑADIR DÍA</button>
+          <button onClick={() => setLocal({...local, workouts: [...local.workouts, { 
+             // FIX: Generar UUID para Workouts
+             id: generateUUID(), 
+             name: `DÍA ${local.workouts.length+1}`, 
+             day: local.workouts.length+1, 
+             exercises: [] 
+          }]})} className="w-full py-20 border-2 border-dashed border-zinc-800 rounded-[6rem] text-xs font-black text-zinc-800 uppercase flex items-center justify-center gap-8 shadow-2xl italic"><Plus size={64}/> AÑADIR DÍA</button>
        </div>
 
        {addingExerciseTo !== null && (

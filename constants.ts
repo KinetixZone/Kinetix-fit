@@ -1,4 +1,3 @@
-
 import { Exercise, Goal, UserLevel } from './types';
 
 export const EXERCISES_DB: Exercise[] = [
@@ -58,13 +57,12 @@ export const EXERCISES_DB: Exercise[] = [
 ];
 
 export const MOCK_USER = {
-  id: 'u-1',
+  id: '00000000-0000-0000-0000-000000000001', // UUID Válido (Nil UUID + 1) para pruebas
   name: 'ATLETA KINETIX',
   email: 'atleta@kinetix.com',
   goal: Goal.PERFORMANCE,
   level: UserLevel.ADVANCED,
   role: 'client' as const,
-  // Fixed typo: corrected daysPer_week to daysPerWeek to match User interface definition
   daysPerWeek: 5,
   equipment: ['Full Box'],
   streak: 7,
