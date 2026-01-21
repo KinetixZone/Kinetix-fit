@@ -41,8 +41,8 @@ export interface WorkoutExercise {
   name: string;
   targetSets: number;
   targetReps: string;
-  targetLoad?: string; // Nuevo campo para Peso/Carga
-  coachCue?: string;
+  targetLoad?: string; // Peso sugerido por el coach
+  coachCue?: string; // Notas del coach
 }
 
 export interface Workout {
@@ -52,21 +52,17 @@ export interface Workout {
   exercises: WorkoutExercise[];
 }
 
-export interface SetLog {
-  weight: number;
-  reps: number;
-  done: boolean;
+export interface SetEntry {
+  setNumber: number;
+  weight: string; // Peso real levantado
+  reps: string;   // Reps reales
+  completed: boolean;
+  timestamp: number;
 }
 
-export interface WorkoutLog {
-  id: string;
-  workoutId: string;
-  userId: string;
-  date: string;
-  exercisesData: {
-    exerciseId: string;
-    sets: SetLog[];
-  }[];
+// Estructura optimizada para persistencia local rápida
+export interface WorkoutProgress {
+  [exerciseIndex: number]: SetEntry[];
 }
 
 export interface Plan {
