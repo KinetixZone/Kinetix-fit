@@ -5,34 +5,42 @@ export async function generateSmartRoutine(user: User) {
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("API_KEY_MISSING: La llave de Gemini no está configurada en el entorno.");
+    throw new Error("No hay API_KEY. Verifica los ajustes de Vercel y haz Redeploy.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Actúa como Master Coach de Kinetix. Diseña un plan de entrenamiento profesional en ESPAÑOL:
+  const prompt = `Actúa como Master Coach de Kinetix Functional Zone.
+  Crea un plan de entrenamiento para:
   Atleta: ${user.name}
-  Objetivo: ${user.goal}
+  Meta: ${user.goal}
   Nivel: ${user.level}
   Días: ${user.daysPerWeek}
-  Equipo: ${user.equipment.join(', ')}
+  Material: ${user.equipment.join(', ')}
   
-  Devuelve un JSON con esta estructura exacta:
+  Estructura JSON (RESPONDE SOLO JSON):
   {
     "title": "NOMBRE DEL PLAN",
     "workouts": [
       {
-        "name": "NOMBRE SESIÓN",
+        "name": "SESIÓN X",
         "day": 1,
         "exercises": [
-          { "exerciseId": "ID", "targetSets": 4, "targetReps": "10-12", "coachCue": "Frase corta técnica" }
+          { 
+            "exerciseId": "USA ESTOS: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1", 
+            "targetSets": 4, 
+            "targetReps": "12", 
+            "coachCue": "Instrucción técnica" 
+          }
         ]
       }
     ]
   }
 
-  IDs VÁLIDOS: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, f1, a1.
-  Reglas: Títulos en MAYÚSCULAS, coachCue breve. Solo JSON.`;
+  REGLAS:
+  1. Solo usa los IDs de ejercicio permitidos.
+  2. No añadas texto fuera del JSON.
+  3. Todo en ESPAÑOL.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -71,11 +79,9 @@ export async function generateSmartRoutine(user: User) {
       }
     });
 
-    const text = response.text;
-    if (!text) throw new Error("La IA no devolvió contenido.");
-    return JSON.parse(text);
-  } catch (error) {
+    return JSON.parse(response.text);
+  } catch (error: any) {
     console.error("Gemini Error:", error);
-    throw error;
+    throw new Error("La IA no pudo generar la rutina. Revisa la API KEY en Vercel.");
   }
 }
