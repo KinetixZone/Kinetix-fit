@@ -2,23 +2,30 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "./types";
 
 export async function generateSmartRoutine(user: User) {
-  const apiKey = process.env.API_KEY;
+  // En navegadores, process.env puede fallar si no hay un bundler.
+  // Intentamos obtener la llave de forma segura.
+  let apiKey = '';
+  try {
+    apiKey = (process?.env as any)?.API_KEY || '';
+  } catch (e) {
+    console.warn("No se pudo leer process.env directamente.");
+  }
   
   if (!apiKey) {
-    throw new Error("No hay API_KEY. Verifica los ajustes de Vercel y haz Redeploy.");
+    throw new Error("No se detectó la API_KEY en el entorno. Asegúrate de haber hecho Redeploy en Vercel.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Actúa como Master Coach de Kinetix Functional Zone.
-  Crea un plan de entrenamiento para:
+  Diseña un plan de entrenamiento para:
   Atleta: ${user.name}
-  Meta: ${user.goal}
+  Objetivo: ${user.goal}
   Nivel: ${user.level}
   Días: ${user.daysPerWeek}
   Material: ${user.equipment.join(', ')}
   
-  Estructura JSON (RESPONDE SOLO JSON):
+  Devuelve un JSON estrictamente válido con:
   {
     "title": "NOMBRE DEL PLAN",
     "workouts": [
@@ -26,21 +33,12 @@ export async function generateSmartRoutine(user: User) {
         "name": "SESIÓN X",
         "day": 1,
         "exercises": [
-          { 
-            "exerciseId": "USA ESTOS: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1", 
-            "targetSets": 4, 
-            "targetReps": "12", 
-            "coachCue": "Instrucción técnica" 
-          }
+          { "exerciseId": "p1", "targetSets": 4, "targetReps": "12", "coachCue": "Instrucción técnica" }
         ]
       }
     ]
   }
-
-  REGLAS:
-  1. Solo usa los IDs de ejercicio permitidos.
-  2. No añadas texto fuera del JSON.
-  3. Todo en ESPAÑOL.`;
+  Usa solo estos IDs: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -78,10 +76,9 @@ export async function generateSmartRoutine(user: User) {
         }
       }
     });
-
     return JSON.parse(response.text);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("La IA no pudo generar la rutina. Revisa la API KEY en Vercel.");
+    throw new Error("Error al conectar con la IA de Google.");
   }
 }
