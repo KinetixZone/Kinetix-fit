@@ -7,7 +7,7 @@ import {
   Lock, User as UserIcon, BookOpen, ExternalLink, Video, Image as ImageIcon,
   Timer, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
-  CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus
+  CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -146,6 +146,17 @@ const DataEngine = {
     if (idx >= 0) users[idx] = user; else users.push(user);
     s.USERS = JSON.stringify(users);
     DataEngine.saveStore(s);
+  },
+
+  updateUser: (updatedUser: User) => {
+    const s = DataEngine.getStore();
+    let users = JSON.parse(s.USERS || '[]');
+    const index = users.findIndex((u: User) => u.id === updatedUser.id);
+    if (index !== -1) {
+      users[index] = updatedUser;
+      s.USERS = JSON.stringify(users);
+      DataEngine.saveStore(s);
+    }
   },
 
   deleteUser: (userId: string) => {
@@ -778,21 +789,19 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
         {user.role === 'coach' && <ChevronRight className="absolute right-6 top-1/2 -translate-y-1/2 text-white/20 group-hover:text-white transition-colors" size={32} />}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        {user.role === 'coach' ? (
-           <>
+      {user.role === 'coach' ? (
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <StatCard label="Atletas" value={DataEngine.getUsers().length - 1} icon={<Users size={18} className="text-blue-400" />} />
             <StatCard label="Planes Activos" value="12" icon={<CalendarDays size={18} className="text-green-400" />} />
-           </>
-        ) : (
-           <>
-            <StatCard label="Racha" value={`${user.streak} días`} icon={<Zap size={18} className="text-yellow-400" />} />
-            <StatCard label="Nivel" value={user.level} icon={<Trophy size={18} className="text-purple-400" />} />
-           </>
-        )}
-        <StatCard label="Ejercicios DB" value={DataEngine.getExercises().length} icon={<Dumbbell size={18} className="text-gray-400" />} />
-        <StatCard label="Estado" value="Activo" icon={<CheckCircle2 size={18} className="text-green-400" />} />
-      </div>
+            <StatCard label="Ejercicios DB" value={DataEngine.getExercises().length} icon={<Dumbbell size={18} className="text-gray-400" />} />
+            <StatCard label="Estado" value="Activo" icon={<CheckCircle2 size={18} className="text-green-400" />} />
+         </div>
+      ) : (
+         <div className="grid grid-cols-2 gap-3">
+             <StatCard label="Racha" value={`${user.streak} días`} icon={<Zap size={18} className="text-yellow-400" />} />
+             <StatCard label="Nivel" value={user.level} icon={<Trophy size={18} className="text-purple-400" />} />
+         </div>
+      )}
 
       {user.role === 'client' && (
          <div className="space-y-4">
@@ -815,7 +824,10 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
 const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newUser, setNewUser] = useState<Partial<User>>({
+  const [showEditModal, setShowEditModal] = useState(false);
+  
+  // Estado compartido para Crear o Editar
+  const [tempUser, setTempUser] = useState<Partial<User>>({
     name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4
   });
 
@@ -826,15 +838,37 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
   useEffect(() => { refreshUsers(); }, [refreshUsers]);
 
   const handleCreateUser = async () => {
-    if (!newUser.name) return;
+    if (!tempUser.name) return;
     const userToSave: User = {
-      id: generateUUID(), name: newUser.name, email: newUser.email || 'no-email',
-      goal: newUser.goal as Goal, level: newUser.level as UserLevel, role: 'client',
-      daysPerWeek: newUser.daysPerWeek || 4, equipment: [], streak: 0, createdAt: new Date().toISOString()
+      id: generateUUID(), name: tempUser.name, email: tempUser.email || 'no-email',
+      goal: tempUser.goal as Goal, level: tempUser.level as UserLevel, role: 'client',
+      daysPerWeek: tempUser.daysPerWeek || 4, equipment: [], streak: 0, createdAt: new Date().toISOString()
     };
     await DataEngine.saveUser(userToSave);
     refreshUsers();
     setShowAddModal(false);
+    setTempUser({ name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4 });
+  };
+
+  const handleUpdateUser = () => {
+     if (!tempUser.id || !tempUser.name) return;
+     // Recuperar el usuario original para no perder datos como equipment, streak, etc.
+     const originalUser = DataEngine.getUserById(tempUser.id);
+     if (!originalUser) return;
+     
+     const updatedUser: User = {
+        ...originalUser,
+        name: tempUser.name,
+        email: tempUser.email || originalUser.email,
+        goal: tempUser.goal as Goal,
+        level: tempUser.level as UserLevel,
+        daysPerWeek: tempUser.daysPerWeek || originalUser.daysPerWeek
+     };
+     
+     DataEngine.updateUser(updatedUser);
+     refreshUsers();
+     setShowEditModal(false);
+     setTempUser({ name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4 });
   };
 
   const handleDeleteUser = (e: React.MouseEvent, id: string) => {
@@ -845,14 +879,25 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
     }
   };
 
+  const openEditModal = (e: React.MouseEvent, user: User) => {
+    e.stopPropagation();
+    setTempUser(user);
+    setShowEditModal(true);
+  };
+
+  const openCreateModal = () => {
+     setTempUser({ name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4 });
+     setShowAddModal(true);
+  }
+
   return (
     <div className="animate-fade-in pb-20">
       <div className="flex justify-between items-center mb-6">
         <div>
            <h2 className="text-2xl font-bold">Atletas</h2>
-           <p className="text-xs text-gray-500">Selecciona para ver detalles</p>
+           <p className="text-xs text-gray-500">Gestión de equipo</p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-red-500 active:scale-95 transition-all">
+        <button onClick={openCreateModal} className="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-red-500 active:scale-95 transition-all">
           <UserPlus size={16} /> <span>NUEVO</span>
         </button>
       </div>
@@ -871,30 +916,78 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
               <h3 className="font-bold text-sm text-white group-hover:text-red-400 transition-colors">{client.name}</h3>
               <p className="text-[10px] text-gray-500 uppercase tracking-wider">{client.goal}</p>
             </div>
-            <button 
-               onClick={(e) => handleDeleteUser(e, client.id)} 
-               className="p-2 z-20 text-gray-600 hover:text-red-500 hover:bg-white/10 rounded-full transition-colors"
-            >
-              <Trash2 size={18} />
-            </button>
+            <div className="flex items-center gap-1 z-20">
+               <button 
+                 onClick={(e) => openEditModal(e, client)} 
+                 className="p-2 text-gray-600 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+               >
+                 <Pencil size={16} />
+               </button>
+               <button 
+                 onClick={(e) => handleDeleteUser(e, client.id)} 
+                 className="p-2 text-gray-600 hover:text-red-500 hover:bg-white/10 rounded-full transition-colors"
+               >
+                 <Trash2 size={16} />
+               </button>
+            </div>
           </div>
         ))}
       </div>
 
+      {/* MODAL CREAR */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in-up">
             <h3 className="text-lg font-bold mb-2">Nuevo Atleta</h3>
-            <p className="text-xs text-gray-400 mb-4 bg-white/5 p-3 rounded-lg border border-white/10">
-              <span className="font-bold text-red-400 block mb-1">IMPORTANTE:</span>
-              El atleta usará el <strong>Nombre Exacto</strong> o el <strong>Email</strong> que registres aquí para iniciar sesión en la app.
-            </p>
             <div className="space-y-3">
-              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Nombre Completo (Ej: Juan Perez)" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Email (Opcional)" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Nombre Completo" value={tempUser.name} onChange={e => setTempUser({...tempUser, name: e.target.value})} />
+              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Email" value={tempUser.email} onChange={e => setTempUser({...tempUser, email: e.target.value})} />
+              <div className="grid grid-cols-2 gap-2">
+                 <select className="bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none" value={tempUser.goal} onChange={e => setTempUser({...tempUser, goal: e.target.value as Goal})}>
+                    {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
+                 </select>
+                 <select className="bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none" value={tempUser.level} onChange={e => setTempUser({...tempUser, level: e.target.value as UserLevel})}>
+                    {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
+                 </select>
+              </div>
               <div className="flex gap-2 pt-2">
                  <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-xs font-bold text-gray-400">CANCELAR</button>
-                 <button onClick={handleCreateUser} className="flex-1 py-3 rounded-xl bg-red-600 text-xs font-bold">DAR DE ALTA</button>
+                 <button onClick={handleCreateUser} className="flex-1 py-3 rounded-xl bg-red-600 text-xs font-bold">CREAR</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in-up">
+            <h3 className="text-lg font-bold mb-2 flex items-center gap-2"><UserCog size={20}/> Editar Atleta</h3>
+            <div className="space-y-3">
+              <div>
+                 <label className="text-[10px] text-gray-500 font-bold uppercase">Nombre</label>
+                 <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" value={tempUser.name} onChange={e => setTempUser({...tempUser, name: e.target.value})} />
+              </div>
+              <div>
+                 <label className="text-[10px] text-gray-500 font-bold uppercase">Email (Login)</label>
+                 <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" value={tempUser.email} onChange={e => setTempUser({...tempUser, email: e.target.value})} />
+              </div>
+              <div>
+                 <label className="text-[10px] text-gray-500 font-bold uppercase">Objetivo</label>
+                 <select className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none" value={tempUser.goal} onChange={e => setTempUser({...tempUser, goal: e.target.value as Goal})}>
+                    {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
+                 </select>
+              </div>
+              <div>
+                 <label className="text-[10px] text-gray-500 font-bold uppercase">Nivel</label>
+                 <select className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none" value={tempUser.level} onChange={e => setTempUser({...tempUser, level: e.target.value as UserLevel})}>
+                    {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
+                 </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                 <button onClick={() => setShowEditModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-xs font-bold text-gray-400">CANCELAR</button>
+                 <button onClick={handleUpdateUser} className="flex-1 py-3 rounded-xl bg-blue-600 text-xs font-bold">GUARDAR CAMBIOS</button>
               </div>
             </div>
           </div>
