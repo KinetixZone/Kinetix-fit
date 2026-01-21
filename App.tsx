@@ -31,6 +31,9 @@ const isUUID = (str: string) => {
   return regex.test(str);
 };
 
+// ID FIJO PARA EL HEAD COACH (UUID VÁLIDO PARA SUPABASE)
+const COACH_UUID = '99999999-9999-9999-9999-999999999999';
+
 // --- KINETIX HYBRID ENGINE V15.0 (AUTO-MIGRATION) ---
 const STORAGE_KEY = 'KINETIX_CLOUD_SYNC_V1';
 const SESSION_KEY = 'KINETIX_ACTIVE_SESSION_V2';
@@ -70,6 +73,7 @@ const DataEngine = {
   pullFromCloud: async () => {
     if (!supabaseConnectionStatus.isConfigured) return false;
     try {
+      // 1. Obtener usuarios
       const { data: users, error: uErr } = await supabase.from('users').select('*');
       if (users && !uErr) {
         const s = DataEngine.getStore();
@@ -86,12 +90,43 @@ const DataEngine = {
              streak: u.streak,
              createdAt: u.created_at
         }));
+        // Merge inteligente: Mantener locales que no estén en nube (aún)
         localUsers.forEach((lu: User) => {
           if (!dbUsersFormatted.find((mu:any) => mu.id === lu.id)) dbUsersFormatted.push(lu);
         });
         s.USERS = JSON.stringify(dbUsersFormatted);
         DataEngine.saveStore(s);
       }
+
+      // 2. Obtener Planes (Importante para que el celular vea los planes creados en PC)
+      const { data: plans, error: pErr } = await supabase.from('plans').select('*, workouts(*, workout_exercises(*))');
+      if (plans && !pErr) {
+        const s = DataEngine.getStore();
+        plans.forEach((p: any) => {
+          // Reconstruir estructura completa del Plan
+          const fullPlan: Plan = {
+            id: p.id,
+            title: p.title,
+            userId: p.user_id,
+            updatedAt: p.updated_at,
+            workouts: p.workouts.map((w: any) => ({
+              id: w.id,
+              name: w.name,
+              day: w.day_number,
+              exercises: w.workout_exercises.map((we: any) => ({
+                exerciseId: we.exercise_id,
+                name: '', // Se llenará con cruce de ejercicios
+                targetSets: we.target_sets,
+                targetReps: we.target_reps,
+                coachCue: we.coach_cue
+              }))
+            })).sort((a:any, b:any) => a.day - b.day)
+          };
+          s[`PLAN_${p.user_id}`] = JSON.stringify(fullPlan);
+        });
+        DataEngine.saveStore(s);
+      }
+
       const { data: exercises, error: eErr } = await supabase.from('exercises').select('*');
       if (exercises && !eErr && exercises.length > 0) {
         const s = DataEngine.getStore();
@@ -119,7 +154,10 @@ const DataEngine = {
       DataEngine.saveStore(s);
     }
 
-    if (!isUUID(user.id)) return; // Block invalid IDs
+    if (!isUUID(user.id)) {
+      console.warn("NO SE PUEDE GUARDAR USUARIO: ID INVÁLIDO", user.id);
+      return; 
+    }
 
     try {
       const { error } = await supabase.from('users').upsert({
@@ -141,10 +179,15 @@ const DataEngine = {
     s[`PLAN_${p.userId}`] = JSON.stringify(p);
     DataEngine.saveStore(s);
     
-    if (!isUUID(p.userId)) return;
+    if (!isUUID(p.userId)) {
+      console.warn("NO SE PUEDE GUARDAR PLAN: USER ID INVÁLIDO", p.userId);
+      return;
+    }
 
     try {
-      const planUUID = isUUID(p.id) ? p.id : undefined;
+      const planUUID = isUUID(p.id) ? p.id : undefined; // Dejar que Supabase genere si es inválido
+      
+      // 1. Guardar Plan Cabecera
       const { data: planData, error: pErr } = await supabase.from('plans').upsert({
         id: planUUID,
         title: p.title,
@@ -152,23 +195,31 @@ const DataEngine = {
         updated_at: new Date().toISOString()
       }).select().single();
 
-      if (planData && !pErr) {
+      if (pErr) throw pErr;
+
+      if (planData) {
+        // 2. Limpiar workouts anteriores para evitar duplicados complejos
         await supabase.from('workouts').delete().eq('plan_id', planData.id);
+        
+        // 3. Insertar Workouts y Ejercicios
         for (const w of p.workouts) {
           const { data: wData } = await supabase.from('workouts').insert({
             plan_id: planData.id,
             name: w.name,
             day_number: w.day
           }).select().single();
+          
           if (wData) {
             const exercisesPayload = w.exercises.map(we => ({
               workout_id: wData.id,
-              exercise_id: we.exerciseId,
+              exercise_id: we.exerciseId, // ID texto corto (ej: 'c1') está permitido en tabla ejercicios
               target_sets: we.targetSets,
               target_reps: we.targetReps,
               coach_cue: we.coachCue
             }));
-            await supabase.from('workout_exercises').insert(exercisesPayload);
+            if (exercisesPayload.length > 0) {
+              await supabase.from('workout_exercises').insert(exercisesPayload);
+            }
           }
         }
       }
@@ -494,13 +545,24 @@ export default function App() {
                  title: 'ACCESO STAFF',
                  placeholder: 'PIN MAESTRO',
                  type: 'password',
-                 callback: (pin) => {
+                 callback: async (pin) => {
                    if (pin === 'KINETIX2025') {
+                     // COACH CON ID VÁLIDO (FIX CRÍTICO)
                      const coach: User = { 
-                       id: 'staff-master', name: 'HEAD COACH', email: 'staff@kinetix.com',
+                       id: COACH_UUID, // USAR EL UUID FIJO
+                       name: 'HEAD COACH', email: 'staff@kinetix.com',
                        role: 'coach', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED,
                        daysPerWeek: 7, equipment: ['Full Box'], streak: 100, createdAt: new Date().toISOString()
                      };
+                     
+                     notify("AUTENTICANDO STAFF...");
+                     setLoading(true);
+                     // 1. Guardar/Actualizar Coach en Nube
+                     await DataEngine.saveUser(coach);
+                     // 2. Traer últimos datos
+                     await DataEngine.pullFromCloud();
+                     setLoading(false);
+
                      setCurrentUser(coach);
                      localStorage.setItem(SESSION_KEY, JSON.stringify(coach));
                      setActiveTab('admin');
