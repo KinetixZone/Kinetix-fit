@@ -1,31 +1,26 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "./types";
 
+const getApiKey = () => {
+  return (process?.env as any)?.API_KEY || 
+         (window as any)?.process?.env?.API_KEY || 
+         localStorage.getItem('KX_BACKUP_API_KEY') || 
+         '';
+};
+
 export async function generateSmartRoutine(user: User) {
-  // En navegadores, process.env puede fallar si no hay un bundler.
-  // Intentamos obtener la llave de forma segura.
-  let apiKey = '';
-  try {
-    apiKey = (process?.env as any)?.API_KEY || '';
-  } catch (e) {
-    console.warn("No se pudo leer process.env directamente.");
-  }
+  const apiKey = getApiKey();
   
   if (!apiKey) {
-    throw new Error("No se detectó la API_KEY en el entorno. Asegúrate de haber hecho Redeploy en Vercel.");
+    throw new Error("No se detectó la API_KEY. Por favor, usa el panel de configuración.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Actúa como Master Coach de Kinetix Functional Zone.
-  Diseña un plan de entrenamiento para:
-  Atleta: ${user.name}
-  Objetivo: ${user.goal}
-  Nivel: ${user.level}
-  Días: ${user.daysPerWeek}
-  Material: ${user.equipment.join(', ')}
+  Crea un plan para: Atleta: ${user.name}, Meta: ${user.goal}, Nivel: ${user.level}, Material: ${user.equipment.join(', ')}.
   
-  Devuelve un JSON estrictamente válido con:
+  JSON Requerido:
   {
     "title": "NOMBRE DEL PLAN",
     "workouts": [
@@ -33,12 +28,12 @@ export async function generateSmartRoutine(user: User) {
         "name": "SESIÓN X",
         "day": 1,
         "exercises": [
-          { "exerciseId": "p1", "targetSets": 4, "targetReps": "12", "coachCue": "Instrucción técnica" }
+          { "exerciseId": "p1", "targetSets": 4, "targetReps": "12", "coachCue": "Instrucción" }
         ]
       }
     ]
   }
-  Usa solo estos IDs: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1.`;
+  Usa solo IDs: p1,p2,p3,p4,c1,c2,c3,e1,e2,e3,i1,i2,b1,t1,g1,g2,f1,a1.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -79,6 +74,6 @@ export async function generateSmartRoutine(user: User) {
     return JSON.parse(response.text);
   } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("Error al conectar con la IA de Google.");
+    throw new Error("Error en el motor de IA. Revisa tu API Key.");
   }
 }
