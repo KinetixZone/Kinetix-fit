@@ -41,6 +41,7 @@ export interface WorkoutExercise {
   name: string;
   targetSets: number;
   targetReps: string;
+  targetLoad?: string; // Nuevo campo para Peso/Carga
   coachCue?: string;
 }
 
