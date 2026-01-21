@@ -13,7 +13,8 @@ import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './geminiService';
 
 // --- CONFIGURACIÓN DE MARCA POR DEFECTO ---
-const DEFAULT_LOGO = "https://raw.githubusercontent.com/StackBlitz/stackblitz-images/main/kinetix-wolf-logo.png";
+// REEMPLAZA ESTA URL POR TU LINK "RAW" DE GITHUB
+const DEFAULT_LOGO = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/tu-logo.png";
 const DEFAULT_PIN = "KINETIX2025";
 
 const DataService = {
@@ -328,6 +329,22 @@ export default function App() {
                   </GlassCard>
                 ))}
              </div>
+
+             {/* Panel de Configuración de Marca */}
+             <GlassCard className="mt-12 p-8 border-zinc-800">
+                <h3 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mb-6 italic">AJUSTES DE IDENTIDAD</h3>
+                <div className="space-y-4">
+                   <div className="space-y-2">
+                      <label className="text-[8px] font-black text-zinc-700 uppercase ml-2">URL DEL LOGO (GITHUB RAW)</label>
+                      <input 
+                        value={brandConfig.logo} 
+                        onChange={e => setBrandConfig({...brandConfig, logo: e.target.value})}
+                        className="w-full bg-zinc-950 border border-zinc-900 p-4 rounded-xl text-[10px] text-white outline-none focus:border-red-600"
+                      />
+                   </div>
+                   <NeonButton onClick={() => updateBrand(brandConfig)} variant="outline" className="w-full py-4 text-[9px]">ACTUALIZAR MARCA</NeonButton>
+                </div>
+             </GlassCard>
           </div>
         )}
 
