@@ -5,37 +5,34 @@ export async function generateSmartRoutine(user: User) {
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error("ERROR_CONFIG: Falta la API_KEY en Vercel.");
+    throw new Error("API_KEY_MISSING: La llave de Gemini no está configurada en el entorno.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Actúa como Master Coach de Kinetix Functional Zone. Diseña un protocolo de entrenamiento profesional en ESPAÑOL para este atleta:
-  - Nombre: ${user.name}
-  - Objetivo: ${user.goal}
-  - Nivel: ${user.level}
-  - Frecuencia: ${user.daysPerWeek} días/semana
-  - Equipo: ${user.equipment.join(', ')}
+  const prompt = `Actúa como Master Coach de Kinetix. Diseña un plan de entrenamiento profesional en ESPAÑOL:
+  Atleta: ${user.name}
+  Objetivo: ${user.goal}
+  Nivel: ${user.level}
+  Días: ${user.daysPerWeek}
+  Equipo: ${user.equipment.join(', ')}
   
-  ESTRUCTURA REQUERIDA (JSON):
+  Devuelve un JSON con esta estructura exacta:
   {
     "title": "NOMBRE DEL PLAN",
     "workouts": [
       {
-        "name": "NOMBRE DE LA SESIÓN",
+        "name": "NOMBRE SESIÓN",
         "day": 1,
         "exercises": [
-          { "exerciseId": "ID", "targetSets": 4, "targetReps": "10-12", "coachCue": "CONSEJO TÉCNICO" }
+          { "exerciseId": "ID", "targetSets": 4, "targetReps": "10-12", "coachCue": "Frase corta técnica" }
         ]
       }
     ]
   }
 
-  REGLAS:
-  1. Usa solo estos IDs: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, a1.
-  2. Títulos en MAYÚSCULAS.
-  3. coachCue máximo 6 palabras.
-  4. Devuelve ÚNICAMENTE el JSON puro.`;
+  IDs VÁLIDOS: p1, p2, p3, p4, c1, c2, c3, e1, e2, e3, i1, i2, b1, t1, g1, g2, f1, a1.
+  Reglas: Títulos en MAYÚSCULAS, coachCue breve. Solo JSON.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -74,7 +71,9 @@ export async function generateSmartRoutine(user: User) {
       }
     });
 
-    return JSON.parse(response.text);
+    const text = response.text;
+    if (!text) throw new Error("La IA no devolvió contenido.");
+    return JSON.parse(text);
   } catch (error) {
     console.error("Gemini Error:", error);
     throw error;

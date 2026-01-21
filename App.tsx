@@ -4,7 +4,8 @@ import {
   Users, Save, Trash2, ArrowRight, CheckCircle2, 
   Flame, Plus, LogOut, Timer, UserPlus, 
   Edit3, ChevronLeft, Lock, Megaphone, 
-  RefreshCw, Sparkles, Activity, AlertTriangle
+  RefreshCw, Sparkles, Activity, AlertTriangle,
+  Database, Cpu, Wifi, MessageSquare
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { createClient } from '@supabase/supabase-js';
@@ -12,11 +13,17 @@ import { User, Plan, Workout, Exercise, WorkoutLog, Goal, UserLevel } from './ty
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine } from './geminiService';
 
-// --- CONFIGURACIÓN DE SUPABASE ---
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
-const isConfigured = !!(supabaseUrl && supabaseKey);
-const supabase = isConfigured ? createClient(supabaseUrl, supabaseKey) : null;
+// --- CONFIGURACIÓN DEL SISTEMA ---
+const CONFIG = {
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseKey: process.env.SUPABASE_ANON_KEY || '',
+  geminiKey: process.env.API_KEY || ''
+};
+
+const isSupabaseOk = !!(CONFIG.supabaseUrl && CONFIG.supabaseKey);
+const isGeminiOk = !!CONFIG.geminiKey;
+
+const supabase = isSupabaseOk ? createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey) : null;
 
 const DataService = {
   getPlans: async (): Promise<Plan[]> => {
@@ -92,7 +99,7 @@ const DataService = {
   }
 };
 
-// --- COMPONENTES UI ---
+// --- COMPONENTES UI REUTILIZABLES ---
 const NeonButton = memo(({ children, onClick, variant = 'primary', className = '', loading = false, icon, disabled = false }: any) => {
   const base = "relative overflow-hidden px-6 py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-3 text-[10px] uppercase tracking-[0.2em] active:scale-95 disabled:opacity-30 group shrink-0 select-none";
   const styles = {
@@ -113,7 +120,7 @@ const GlassCard = memo(({ children, className = '', onClick }: any) => (
   </div>
 ));
 
-// --- VISTAS ---
+// --- VISTA DE ENTRENAMIENTO EN VIVO ---
 const LiveWorkout = memo(({ workout, exercises, onFinish, onCancel }: any) => {
   const [idx, setIdx] = useState(0);
   const [setsLogs, setSetsLogs] = useState<{w: number, r: number}[]>([]);
@@ -150,7 +157,8 @@ const LiveWorkout = memo(({ workout, exercises, onFinish, onCancel }: any) => {
         userId: MOCK_USER.id, 
         workoutId: workout.id, 
         date: new Date().toISOString(), 
-        setsData: updated 
+        setsData: updated,
+        rpe: 8 
       });
     } else {
       setAllLogs(updated);
@@ -198,11 +206,11 @@ const LiveWorkout = memo(({ workout, exercises, onFinish, onCancel }: any) => {
                 <div className="grid grid-cols-2 gap-4">
                    <div className="space-y-2">
                      <p className="text-[8px] font-black text-zinc-700 uppercase ml-2">PESO (KG)</p>
-                     <input type="number" id="weight" className="w-full bg-zinc-900 p-5 rounded-2xl border border-zinc-800 text-center text-white font-display italic text-2xl outline-none focus:border-red-600" placeholder="0" />
+                     <input type="number" id="weight" className="w-full bg-zinc-950 border border-zinc-800 p-5 rounded-2xl text-center text-white font-display italic text-2xl outline-none focus:border-red-600" placeholder="0" />
                    </div>
                    <div className="space-y-2">
                      <p className="text-[8px] font-black text-zinc-700 uppercase ml-2">REPS</p>
-                     <input type="number" id="reps" className="w-full bg-zinc-900 p-5 rounded-2xl border border-zinc-800 text-center text-white font-display italic text-2xl outline-none focus:border-red-600" placeholder="0" />
+                     <input type="number" id="reps" className="w-full bg-zinc-950 border border-zinc-800 p-5 rounded-2xl text-center text-white font-display italic text-2xl outline-none focus:border-red-600" placeholder="0" />
                    </div>
                 </div>
                 <NeonButton onClick={() => {
@@ -234,7 +242,7 @@ const LiveWorkout = memo(({ workout, exercises, onFinish, onCancel }: any) => {
   );
 });
 
-// --- APP PRINCIPAL ---
+// --- APLICACIÓN PRINCIPAL ---
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('home');
@@ -247,6 +255,7 @@ export default function App() {
   const [workoutSummary, setWorkoutSummary] = useState<WorkoutLog | null>(null);
   const [showCoachAuth, setShowCoachAuth] = useState(false);
   const [coachPin, setCoachPin] = useState('');
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const [exercises] = useState<Exercise[]>(INITIAL_EXERCISES);
   const [users, setUsers] = useState<User[]>([]);
@@ -295,6 +304,10 @@ export default function App() {
   };
 
   const onAiGenerate = useCallback(async (user: User) => {
+    if (!isGeminiOk) {
+      setShowDiagnostics(true);
+      return;
+    }
     setIsAiGenerating(true);
     try {
       const generated = await generateSmartRoutine(user);
@@ -306,7 +319,7 @@ export default function App() {
       };
       setEditingPlan({ plan: enrichedPlan, isNew: true });
     } catch (error: any) {
-      alert(`Error IA: ${error.message || 'Falta configuración en Vercel'}`);
+      alert(`Error IA: ${error.message}`);
     } finally { setIsAiGenerating(false); }
   }, []);
 
@@ -323,13 +336,21 @@ export default function App() {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-8">
-        {!isConfigured && (
-          <div className="absolute top-8 left-8 right-8 bg-amber-600/10 border border-amber-600/30 p-4 rounded-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
-             <AlertTriangle className="text-amber-500" size={20} />
-             <div className="flex-1">
-                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Aviso: Modo Local</p>
-                <p className="text-[8px] text-amber-500/70 font-bold uppercase">Configura SUPABASE_URL en Vercel para guardar datos permanentemente.</p>
+        {(!isSupabaseOk || !isGeminiOk || showDiagnostics) && (
+          <div className="absolute top-8 left-8 right-8 bg-zinc-900 border border-red-600/30 p-6 rounded-[2rem] space-y-4 animate-in fade-in slide-in-from-top-4 z-50">
+             <div className="flex items-center gap-3">
+                <AlertTriangle className="text-red-600" size={24} />
+                <h3 className="text-[10px] font-black text-white uppercase tracking-widest">SISTEMA INCOMPLETO</h3>
+                <button onClick={() => setShowDiagnostics(false)} className="ml-auto text-zinc-700"><X size={16}/></button>
              </div>
+             <div className="grid grid-cols-1 gap-2">
+                <StatusItem label="SUPABASE_URL" active={!!CONFIG.supabaseUrl} />
+                <StatusItem label="SUPABASE_KEY" active={!!CONFIG.supabaseKey} />
+                <StatusItem label="API_KEY (GEMINI)" active={!!CONFIG.geminiKey} />
+             </div>
+             <p className="text-[8px] text-zinc-500 font-bold uppercase leading-relaxed">
+               Agrega las variables en Vercel y haz REDEPLOY.
+             </p>
           </div>
         )}
         
@@ -342,7 +363,7 @@ export default function App() {
            {!showCoachAuth ? (
              <div className="space-y-6">
                 <GlassCard className="max-w-xs mx-auto p-10 space-y-6 border-zinc-800">
-                   <input value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="NOMBRE DEL ATLETA" className="w-full bg-zinc-950 border border-zinc-900 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600 uppercase" />
+                   <input value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="NOMBRE DEL ATLETA" className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600 uppercase" />
                    <NeonButton onClick={handleLogin} className="w-full py-6">ACCEDER AL PANEL</NeonButton>
                 </GlassCard>
                 <button onClick={() => setShowCoachAuth(true)} className="text-[9px] font-black text-zinc-800 uppercase tracking-widest hover:text-red-500 transition-all">ACCESO COACH</button>
@@ -350,7 +371,7 @@ export default function App() {
            ) : (
              <GlassCard className="max-w-xs mx-auto p-10 space-y-6 border-red-600/30">
                 <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">SEGURIDAD COACH</p>
-                <input type="password" value={coachPin} onChange={e => setCoachPin(e.target.value)} placeholder="PIN" className="w-full bg-zinc-950 border border-zinc-900 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600" />
+                <input type="password" value={coachPin} onChange={e => setCoachPin(e.target.value)} placeholder="PIN" className="w-full bg-zinc-950 border border-zinc-800 p-6 rounded-3xl text-center font-bold text-white outline-none focus:border-red-600" />
                 <NeonButton onClick={handleCoachLogin} className="w-full py-6">DESBLOQUEAR</NeonButton>
                 <button onClick={() => setShowCoachAuth(false)} className="text-[9px] text-zinc-700 uppercase font-black">Cerrar</button>
              </GlassCard>
@@ -380,8 +401,8 @@ export default function App() {
         <div className="flex flex-col">
            <span className="font-display italic text-xl uppercase leading-none text-white tracking-tighter">KINETIX</span>
            <div className="flex items-center gap-1">
-             <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'online' ? (isConfigured ? 'bg-green-500' : 'bg-amber-500') : 'bg-cyan-500 animate-pulse'}`}></div>
-             <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{isConfigured ? (cloudStatus === 'online' ? 'CLOUD READY' : 'SYNCING...') : 'LOCAL STORAGE'}</span>
+             <div className={`w-1.5 h-1.5 rounded-full ${cloudStatus === 'online' ? (isSupabaseOk ? 'bg-green-500' : 'bg-amber-500') : 'bg-cyan-500 animate-pulse'}`}></div>
+             <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{isSupabaseOk ? (cloudStatus === 'online' ? 'CLOUD READY' : 'SYNCING...') : 'LOCAL STORAGE'}</span>
            </div>
         </div>
         <button onClick={() => setCurrentUser(null)} className="text-zinc-700 hover:text-red-500 transition-all"><LogOut size={20} /></button>
@@ -459,10 +480,13 @@ export default function App() {
                        <button onClick={() => onAiGenerate(u)} disabled={isAiGenerating} className="p-3 rounded-xl bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-400 hover:text-black transition-all">
                           {isAiGenerating ? <RefreshCw className="animate-spin" size={16}/> : <Sparkles size={16}/>}
                        </button>
-                       <button onClick={() => setEditingPlan({ 
-                         plan: plans.find(p => p.userId === u.id) || { id: `p-${Date.now()}`, userId: u.id, title: 'PLAN DE ÉLITE', workouts: [], updatedAt: new Date().toISOString() }, 
-                         isNew: true 
-                       })} className="bg-zinc-800/40 p-3 rounded-xl text-zinc-500 border border-zinc-800 hover:text-white transition-all"><Edit3 size={16}/></button>
+                       <button onClick={() => {
+                          const existingPlan = plans.find(p => p.userId === u.id);
+                          setEditingPlan({ 
+                            plan: existingPlan || { id: `p-${Date.now()}`, userId: u.id, title: 'PLAN DE ÉLITE', workouts: [], updatedAt: new Date().toISOString(), coachNotes: '' }, 
+                            isNew: !existingPlan 
+                          });
+                       }} className="bg-zinc-800/40 p-3 rounded-xl text-zinc-500 border border-zinc-800 hover:text-white transition-all"><Edit3 size={16}/></button>
                     </div>
                   </GlassCard>
                 ))}
@@ -498,19 +522,32 @@ export default function App() {
 
 // --- SUBCOMPONENTES ---
 
+const StatusItem = ({ label, active }: { label: string, active: boolean }) => (
+  <div className="flex items-center justify-between p-3 bg-black/40 rounded-xl border border-zinc-800">
+    <span className="text-[8px] font-black uppercase text-zinc-500">{label}</span>
+    {active ? <CheckCircle2 className="text-green-500" size={14}/> : <X className="text-red-500" size={14}/>}
+  </div>
+);
+
 const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
   const [localPlan, setLocalPlan] = useState<Plan>(plan);
   const [showPicker, setShowPicker] = useState<number | null>(null);
 
+  const updateExercise = (wIdx: number, exIdx: number, field: string, value: any) => {
+    const nw = [...localPlan.workouts];
+    nw[wIdx].exercises[exIdx] = { ...nw[wIdx].exercises[exIdx], [field]: value };
+    setLocalPlan({ ...localPlan, workouts: nw });
+  };
+
   return (
-    <div className="fixed inset-0 bg-[#050507] z-[150] p-8 flex flex-col animate-in slide-in-from-right-full duration-500 overflow-y-auto no-scrollbar">
-       <header className="flex justify-between items-center mb-10 shrink-0">
+    <div className="fixed inset-0 bg-[#050507] z-[150] p-8 flex flex-col animate-in slide-in-from-right-full duration-500 overflow-y-auto no-scrollbar pb-32">
+       <header className="flex justify-between items-center mb-10 shrink-0 sticky top-0 bg-[#050507] py-4 z-10 border-b border-zinc-900">
           <button onClick={onCancel} className="bg-zinc-900 p-4 rounded-2xl text-zinc-600"><ChevronLeft size={24}/></button>
           <input value={localPlan.title} onChange={e => setLocalPlan({...localPlan, title: e.target.value})} className="bg-transparent text-2xl font-display italic text-white text-center outline-none uppercase tracking-tighter" />
           <button onClick={() => onSave(localPlan)} className="bg-red-600 p-5 rounded-2xl text-white shadow-xl hover:scale-110 transition-all"><Save size={24}/></button>
        </header>
 
-       <div className="space-y-6 pb-20">
+       <div className="space-y-8">
           {localPlan.workouts.map((w, wIdx) => (
              <GlassCard key={wIdx} className="space-y-6 border-zinc-900">
                 <div className="flex justify-between items-center">
@@ -524,42 +561,83 @@ const PlanEditor = memo(({ plan, allExercises, onSave, onCancel }: any) => {
                   }} className="text-zinc-800 hover:text-red-500"><Trash2 size={18}/></button>
                 </div>
 
-                <div className="space-y-3">
-                   {w.exercises.map((ex, exIdx) => (
-                     <div key={exIdx} className="flex justify-between items-center p-4 bg-zinc-900 rounded-2xl border border-zinc-800">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black uppercase text-zinc-500">{allExercises.find((e:any)=>e.id===ex.exerciseId)?.name || ex.name}</span>
-                          <span className="text-xs font-bold text-white italic">{ex.targetSets}x{ex.targetReps}</span>
-                        </div>
-                        <button onClick={() => {
-                          const nw = [...localPlan.workouts];
-                          nw[wIdx].exercises = nw[wIdx].exercises.filter((_, i) => i !== exIdx);
-                          setLocalPlan({...localPlan, workouts: nw});
-                        }} className="text-zinc-800"><X size={16}/></button>
-                     </div>
-                   ))}
-                   <button onClick={() => setShowPicker(wIdx)} className="w-full py-4 border-2 border-dashed border-zinc-900 rounded-2xl text-[9px] font-black text-zinc-700 uppercase tracking-widest">+ AÑADIR TÉCNICA</button>
+                <div className="space-y-4">
+                   {w.exercises.map((ex, exIdx) => {
+                     const dbEx = allExercises.find((e:any) => e.id === ex.exerciseId);
+                     return (
+                       <div key={exIdx} className="p-5 bg-zinc-950 rounded-[2rem] border border-zinc-900 space-y-4">
+                          <div className="flex justify-between items-start">
+                             <div className="flex flex-col">
+                               <span className="text-[10px] font-black uppercase text-red-600">{dbEx?.name || ex.name}</span>
+                               <span className="text-[8px] font-bold text-zinc-700 uppercase">{dbEx?.muscleGroup}</span>
+                             </div>
+                             <button onClick={() => {
+                               const nw = [...localPlan.workouts];
+                               nw[wIdx].exercises = nw[wIdx].exercises.filter((_, i) => i !== exIdx);
+                               setLocalPlan({...localPlan, workouts: nw});
+                             }} className="text-zinc-800"><X size={16}/></button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                             <div>
+                                <p className="text-[7px] font-black text-zinc-700 uppercase ml-2 mb-1">SERIES</p>
+                                <input type="number" value={ex.targetSets} onChange={e => updateExercise(wIdx, exIdx, 'targetSets', parseInt(e.target.value))} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-white font-bold text-center outline-none focus:border-red-600" />
+                             </div>
+                             <div>
+                                <p className="text-[7px] font-black text-zinc-700 uppercase ml-2 mb-1">REPETICIONES</p>
+                                <input value={ex.targetReps} onChange={e => updateExercise(wIdx, exIdx, 'targetReps', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-white font-bold text-center outline-none focus:border-red-600" />
+                             </div>
+                          </div>
+
+                          <div>
+                             <p className="text-[7px] font-black text-zinc-700 uppercase ml-2 mb-1">COACH CUE (INSTRUCCIÓN)</p>
+                             <input value={ex.coachCue || ''} onChange={e => updateExercise(wIdx, exIdx, 'coachCue', e.target.value)} placeholder="Ej: Pecho alto, codos cerrados..." className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-white text-[10px] italic outline-none focus:border-cyan-400 placeholder:text-zinc-800" />
+                          </div>
+                       </div>
+                     );
+                   })}
+                   <button onClick={() => setShowPicker(wIdx)} className="w-full py-4 border-2 border-dashed border-zinc-900 rounded-2xl text-[9px] font-black text-zinc-700 uppercase tracking-widest hover:border-zinc-700 hover:text-zinc-500 transition-all">+ AÑADIR EJERCICIO</button>
                 </div>
              </GlassCard>
           ))}
-          <button onClick={() => setLocalPlan({...localPlan, workouts: [...localPlan.workouts, { id: `w-${Date.now()}`, name: `SESIÓN ${localPlan.workouts.length+1}`, day: 1, exercises: [] }]})} className="w-full py-8 border-2 border-dashed border-zinc-900 rounded-[2.5rem] text-[10px] font-black text-zinc-700 uppercase tracking-widest flex flex-col items-center gap-2"><Plus size={24}/> Nueva Sesión</button>
+          
+          <div className="space-y-4">
+             <button onClick={() => setLocalPlan({...localPlan, workouts: [...localPlan.workouts, { id: `w-${Date.now()}`, name: `SESIÓN ${localPlan.workouts.length+1}`, day: localPlan.workouts.length+1, exercises: [] }]})} className="w-full py-8 border-2 border-dashed border-zinc-900 rounded-[2.5rem] text-[10px] font-black text-zinc-700 uppercase tracking-widest flex flex-col items-center gap-2 hover:bg-zinc-900/20 transition-all"><Plus size={24}/> Nueva Sesión</button>
+             
+             <GlassCard className="border-cyan-400/20">
+                <div className="flex items-center gap-3 mb-4">
+                   <MessageSquare className="text-cyan-400" size={18} />
+                   <h3 className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">NOTAS GENERALES DEL COACH</h3>
+                </div>
+                <textarea 
+                  value={localPlan.coachNotes || ''} 
+                  onChange={e => setLocalPlan({...localPlan, coachNotes: e.target.value})}
+                  placeholder="Instrucciones globales, nutrición, enfoque de la semana..."
+                  className="w-full bg-zinc-950 border border-zinc-900 p-6 rounded-[1.5rem] text-white text-xs leading-relaxed outline-none focus:border-cyan-400 h-32 no-scrollbar"
+                ></textarea>
+             </GlassCard>
+          </div>
        </div>
 
        {showPicker !== null && (
-         <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl p-8 animate-in fade-in">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-display italic text-white uppercase tracking-tighter">BÓVEDA KINETIX</h3>
+         <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl p-8 animate-in fade-in flex flex-col">
+            <header className="flex justify-between items-center mb-8 shrink-0">
+              <h3 className="text-2xl font-display italic text-white uppercase tracking-tighter">BIBLIOTECA KINETIX</h3>
               <button onClick={() => setShowPicker(null)} className="text-white"><X size={24}/></button>
-            </div>
-            <div className="space-y-3 overflow-y-auto h-[80vh] no-scrollbar">
+            </header>
+            <div className="flex-1 space-y-3 overflow-y-auto no-scrollbar">
               {allExercises.map((ex: any) => (
                 <div key={ex.id} onClick={() => {
                   const nw = [...localPlan.workouts];
                   nw[showPicker].exercises.push({ exerciseId: ex.id, name: ex.name, targetSets: 3, targetReps: '12', coachCue: '' });
                   setLocalPlan({...localPlan, workouts: nw});
                   setShowPicker(null);
-                }} className="p-5 bg-zinc-900 border border-zinc-800 rounded-2xl font-black text-white uppercase italic tracking-tighter hover:border-red-600 transition-all cursor-pointer">
-                  {ex.name}
+                }} className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl group hover:border-red-600 transition-all cursor-pointer flex justify-between items-center">
+                  <div>
+                    <p className="font-black text-white uppercase italic tracking-tighter text-lg">{ex.name}</p>
+                    <p className="text-[8px] font-bold text-zinc-600 uppercase tracking-widest">{ex.muscleGroup}</p>
+                  </div>
+                  <Plus size={20} className="text-zinc-800 group-hover:text-red-600 transition-colors" />
                 </div>
               ))}
             </div>
