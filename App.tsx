@@ -10,7 +10,7 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin
+  Instagram, Facebook, Linkedin, Phone
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
@@ -441,14 +441,15 @@ const BrandingLogo = ({ className = "w-8 h-8", textSize = "text-xl", showText = 
 const SocialLinks = ({ className = "" }: { className?: string }) => {
     return (
         <div className={`flex gap-3 justify-center ${className}`}>
-            <a href="https://instagram.com" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-gradient-to-tr hover:from-purple-600 hover:to-pink-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
+            <a href="https://www.instagram.com/kinetix.zone/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-gradient-to-tr hover:from-purple-600 hover:to-pink-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
                 <Instagram size={18} />
             </a>
-            <a href="https://youtube.com" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-red-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
-                <Youtube size={18} />
-            </a>
-            <a href="https://facebook.com" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-blue-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
+            <a href="https://www.facebook.com/people/Kinetix-Functional-Zone/61577641223744/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-blue-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
                 <Facebook size={18} />
+            </a>
+            {/* WhatsApp Placeholder: Add real number here if needed e.g. https://wa.me/521234567890 */}
+            <a href="https://wa.me/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-green-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
+                <MessageCircle size={18} />
             </a>
         </div>
     );
@@ -1486,7 +1487,8 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
 
              <div className="w-full max-w-md space-y-8 relative z-10">
                  <div className="text-center flex flex-col items-center">
-                     <BrandingLogo className="w-24 h-24 mb-6 shadow-2xl" showText={false} />
+                     {/* UPDATE: Increased Logo Size here */}
+                     <BrandingLogo className="w-48 h-48 mb-6 shadow-2xl" showText={false} />
                      <h1 className="text-4xl font-bold font-display italic text-white tracking-tight">KINETIX ZONE</h1>
                      <p className="text-gray-400 mt-2 text-sm tracking-widest uppercase font-bold">Elite Functional Training</p>
                      
