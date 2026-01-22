@@ -551,6 +551,17 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
       return [];
   });
 
+  // REAL-TIME LISTENER FOR HISTORY UPDATES
+  useEffect(() => {
+      const updateHistory = () => {
+          if (mode === 'athlete') {
+              setHistory(DataEngine.getClientHistory(plan.userId));
+          }
+      };
+      window.addEventListener('storage-update', updateHistory);
+      return () => window.removeEventListener('storage-update', updateHistory);
+  }, [mode, plan.userId]);
+
   const startTime = useRef(Date.now());
   
   const handleSetComplete = useCallback((restSeconds?: number) => {
@@ -565,14 +576,10 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
          const session = await DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          
-         // UPDATE HISTORY STATE IMMEDIATELY
-         if (mode === 'athlete') {
-            setHistory(DataEngine.getClientHistory(plan.userId));
-         }
-
          window.scrollTo(0, 0);
          setTimeout(() => {
             setFinishScreen(session);
+            // TRIGGER UPDATE EVENT MANUALLY IF NEEDED (DataEngine already does this, but redundancy helps)
             window.dispatchEvent(new Event('storage-update'));
          }, 100);
      }
@@ -582,7 +589,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
       if (attended) {
           if(confirm("¿Confirmar asistencia a clase?")) {
               DataEngine.archiveWorkout(plan.userId, workout, { 0: [{ setNumber: 1, weight: '0', reps: '1', completed: true, timestamp: Date.now() }] }, Date.now());
-              if (mode === 'athlete') setHistory(DataEngine.getClientHistory(plan.userId));
               window.scrollTo(0,0);
               setTimeout(() => {
                 setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
