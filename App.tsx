@@ -1016,7 +1016,7 @@ const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user:
         <div className="space-y-6 animate-fade-in">
              <div className="flex justify-between items-center">
                 <h2 className="text-3xl font-bold font-display italic text-white">ATLETAS</h2>
-                {user.role === 'coach' && (
+                {(user.role === 'coach' || user.role === 'admin') && (
                     <button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors">
                         <UserPlus size={16} /> Agregar Atleta
                     </button>
@@ -1119,7 +1119,22 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                 <div>
                     <h1 className="text-3xl font-bold font-display italic text-white leading-none mb-2">{client.name.toUpperCase()}</h1>
                     <div className="flex flex-wrap gap-3">
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5"><Info size={14} className="text-blue-500"/> {client.goal}</span>
+                        <div className="relative group">
+                            <select
+                                value={client.goal}
+                                onChange={(e) => {
+                                    const val = e.target.value as Goal;
+                                    const updated = { ...client, goal: val };
+                                    DataEngine.saveUser(updated);
+                                    setClient(updated);
+                                }}
+                                className="appearance-none bg-white/5 border border-white/5 text-xs font-bold text-gray-400 rounded-lg pl-8 pr-6 py-1.5 outline-none focus:border-blue-500 cursor-pointer hover:bg-white/10 transition-colors"
+                            >
+                                {Object.values(Goal).map(g => <option key={g} value={g} className="bg-[#1A1A1D] text-white">{g}</option>)}
+                            </select>
+                            <Info size={14} className="text-blue-500 absolute left-2.5 top-1.5 pointer-events-none"/>
+                            <Edit3 size={10} className="text-gray-600 absolute right-2 top-2 pointer-events-none group-hover:text-white"/>
+                        </div>
                         <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5"><Zap size={14} className="text-yellow-500"/> {client.level}</span>
                     </div>
                 </div>
