@@ -5,23 +5,55 @@ import { User, Exercise } from "../types";
 const getApiKey = () => process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
 
 /**
+ * Helper: Extraer contexto de fuerza del historial
+ */
+const getStrengthContext = (history: any[]) => {
+  if (!history || history.length === 0) return "No hay historial previo. Asume cargas moderadas.";
+  
+  // Tomamos las últimas 5 sesiones para ver pesos recientes
+  const recentSessions = history.slice(0, 5);
+  let contextStr = "HISTORIAL RECIENTE DE FUERZA:\n";
+  
+  recentSessions.forEach(session => {
+    // Buscamos el peso máximo levantado en esa sesión (independientemente del ejercicio, para dar una idea de fuerza general)
+    let maxWeight = 0;
+    Object.values(session.logs).forEach((sets: any) => {
+      sets.forEach((s: any) => {
+        const w = parseFloat(s.weight);
+        if (w > maxWeight) maxWeight = w;
+      });
+    });
+    if (maxWeight > 0) {
+      contextStr += `- En rutina "${session.workoutName}": Llegó a mover ${maxWeight}kg.\n`;
+    }
+  });
+  
+  return contextStr;
+};
+
+/**
  * Generador de Rutinas
  */
-export async function generateSmartRoutine(user: User) {
+export async function generateSmartRoutine(user: User, history: any[] = []) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("ERROR: FALTA API KEY.");
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
+  const strengthContext = getStrengthContext(history);
 
   const systemInstruction = `Eres el Head Coach de Kinetix Functional Zone.
   Tu misión es diseñar protocolos de entrenamiento de élite en formato JSON.
   Debes ser técnico, preciso y motivador en los consejos (coachCue).
   Considera nivel: ${user.level}, meta: ${user.goal} y equipo: ${user.equipment.join(', ')}.
-  Prioriza movimientos compuestos y eficiencia de tiempo.`;
+  Prioriza movimientos compuestos y eficiencia de tiempo.
+  IMPORTANTE: Usa el historial de fuerza provisto para sugerir cargas (targetLoad) realistas (RPE 7-8).`;
 
   const prompt = `GENERA UN PLAN SEMANAL COMPLETO PARA EL ATLETA: ${user.name.toUpperCase()}.
   DÍAS DISPONIBLES: ${user.daysPerWeek}.
   
+  ${strengthContext}
+  
+  Si hay historial, calcula el 'targetLoad' aproximado para los compuestos principales.
   OBLIGATORIO FORMATO JSON PURO CON ESTA ESTRUCTURA EXACTA.`;
 
   try {
@@ -52,6 +84,7 @@ export async function generateSmartRoutine(user: User) {
                         name: { type: Type.STRING },
                         targetSets: { type: Type.NUMBER },
                         targetReps: { type: Type.STRING },
+                        targetLoad: { type: Type.STRING, description: "Peso sugerido en kg (ej: '80')" },
                         coachCue: { type: Type.STRING }
                       }
                     }

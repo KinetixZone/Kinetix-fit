@@ -9,7 +9,7 @@ import {
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
-  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail
+  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
@@ -114,7 +114,33 @@ const DataEngine = {
         DataEngine.saveStore(store);
     }
 
-    // 2. BACKGROUND SYNC (Optimización de Nube)
+    // 2. STORAGE CLEANUP (Nuevo Feature)
+    // Limpieza automática para prevenir localStorage overflow
+    const cleanUpLocalStorage = () => {
+        try {
+            const currentStore = DataEngine.getStore();
+            let hasChanges = false;
+            // Iterar sobre claves de historial
+            Object.keys(currentStore).forEach(key => {
+                if (key.startsWith('HISTORY_')) {
+                    const history = JSON.parse(currentStore[key]);
+                    // MANTENER SOLO LAS ÚLTIMAS 50 SESIONES
+                    if (history.length > 50) {
+                        const trimmedHistory = history.slice(0, 50);
+                        currentStore[key] = JSON.stringify(trimmedHistory);
+                        hasChanges = true;
+                        console.log(`🧹 KINETIX CLEANUP: Historial purgado para ${key} (Manteniendo 50 recientes)`);
+                    }
+                }
+            });
+            if(hasChanges) DataEngine.saveStore(currentStore);
+        } catch (e) {
+            console.error("Error en Cleanup:", e);
+        }
+    };
+    cleanUpLocalStorage();
+
+    // 3. BACKGROUND SYNC (Optimización de Nube)
     // Intentamos traer datos reales de Supabase sin bloquear la UI
     if (supabaseConnectionStatus.isConfigured) {
         try {
@@ -140,8 +166,8 @@ const DataEngine = {
             const { data: dbExercises } = await supabase.from('exercises').select('*');
             if (dbExercises && dbExercises.length > 0) {
                 const mappedEx = dbExercises.map((e: any) => ({
-                   id: e.id, name: e.name, muscleGroup: e.muscle_group, 
-                   videoUrl: e.video_url, technique: e.technique, commonErrors: e.common_errors || []
+                   id: e.id, name: e.name, muscle_group: e.muscle_group, 
+                   video_url: e.video_url, technique: e.technique, commonErrors: e.common_errors || []
                 }));
                 const finalEx = [...mergedExercises];
                 mappedEx.forEach((me: Exercise) => {
@@ -513,6 +539,42 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
     );
 };
 
+// --- STEPPER CONTROL (New Feature) ---
+const StepperControl = ({ value, onChange, step, type, placeholder, highlight }: { value: string, onChange: (v: string) => void, step: number, type: 'weight' | 'reps', placeholder?: string, highlight?: boolean }) => {
+    const handleAdjust = (delta: number) => {
+        const current = parseFloat(value) || parseFloat(placeholder || '0') || 0;
+        const next = Math.max(0, current + delta);
+        // Si es peso y tiene decimales, mantenerlos. Si es entero, mantener entero.
+        const formatted = type === 'weight' && next % 1 !== 0 ? next.toFixed(1) : next.toString();
+        onChange(formatted);
+    };
+
+    return (
+        <div className={`flex items-stretch h-9 bg-[#1A1A1D] rounded-md border transition-all overflow-hidden ${highlight ? 'border-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-white/10'}`}>
+            <button 
+                onClick={() => handleAdjust(-step)} 
+                className="w-8 flex items-center justify-center bg-white/5 hover:bg-white/10 active:bg-white/20 text-gray-400 border-r border-white/5"
+            >
+                <Minus size={14} />
+            </button>
+            <input 
+                type="text" 
+                inputMode="decimal"
+                placeholder={placeholder || "-"}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className={`flex-1 min-w-0 bg-transparent text-center text-xs font-bold outline-none placeholder-gray-700 ${highlight ? 'text-yellow-400' : 'text-white'}`}
+            />
+            <button 
+                onClick={() => handleAdjust(step)} 
+                className="w-8 flex items-center justify-center bg-white/5 hover:bg-white/10 active:bg-white/20 text-gray-400 border-l border-white/5"
+            >
+                <Plus size={14} />
+            </button>
+        </div>
+    );
+};
+
 interface ExerciseCardProps {
   exercise: WorkoutExercise;
   index: number;
@@ -524,7 +586,7 @@ interface ExerciseCardProps {
   history: any[];
 }
 
-// --- EXERCISE CARD (GOLD MODE & PR LOGIC RESTORED) ---
+// --- EXERCISE CARD (UPDATED WITH STEPPERS & HAPTIC FEEDBACK) ---
 const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
   exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history
 }) => {
@@ -562,7 +624,12 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
     if (existingIdx >= 0) newExLogs[existingIdx] = entry; else newExLogs.push(entry);
     
     setLogs({...logs, [index]: newExLogs});
-    if (isCompleted) onSetComplete(exercise.targetRest);
+    
+    if (isCompleted) {
+        // Feature: Haptic Feedback
+        if (navigator.vibrate) navigator.vibrate(50);
+        onSetComplete(exercise.targetRest);
+    }
   };
 
   const setsArray = Array.from({ length: exercise.targetSets }, (_, i) => i + 1);
@@ -615,11 +682,12 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
 
       {mode === 'athlete' && (
         <div className="space-y-2 mt-4 bg-black/20 p-3 rounded-xl border border-white/5 overflow-x-auto no-scrollbar">
-           <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-500 uppercase font-bold text-center mb-1 min-w-[300px]">
+           <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-500 uppercase font-bold text-center mb-1 min-w-[320px]">
               <div className="col-span-1">#</div>
-              <div className="col-span-3">Kg</div>
-              <div className="col-span-3">Reps</div>
-              <div className="col-span-2">RPE</div>
+              <div className="col-span-4">Kg</div>
+              <div className="col-span-4">Reps</div>
+              {/* RPE removido visualmente para dar espacio a steppers, o reducido */}
+              {/*<div className="col-span-2">RPE</div>*/}
               <div className="col-span-3">Done</div>
            </div>
            {setsArray.map(setNum => {
@@ -634,50 +702,40 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
              const isEgoLifting = targetWeight > 0 && currentWeight > targetWeight * 1.2;
 
              return (
-               <div key={setNum} className={`grid grid-cols-12 gap-2 items-center transition-all min-w-[300px] ${isDone ? 'opacity-50' : 'opacity-100'}`}>
+               <div key={setNum} className={`grid grid-cols-12 gap-2 items-center transition-all min-w-[320px] ${isDone ? 'opacity-50' : 'opacity-100'}`}>
                  <div className="col-span-1 flex justify-center">
                     <span className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">{setNum}</span>
                  </div>
-                 <div className="col-span-3 relative flex items-center gap-1">
-                    <input 
-                      type="text" 
-                      inputMode="decimal"
-                      placeholder={exercise.targetLoad || "-"}
-                      defaultValue={log?.weight || ''}
-                      onBlur={(e) => handleLogSet(setNum, e.target.value, log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !!isDone)}
-                      className={`w-full bg-[#1A1A1D] border rounded-md py-1.5 px-1 text-center text-xs font-bold focus:border-yellow-500 outline-none placeholder-gray-700 transition-all ${isPR ? 'border-yellow-500 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-white/10 text-white'}`}
+                 <div className="col-span-4 relative">
+                    <StepperControl 
+                        type="weight"
+                        step={2.5}
+                        value={log?.weight || ''}
+                        placeholder={exercise.targetLoad || "-"}
+                        onChange={(val) => handleLogSet(setNum, val, log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !!isDone)}
+                        highlight={!!isPR}
                     />
-                    {isEgoLifting && <AlertTriangle size={12} className="text-red-500 absolute -right-3 top-2 animate-pulse" title="Cuidado: Peso excesivo" />}
-                    <button onClick={() => setShowPlateCalc(parseFloat(log?.weight || exercise.targetLoad || '0'))} className="p-1 bg-white/5 rounded hover:bg-white/10 text-gray-500 hover:text-white">
-                        <Disc size={12} />
+                    {isEgoLifting && <AlertTriangle size={12} className="text-red-500 absolute -right-2 top-0 animate-pulse" title="Cuidado: Peso excesivo" />}
+                    {/* Botón calculadora más discreto */}
+                    <button onClick={() => setShowPlateCalc(parseFloat(log?.weight || exercise.targetLoad || '0'))} className="absolute -top-2 right-1/2 translate-x-1/2 opacity-0 hover:opacity-100 p-0.5 bg-black/80 rounded text-[8px] text-gray-400">
+                        calc
                     </button>
                  </div>
-                 <div className="col-span-3">
-                    <input 
-                      type="text" 
-                      inputMode="numeric"
-                      placeholder={exercise.targetReps}
-                      defaultValue={log?.reps || ''}
-                      onBlur={(e) => handleLogSet(setNum, log?.weight || '', e.target.value, log?.rpe?.toString() || '', !!isDone)}
-                      className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs text-white focus:border-blue-500 outline-none placeholder-gray-700"
+                 <div className="col-span-4">
+                    <StepperControl 
+                        type="reps"
+                        step={1}
+                        value={log?.reps || ''}
+                        placeholder={exercise.targetReps}
+                        onChange={(val) => handleLogSet(setNum, log?.weight || '', val, log?.rpe?.toString() || '', !!isDone)}
                     />
-                 </div>
-                 <div className="col-span-2">
-                    <select 
-                        className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs text-blue-300 focus:border-blue-500 outline-none"
-                        value={log?.rpe || ''}
-                        onChange={(e) => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, e.target.value, !!isDone)}
-                    >
-                        <option value="">-</option>
-                        {[6,7,8,9,10].map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
                  </div>
                  <div className="col-span-3 flex justify-center">
                     <button 
                       onClick={() => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !isDone)}
-                      className={`w-full py-1.5 rounded-md flex items-center justify-center transition-all border ${isDone ? 'bg-green-500 border-green-500 text-black shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
+                      className={`w-full h-9 rounded-md flex items-center justify-center transition-all border ${isDone ? 'bg-green-500 border-green-500 text-black shadow-[0_0_10px_rgba(34,197,94,0.4)] animate-flash' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
                     >
-                      {isDone ? <Check size={14} strokeWidth={4} /> : <Circle size={14} />}
+                      {isDone ? <Check size={16} strokeWidth={4} /> : <Circle size={16} />}
                     </button>
                  </div>
                </div>
@@ -1236,7 +1294,8 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
   const handleGenerateAI = async () => {
     setIsGenerating(true);
     try {
-      const generatedPlan = await generateSmartRoutine(client);
+      // INJECTED HISTORY FOR SMART LOAD CALCULATION
+      const generatedPlan = await generateSmartRoutine(client, history);
       const newPlan: Plan = {
         id: generateUUID(), title: generatedPlan.title || "Plan IA", userId: client.id, workouts: generatedPlan.workouts || [], updatedAt: new Date().toISOString()
       };
