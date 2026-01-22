@@ -74,8 +74,11 @@ const DataEngine = {
   
   getConfig: (): SystemConfig => {
       const s = DataEngine.getStore();
-      const loaded = s.CONFIG ? JSON.parse(s.CONFIG) : DEFAULT_CONFIG;
-      return { ...DEFAULT_CONFIG, ...loaded, ai: { ...DEFAULT_CONFIG.ai, ...loaded.ai } };
+      const loaded = s.CONFIG ? JSON.parse(s.CONFIG) : {};
+      // Merge con lógica de fallback para el logo
+      const merged = { ...DEFAULT_CONFIG, ...loaded, ai: { ...DEFAULT_CONFIG.ai, ...loaded.ai } };
+      if (!merged.logoUrl) merged.logoUrl = DEFAULT_CONFIG.logoUrl;
+      return merged;
   },
 
   saveConfig: (config: SystemConfig) => {
@@ -1604,33 +1607,35 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
             </div>
             
             {user.role === 'client' && (
-                <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-4 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3 shadow-lg mb-2 relative overflow-hidden group">
-                    <div className="absolute inset-0 bg-blue-600/20 group-hover:bg-blue-600/30 transition-colors" />
-                    {analyzing ? <Loader2 className="animate-spin text-blue-200" /> : <BrainCircuit size={24} className="text-blue-300" />}
-                    <span className="font-bold text-blue-100 z-10">ANALIZAR MI PROGRESO CON IA</span>
-                    <Sparkles className="absolute right-4 text-blue-300 opacity-50" size={20} />
-                </button>
-            )}
+                <>
+                    <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-4 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3 shadow-lg mb-2 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-blue-600/20 group-hover:bg-blue-600/30 transition-colors" />
+                        {analyzing ? <Loader2 className="animate-spin text-blue-200" /> : <BrainCircuit size={24} className="text-blue-300" />}
+                        <span className="font-bold text-blue-100 z-10">ANALIZAR MI PROGRESO CON IA</span>
+                        <Sparkles className="absolute right-4 text-blue-300 opacity-50" size={20} />
+                    </button>
 
-            <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
-                 <h3 className="font-bold text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-green-500"/> Progreso de Volumen</h3>
-                 <div className="h-48 w-full">
-                     <ResponsiveContainer width="100%" height="100%">
-                         <AreaChart data={chartData}>
-                             <defs>
-                                 <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
-                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                                     <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                                 </linearGradient>
-                             </defs>
-                             <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                             <XAxis dataKey="date" tick={{fontSize: 10, fill: '#666'}} axisLine={false} tickLine={false} />
-                             <Tooltip contentStyle={{backgroundColor: '#000', border: '1px solid #333', borderRadius: '8px'}} />
-                             <Area type="monotone" dataKey="vol" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={2} />
-                         </AreaChart>
-                     </ResponsiveContainer>
-                 </div>
-            </div>
+                    <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
+                        <h3 className="font-bold text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-green-500"/> Progreso de Volumen</h3>
+                        <div className="h-48 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={chartData}>
+                                    <defs>
+                                        <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                                    <XAxis dataKey="date" tick={{fontSize: 10, fill: '#666'}} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{backgroundColor: '#000', border: '1px solid #333', borderRadius: '8px'}} />
+                                    <Area type="monotone" dataKey="vol" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={2} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </>
+            )}
 
             <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-4 space-y-4">
                  <div className="flex justify-between items-center py-2 border-b border-white/5">
