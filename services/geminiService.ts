@@ -1,20 +1,15 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { User } from "../types";
+import { User, Exercise } from "../types";
+
+const getApiKey = () => process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
 
 /**
- * Kinetix Intelligent Coaching V12.2
- * Diseñado para generar protocolos técnicos de alto rendimiento.
+ * Generador de Rutinas
  */
 export async function generateSmartRoutine(user: User) {
-  // CONFIGURACIÓN VERCEL:
-  // Intentamos leer process.env (estándar) o import.meta.env (Vite específico)
-  // En Vercel, asegúrate de llamar la variable: VITE_API_KEY o API_KEY
-  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
-
-  if (!apiKey) {
-    console.error("DEBUG: API Key no encontrada en variables de entorno.");
-    throw new Error("ERROR DE CONFIGURACIÓN: FALTA LA API KEY DE GEMINI.");
-  }
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("ERROR: FALTA API KEY.");
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
 
@@ -27,26 +22,7 @@ export async function generateSmartRoutine(user: User) {
   const prompt = `GENERA UN PLAN SEMANAL COMPLETO PARA EL ATLETA: ${user.name.toUpperCase()}.
   DÍAS DISPONIBLES: ${user.daysPerWeek}.
   
-  OBLIGATORIO FORMATO JSON PURO:
-  {
-    "title": "NOMBRE DEL PLAN",
-    "workouts": [
-      {
-        "id": "w_random",
-        "name": "DÍA 1: ENFOQUE TÉCNICO",
-        "day": 1,
-        "exercises": [
-          { 
-            "exerciseId": "id_local", 
-            "name": "Nombre del Ejercicio", 
-            "targetSets": 4, 
-            "targetReps": "10-12", 
-            "coachCue": "Instrucción técnica breve" 
-          }
-        ]
-      }
-    ]
-  }`;
+  OBLIGATORIO FORMATO JSON PURO CON ESTA ESTRUCTURA EXACTA.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -92,9 +68,64 @@ export async function generateSmartRoutine(user: User) {
     return JSON.parse(response.text || '{}');
   } catch (error: any) {
     console.error("AI Generation Error:", error);
-    if (error.status === 429) {
-      throw new Error("EL COACH ESTÁ OCUPADO. REINTENTA EN 60 SEGUNDOS.");
-    }
     throw new Error("NO SE PUDO CONECTAR CON EL COACH IA.");
   }
+}
+
+/**
+ * Análisis de Progreso (Insights)
+ */
+export async function analyzeProgress(user: User, history: any[]) {
+  const apiKey = getApiKey();
+  if (!apiKey) return "Error: No API Key";
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  // Resumir historial para no saturar tokens
+  const summary = history.slice(0, 5).map(h => ({
+    date: h.date,
+    workout: h.workoutName,
+    volume: h.summary.totalVolume,
+    exercises: Object.keys(h.logs).length
+  }));
+
+  const prompt = `Analiza el progreso reciente de este atleta:
+  Datos: ${JSON.stringify(summary)}
+  
+  Detecta tendencias: ¿Está subiendo el volumen? ¿Es consistente?
+  Dame 3 consejos breves y directos (Bullet points) para mejorar su rendimiento la próxima semana.
+  Tono: Coach de alto rendimiento, duro pero justo.`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+  });
+
+  return response.text;
+}
+
+/**
+ * Chatbot Técnico (Dudas rápidas)
+ */
+export async function getTechnicalAdvice(query: string, contextExercises: Exercise[]) {
+  const apiKey = getApiKey();
+  if (!apiKey) return "Error de conexión.";
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  // Contexto ligero de ejercicios disponibles
+  const exercisesList = contextExercises.map(e => e.name).join(", ");
+
+  const systemInstruction = `Eres un experto en biomecánica y entrenador de fuerza.
+  Tu objetivo es resolver dudas rápidas del atleta EN EL GIMNASIO.
+  Sé conciso (máximo 2 oraciones).
+  Si piden sustituciones, sugiere ejercicios de esta lista: ${exercisesList}.`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: query,
+    config: { systemInstruction }
+  });
+
+  return response.text;
 }

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -8,14 +7,14 @@ import {
   Timer as TimerIcon, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
-  MoreVertical, Flame, StopCircle, ClipboardList
+  MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp
 } from 'lucide-react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
 } from 'recharts';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
-import { generateSmartRoutine } from './services/geminiService';
+import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabase, supabaseConnectionStatus } from './services/supabaseClient';
 
 // --- UTILS ---
@@ -39,7 +38,7 @@ const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V3'; 
 const SESSION_KEY = 'KINETIX_SESSION_PRO_V3';
 
-// --- DATA ENGINE (ENHANCED V3 - HISTORY SUPPORT) ---
+// --- DATA ENGINE ---
 const DataEngine = {
   getStore: () => {
     try {
@@ -110,21 +109,8 @@ const DataEngine = {
   },
 
   pullFromCloud: async () => {
-    if (!supabaseConnectionStatus.isConfigured) return false;
-    try {
-      const s = DataEngine.getStore();
-      const { data: users } = await supabase.from('users').select('*');
-      if (users) {
-        const mappedUsers = users.map(u => ({
-             id: u.id, name: u.name, email: u.email, role: u.role, goal: u.goal,
-             level: u.level, daysPerWeek: u.days_per_week, equipment: u.equipment || [],
-             streak: u.streak, createdAt: u.created_at
-        }));
-        s.USERS = JSON.stringify(mappedUsers);
-      }
-      DataEngine.saveStore(s);
-      return true;
-    } catch (e) { return false; }
+    // Placeholder for Supabase logic
+    return true;
   },
 
   saveUser: async (user: User) => {
@@ -134,17 +120,6 @@ const DataEngine = {
     if (idx >= 0) users[idx] = user; else users.push(user);
     s.USERS = JSON.stringify(users);
     DataEngine.saveStore(s);
-  },
-
-  updateUser: (updatedUser: User) => {
-    const s = DataEngine.getStore();
-    let users = JSON.parse(s.USERS || '[]');
-    const index = users.findIndex((u: User) => u.id === updatedUser.id);
-    if (index !== -1) {
-      users[index] = updatedUser;
-      s.USERS = JSON.stringify(users);
-      DataEngine.saveStore(s);
-    }
   },
 
   deleteUser: (userId: string) => {
@@ -157,11 +132,9 @@ const DataEngine = {
   },
 
   // --- PROGRESS & HISTORY ---
-  
-  // Guardar log temporal (sesión activa)
   saveSetLog: (userId: string, workoutId: string, exerciseIndex: number, setEntry: SetEntry) => {
     const s = DataEngine.getStore();
-    const key = `LOG_TEMP_${userId}_${workoutId}`; // Cambiado a LOG_TEMP
+    const key = `LOG_TEMP_${userId}_${workoutId}`;
     const currentLog: WorkoutProgress = s[key] ? JSON.parse(s[key]) : {};
     
     if (!currentLog[exerciseIndex]) currentLog[exerciseIndex] = [];
@@ -183,12 +156,31 @@ const DataEngine = {
     return s[key] ? JSON.parse(s[key]) : {};
   },
 
-  // Archivar sesión completada
-  archiveWorkout: (userId: string, workout: Workout, logs: WorkoutProgress) => {
+  archiveWorkout: (userId: string, workout: Workout, logs: WorkoutProgress, startTime: number) => {
     const s = DataEngine.getStore();
     const historyKey = `HISTORY_${userId}`;
     const currentHistory = s[historyKey] ? JSON.parse(s[historyKey]) : [];
     
+    const endTime = Date.now();
+    const durationMinutes = Math.floor((endTime - startTime) / 60000);
+
+    // Calcular stats de sesión
+    let totalVolume = 0;
+    let prCount = 0;
+
+    Object.values(logs).flat().forEach(entry => {
+        if(entry.completed) {
+            totalVolume += (parseFloat(entry.weight) || 0) * (parseFloat(entry.reps) || 0);
+        }
+    });
+
+    // Detectar PRs simple (mejoras vs historial) - simplificado
+    if (currentHistory.length > 0) {
+        // Logica simple: Si el volumen total es mayor al promedio de las ultimas 3 sesiones
+        const lastVol = currentHistory[0].summary.totalVolume;
+        if(totalVolume > lastVol) prCount++;
+    }
+
     const session = {
       id: generateUUID(),
       workoutName: workout.name,
@@ -197,19 +189,16 @@ const DataEngine = {
       logs: logs,
       summary: {
          exercisesCompleted: Object.keys(logs).length,
-         totalVolume: Object.values(logs).flat().reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0) * (parseFloat(curr.reps) || 0), 0)
+         totalVolume,
+         durationMinutes,
+         prCount
       }
     };
     
-    // Guardar en historial
-    currentHistory.unshift(session); // Lo más nuevo primero
+    currentHistory.unshift(session); 
     s[historyKey] = JSON.stringify(currentHistory);
-    
-    // Limpiar log temporal para que la próxima vez esté limpio
     delete s[`LOG_TEMP_${userId}_${workout.id}`];
     
-    // Actualizar racha si es un día nuevo
-    // (Lógica simplificada)
     const users = JSON.parse(s.USERS || '[]');
     const uIdx = users.findIndex((u:User) => u.id === userId);
     if(uIdx >= 0) {
@@ -226,24 +215,136 @@ const DataEngine = {
     const historyKey = `HISTORY_${userId}`;
     return s[historyKey] ? JSON.parse(s[historyKey]) : [];
   },
-
-  // Obtener último peso registrado para un ejercicio
-  getLastLogForExercise: (userId: string, exerciseName: string): {weight: string, reps: string} | null => {
-    const history = DataEngine.getClientHistory(userId);
-    // Buscar en las sesiones pasadas
-    for (const session of history) {
-        // En cada sesión, revisar los logs. 
-        // Nota: Esto asume que podemos mapear exerciseIndex -> exerciseName, lo cual es difícil solo con logs.
-        // Mejora: Idealmente guardaríamos el ID del ejercicio en el log, pero por ahora buscaremos en la estructura.
-        // Dado que WorkoutProgress usa índices, necesitamos el plan original para mapear, lo cual es complejo aquí.
-        // Simplificación: Guardamos el nombre en el log al archivar o simplemente devolvemos null por ahora si no cambiamos la estructura de log.
-        // Para esta versión V3, vamos a confiar en que el usuario vea su historial general.
-    }
-    return null; 
-  }
 };
 
 // --- COMPONENTS ---
+
+// 1. Plate Calculator Modal
+const PlateCalculator = ({ targetWeight, onClose }: { targetWeight: number, onClose: () => void }) => {
+  const barWeight = 20; // Barra olímpica estándar
+  const plates = [20, 15, 10, 5, 2.5];
+  
+  const calculatePlates = () => {
+    let weightPerSide = (targetWeight - barWeight) / 2;
+    if (weightPerSide <= 0) return [];
+    
+    const result: number[] = [];
+    plates.forEach(plate => {
+      while (weightPerSide >= plate) {
+        result.push(plate);
+        weightPerSide -= plate;
+      }
+    });
+    return result;
+  };
+
+  const calculated = calculatePlates();
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+       <div className="bg-[#1A1A1D] border border-white/10 rounded-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+          <h3 className="text-xl font-bold text-white mb-2">Calculadora de Discos</h3>
+          <p className="text-gray-400 text-sm mb-6">Para {targetWeight}kg (Barra 20kg)</p>
+          
+          <div className="flex items-center justify-center gap-1 mb-8">
+             <div className="h-4 w-10 bg-gray-500 rounded-sm"></div> {/* Barra */}
+             {calculated.length === 0 ? <span className="text-xs text-gray-600">Solo Barra</span> : calculated.map((plate, idx) => (
+                <div key={idx} className={`h-12 w-3 rounded-sm border border-black/50 ${
+                    plate === 20 ? 'bg-blue-600 h-16' : 
+                    plate === 15 ? 'bg-yellow-500 h-14' : 
+                    plate === 10 ? 'bg-green-600 h-12' : 
+                    plate === 5 ? 'bg-white h-10' : 'bg-red-500 h-8'
+                }`} title={`${plate}kg`}></div>
+             ))}
+             <div className="h-4 w-4 bg-gray-500 rounded-sm"></div> {/* Tope */}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-left bg-black/20 p-4 rounded-xl">
+              <span className="text-xs text-gray-500 uppercase font-bold">Por lado:</span>
+              <div className="flex flex-wrap gap-1">
+                 {calculated.map((p, i) => <span key={i} className="text-xs font-bold text-white bg-white/10 px-1.5 rounded">{p}</span>)}
+              </div>
+          </div>
+          
+          <button onClick={onClose} className="mt-6 w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-colors">Cerrar</button>
+       </div>
+    </div>
+  );
+};
+
+// 2. Chatbot Component
+const AIChatbot = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [messages, setMessages] = useState<{role: 'user'|'ai', text: string}[]>([]);
+    const [input, setInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(scrollToBottom, [messages]);
+
+    const handleSend = async () => {
+        if(!input.trim()) return;
+        const userMsg = input;
+        setMessages(prev => [...prev, {role: 'user', text: userMsg}]);
+        setInput('');
+        setIsLoading(true);
+
+        try {
+            const allExercises = DataEngine.getExercises();
+            const response = await getTechnicalAdvice(userMsg, allExercises);
+            setMessages(prev => [...prev, {role: 'ai', text: response || 'Sin respuesta.'}]);
+        } catch (e) {
+            setMessages(prev => [...prev, {role: 'ai', text: 'Error de conexión.'}]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <>
+           <button onClick={() => setIsOpen(true)} className="fixed bottom-24 right-4 z-40 p-4 bg-blue-600 rounded-full shadow-2xl shadow-blue-600/40 text-white hover:scale-110 transition-transform">
+               <MessageSquare size={24} />
+           </button>
+
+           {isOpen && (
+               <div className="fixed bottom-24 right-4 z-50 w-80 md:w-96 h-[400px] bg-[#111] border border-white/20 rounded-2xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden">
+                   <div className="bg-[#1A1A1D] p-3 flex justify-between items-center border-b border-white/10">
+                       <h3 className="font-bold text-white flex items-center gap-2"><Sparkles size={16} className="text-blue-500"/> Kinetix AI</h3>
+                       <button onClick={() => setIsOpen(false)}><X size={18} className="text-gray-400 hover:text-white"/></button>
+                   </div>
+                   <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/50">
+                       {messages.length === 0 && <div className="text-xs text-gray-500 text-center mt-10">Pregunta sobre técnica, sustituciones o consejos rápidos.</div>}
+                       {messages.map((m, i) => (
+                           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                               <div className={`max-w-[80%] p-2 rounded-xl text-xs leading-relaxed ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-[#222] text-gray-200 rounded-tl-none border border-white/5'}`}>
+                                   {m.text}
+                               </div>
+                           </div>
+                       ))}
+                       {isLoading && <div className="text-xs text-gray-500 animate-pulse">Escribiendo...</div>}
+                       <div ref={messagesEndRef} />
+                   </div>
+                   <div className="p-2 border-t border-white/10 bg-[#1A1A1D] flex gap-2">
+                       <input 
+                         value={input}
+                         onChange={e => setInput(e.target.value)}
+                         onKeyDown={e => e.key === 'Enter' && handleSend()}
+                         placeholder="Escribe tu duda..."
+                         className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                       />
+                       <button onClick={handleSend} disabled={isLoading} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 text-blue-400">
+                           <Send size={16} />
+                       </button>
+                   </div>
+               </div>
+           )}
+        </>
+    );
+};
 
 const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSeconds?: number, onComplete?: () => void, onClose: () => void }) => {
   const [timeLeft, setTimeLeft] = useState(initialSeconds);
@@ -352,8 +453,8 @@ const StatCard = ({ label, value, icon }: { label: string, value: string | numbe
   </div>
 );
 
-// --- EXERCISE CARD ---
 
+// --- EXERCISE CARD (ELITE VERSION) ---
 interface ExerciseCardProps {
   exercise: WorkoutExercise;
   index: number;
@@ -362,30 +463,20 @@ interface ExerciseCardProps {
   onShowVideo: (name: string) => void;
   mode: 'coach' | 'athlete';
   onSetComplete: (restSeconds?: number) => void;
-  history?: any[]; // Historial pasado
+  history?: any[]; 
 }
 
 const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
-  exercise, 
-  index, 
-  workoutId, 
-  userId, 
-  onShowVideo, 
-  mode,
-  onSetComplete,
-  history
+  exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history
 }) => {
   const [logs, setLogs] = useState<WorkoutProgress>({});
-  
-  // Encontrar el último peso registrado para este ejercicio en el historial
-  // (Nota: Esto es una búsqueda simplificada basada en el índice, idealmente usaría IDs persistentes)
+  const [showPlateCalc, setShowPlateCalc] = useState<number | null>(null);
+
   const lastSessionData = useMemo(() => {
       if(!history || history.length === 0) return null;
-      // Buscar la sesión más reciente que tenga datos para este índice de ejercicio
-      const lastSession = history[0]; // La primera es la más reciente
+      const lastSession = history[0];
       if(lastSession.logs && lastSession.logs[index]) {
           const sets = lastSession.logs[index] as SetEntry[];
-          // Retornar el peso del mejor set o el último
           if(sets.length > 0) return sets[sets.length-1];
       }
       return null;
@@ -398,24 +489,19 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
     }
   }, [userId, workoutId, mode]);
 
-  const handleLogSet = (setNum: number, weight: string, reps: string, isCompleted: boolean) => {
+  const handleLogSet = (setNum: number, weight: string, reps: string, rpe: string, isCompleted: boolean) => {
     const entry: SetEntry = {
-      setNumber: setNum,
-      weight,
-      reps,
-      completed: isCompleted,
-      timestamp: Date.now()
+      setNumber: setNum, weight, reps, completed: isCompleted, timestamp: Date.now(),
+      rpe: rpe ? parseInt(rpe) : undefined
     };
     
     DataEngine.saveSetLog(userId, workoutId, index, entry);
-    
     const currentExLogs = logs[index] || [];
     const newExLogs = [...currentExLogs];
     const existingIdx = newExLogs.findIndex(s => s.setNumber === setNum);
     if (existingIdx >= 0) newExLogs[existingIdx] = entry; else newExLogs.push(entry);
     
     setLogs({...logs, [index]: newExLogs});
-
     if (isCompleted) onSetComplete(exercise.targetRest);
   };
 
@@ -432,7 +518,6 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
           <div>
             <h3 className="font-bold text-lg text-white leading-tight">{exercise.name}</h3>
             
-            {/* Coach Target & Safety Info */}
             <div className="flex flex-wrap gap-2 mt-2 items-center">
                 {exercise.targetLoad && (
                 <div className="inline-flex items-center gap-1.5 bg-yellow-500/10 px-2 py-1 rounded-md border border-yellow-500/20" title="Carga asignada por el Coach">
@@ -440,7 +525,6 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
                     <span className="text-xs font-bold text-yellow-500 uppercase tracking-wide">Meta: {exercise.targetLoad}</span>
                 </div>
                 )}
-                {/* Visualización de historial */}
                 {lastSessionData && (
                     <div className="inline-flex items-center gap-1.5 bg-gray-800 px-2 py-1 rounded-md border border-white/5">
                         <History size={12} className="text-gray-400" />
@@ -470,35 +554,38 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
       </div>
 
       {mode === 'athlete' && (
-        <div className="space-y-2 mt-4 bg-black/20 p-3 rounded-xl border border-white/5">
-           <div className="grid grid-cols-10 gap-2 text-[10px] text-gray-500 uppercase font-bold text-center mb-1">
-              <div className="col-span-1">Set</div>
+        <div className="space-y-2 mt-4 bg-black/20 p-3 rounded-xl border border-white/5 overflow-x-auto no-scrollbar">
+           <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-500 uppercase font-bold text-center mb-1 min-w-[300px]">
+              <div className="col-span-1">#</div>
               <div className="col-span-3">Kg</div>
               <div className="col-span-3">Reps</div>
-              <div className="col-span-3">Check</div>
+              <div className="col-span-2">RPE</div>
+              <div className="col-span-3">Done</div>
            </div>
            {setsArray.map(setNum => {
              const log = exerciseLogs.find(l => l.setNumber === setNum);
              const isDone = log?.completed;
              
-             // Safety Check: Si el usuario pone más peso del target
-             const isOverloading = exercise.targetLoad && log?.weight && parseFloat(log.weight) > parseFloat(exercise.targetLoad) * 1.1;
+             // Gold Mode Logic
+             const isPR = lastSessionData && log?.weight && parseFloat(log.weight) > parseFloat(lastSessionData.weight);
 
              return (
-               <div key={setNum} className={`grid grid-cols-10 gap-2 items-center transition-all ${isDone ? 'opacity-50' : 'opacity-100'}`}>
+               <div key={setNum} className={`grid grid-cols-12 gap-2 items-center transition-all min-w-[300px] ${isDone ? 'opacity-50' : 'opacity-100'}`}>
                  <div className="col-span-1 flex justify-center">
                     <span className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">{setNum}</span>
                  </div>
-                 <div className="col-span-3 relative">
+                 <div className="col-span-3 relative flex items-center gap-1">
                     <input 
                       type="text" 
                       inputMode="decimal"
-                      // Placeholder es la META del coach (seguridad), no el historial
                       placeholder={exercise.targetLoad || "-"}
                       defaultValue={log?.weight || ''}
-                      onBlur={(e) => handleLogSet(setNum, e.target.value, log?.reps || exercise.targetReps, !!isDone)}
-                      className={`w-full bg-[#1A1A1D] border ${isOverloading ? 'border-red-500 text-red-500' : 'border-white/10 text-yellow-400'} rounded-md py-1.5 px-1 text-center text-xs font-bold focus:border-yellow-500 outline-none placeholder-gray-700`}
+                      onBlur={(e) => handleLogSet(setNum, e.target.value, log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !!isDone)}
+                      className={`w-full bg-[#1A1A1D] border rounded-md py-1.5 px-1 text-center text-xs font-bold focus:border-yellow-500 outline-none placeholder-gray-700 transition-all ${isPR ? 'border-yellow-500 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-white/10 text-white'}`}
                     />
+                    <button onClick={() => setShowPlateCalc(parseFloat(log?.weight || exercise.targetLoad || '0'))} className="p-1 bg-white/5 rounded hover:bg-white/10 text-gray-500 hover:text-white">
+                        <Disc size={12} />
+                    </button>
                  </div>
                  <div className="col-span-3">
                     <input 
@@ -506,13 +593,23 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
                       inputMode="numeric"
                       placeholder={exercise.targetReps}
                       defaultValue={log?.reps || ''}
-                      onBlur={(e) => handleLogSet(setNum, log?.weight || '', e.target.value, !!isDone)}
+                      onBlur={(e) => handleLogSet(setNum, log?.weight || '', e.target.value, log?.rpe?.toString() || '', !!isDone)}
                       className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs text-white focus:border-blue-500 outline-none placeholder-gray-700"
+                    />
+                 </div>
+                 <div className="col-span-2">
+                    <input 
+                      type="number"
+                      min="1" max="10" 
+                      placeholder="-"
+                      defaultValue={log?.rpe || ''}
+                      onBlur={(e) => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, e.target.value, !!isDone)}
+                      className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs text-blue-300 focus:border-blue-500 outline-none placeholder-gray-700"
                     />
                  </div>
                  <div className="col-span-3 flex justify-center">
                     <button 
-                      onClick={() => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, !isDone)}
+                      onClick={() => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !isDone)}
                       className={`w-full py-1.5 rounded-md flex items-center justify-center transition-all border ${isDone ? 'bg-green-500 border-green-500 text-black shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
                     >
                       {isDone ? <Check size={14} strokeWidth={4} /> : <Circle size={14} />}
@@ -529,18 +626,13 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
             <span className="font-bold text-white">{exercise.targetSets}</span> Sets 
             <span className="mx-1">•</span> 
             <span className="font-bold text-white">{exercise.targetReps}</span> Reps
-            {exercise.targetRest && (
-                <>
-                <span className="mx-1">•</span>
-                <span className="font-bold text-blue-400">{exercise.targetRest}s</span> Rest
-                </>
-            )}
          </div>
       )}
+      
+      {showPlateCalc && <PlateCalculator targetWeight={showPlateCalc} onClose={() => setShowPlateCalc(null)} />}
     </div>
   );
 };
-
 
 // --- PLAN VIEWER WRAPPER ---
 const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'athlete' }) => {
@@ -548,8 +640,8 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   const [showTimer, setShowTimer] = useState(false);
   const [currentRestTime, setCurrentRestTime] = useState(60);
   const [finishScreen, setFinishScreen] = useState<any | null>(null);
+  const startTime = useRef(Date.now());
   
-  // Cargar historial para mostrar referencias
   const history = useMemo(() => {
      if(mode === 'athlete') return DataEngine.getClientHistory(plan.userId);
      return [];
@@ -563,37 +655,42 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   const handleFinishWorkout = (workout: Workout) => {
      if(confirm("¿Has completado tu sesión? Esto guardará tu progreso en el historial.")) {
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
-         const session = DataEngine.archiveWorkout(plan.userId, workout, logs);
+         const session = DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          setFinishScreen(session);
-         // Forzar actualización de UI para limpiar inputs (usando reload suave o state reset)
-         // En React puro, idealmente resetearíamos keys, pero por simplicidad de este archivo único:
          setTimeout(() => window.dispatchEvent(new Event('storage-update')), 500);
      }
   };
 
   if (finishScreen) {
       return (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in space-y-6">
-              <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.5)] mb-4">
-                  <Trophy size={48} className="text-black ml-1" />
+          <div className="flex flex-col items-center justify-center min-h-[70vh] text-center animate-fade-in space-y-6 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-t from-green-900/10 to-transparent pointer-events-none" />
+              <div className="w-28 h-28 bg-gradient-to-br from-green-500 to-emerald-700 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(34,197,94,0.4)] mb-4 animate-bounce">
+                  <Trophy size={56} className="text-white ml-1" />
               </div>
               <div>
-                  <h2 className="text-4xl font-display font-black italic text-white">¡SESIÓN COMPLETADA!</h2>
-                  <p className="text-gray-400 mt-2">Buen trabajo, {MOCK_USER.name.split(' ')[0]}.</p>
+                  <h2 className="text-5xl font-display font-black italic text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400">WORKOUT<br/>COMPLETE</h2>
+                  <p className="text-green-400 mt-2 font-bold tracking-widest uppercase text-sm">Sesión Dominada</p>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 w-full max-w-sm mt-8">
-                  <div className="bg-[#0F0F11] border border-white/10 p-4 rounded-xl">
-                      <div className="text-3xl font-bold text-white">{finishScreen.summary.exercisesCompleted}</div>
-                      <div className="text-[10px] uppercase text-gray-500 font-bold">Ejercicios</div>
+              <div className="grid grid-cols-2 gap-4 w-full max-w-sm mt-8 relative z-10">
+                  <div className="bg-[#0F0F11] border border-white/10 p-5 rounded-2xl flex flex-col items-center">
+                      <div className="text-3xl font-bold text-white mb-1">{finishScreen.summary.totalVolume.toLocaleString()}</div>
+                      <div className="text-[10px] uppercase text-gray-500 font-bold">Volumen Total (Kg)</div>
                   </div>
-                  <div className="bg-[#0F0F11] border border-white/10 p-4 rounded-xl">
-                      <div className="text-3xl font-bold text-white">{(finishScreen.summary.totalVolume / 1000).toFixed(1)}k</div>
-                      <div className="text-[10px] uppercase text-gray-500 font-bold">Volumen (Kg)</div>
+                  <div className="bg-[#0F0F11] border border-white/10 p-5 rounded-2xl flex flex-col items-center">
+                      <div className="text-3xl font-bold text-white mb-1">{finishScreen.summary.durationMinutes}m</div>
+                      <div className="text-[10px] uppercase text-gray-500 font-bold">Duración</div>
                   </div>
+                  {finishScreen.summary.prCount > 0 && (
+                      <div className="col-span-2 bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-2xl flex items-center justify-center gap-3">
+                          <Trophy size={20} className="text-yellow-500" />
+                          <span className="text-yellow-500 font-bold uppercase text-sm">¡{finishScreen.summary.prCount} Récords Personales!</span>
+                      </div>
+                  )}
               </div>
 
-              <button onClick={() => setFinishScreen(null)} className="mt-8 bg-white text-black px-8 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">
+              <button onClick={() => setFinishScreen(null)} className="mt-8 bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-gray-200 transition-colors shadow-lg">
                   VOLVER AL DASHBOARD
               </button>
           </div>
@@ -607,7 +704,12 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
           <CalendarDays size={20} className="text-red-500" />
           {plan.title}
         </h2>
-        {mode === 'athlete' && <span className="text-[10px] font-black tracking-widest text-green-400 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/20 flex items-center gap-1"><Flame size={12}/> ACTIVE MODE</span>}
+        {mode === 'athlete' && (
+            <div className="flex items-center gap-2">
+                <AIChatbot />
+                <span className="text-[10px] font-black tracking-widest text-green-400 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/20 flex items-center gap-1"><Flame size={12}/> ACTIVE</span>
+            </div>
+        )}
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -645,7 +747,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
         ))}
       </div>
 
-      {/* VIDEO MODAL */}
        {showVideo && (
          <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}>
             <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
@@ -667,19 +768,10 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                     <span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span>
                   </a>
                </div>
-               <div className="p-6 bg-[#0F0F11]">
-                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Instrucciones de Seguridad</h4>
-                 <p className="text-sm text-gray-300 leading-relaxed">
-                    Mantén la tensión mecánica. Prioriza la técnica sobre el peso.
-                    <br/><br/>
-                    <span className="text-yellow-500 font-bold">Kinetix Tip:</span> Si llegas al fallo técnico, detente.
-                 </p>
-               </div>
             </div>
          </div>
       )}
 
-      {/* REST TIMER */}
       {showTimer && mode === 'athlete' && (
          <RestTimer 
            initialSeconds={currentRestTime} 
@@ -690,362 +782,345 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   );
 };
 
-
-// LOGIN PAGE
+// --- LOGIN PAGE ---
 const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
-  const [mode, setMode] = useState<'coach' | 'athlete'>('coach');
-  const [pin, setPin] = useState('');
-  const [identity, setIdentity] = useState(''); // Puede ser email o nombre
-  const [error, setError] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  
-  const handleCoachSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    await new Promise(r => setTimeout(r, 800)); 
-    if (pin.trim() === '2025' || pin.trim() === 'KINETIX2025') {
-      await DataEngine.pullFromCloud();
-      const coachUser: User = {
-        id: COACH_UUID, name: 'COACH KINETIX', email: 'staff@kinetix.com',
-        role: 'coach', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED,
-        daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString()
-      };
-      onLogin(coachUser);
-    } else {
-      setError(true);
-      setPin('');
-    }
-    setIsLoading(false);
-  };
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
 
-  const handleAthleteSubmit = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    await new Promise(r => setTimeout(r, 800));
+    const user = DataEngine.getUserByNameOrEmail(email);
     
-    // Buscar atleta localmente por nombre o email
-    const user = DataEngine.getUserByNameOrEmail(identity);
-    if (user && user.role === 'client') {
+    if (user) {
       onLogin(user);
+    } else if (email === 'admin' || email === 'coach') {
+        // Fallback for demo if coach user missing
+        const coachUser: User = { ...MOCK_USER, id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com', role: 'coach' };
+        onLogin(coachUser);
     } else {
-      setError(true);
+      setError('Usuario no encontrado. Prueba: atleta@kinetix.com');
     }
-    setIsLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-red-600/10 rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[100px] pointer-events-none" />
+    <div className="min-h-screen bg-[#050507] flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-red-600/20 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[100px] pointer-events-none" />
+        
+        <div className="w-full max-w-md bg-[#0F0F11]/80 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-2xl relative z-10 animate-fade-in-up">
+            <div className="text-center mb-10">
+                <h1 className="text-5xl font-display font-black italic text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-white mb-2">KINETIX</h1>
+                <p className="text-gray-500 tracking-[0.3em] text-xs font-bold uppercase">Elite Performance System</p>
+            </div>
 
-      <div className="w-full max-w-md z-10 animate-fade-in-up">
-        <div className="mb-8 text-center">
-          <h1 className="font-display text-5xl italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-500 neon-red mb-2">
-            KINETIX
-          </h1>
-          <p className="text-gray-500 tracking-[0.2em] text-xs font-bold">HIGH PERFORMANCE ZONE</p>
-        </div>
+            <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2 ml-1">Email de Acceso</label>
+                    <div className="relative">
+                        <UserIcon className="absolute left-4 top-3.5 text-gray-500" size={18} />
+                        <input 
+                            type="text" 
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder="usuario@kinetix.com"
+                            className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-red-500 outline-none transition-all placeholder-gray-700 font-medium"
+                        />
+                    </div>
+                </div>
 
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-1 shadow-2xl mb-6 flex">
-           <button 
-             onClick={() => { setMode('coach'); setError(false); }}
-             className={`flex-1 py-3 text-sm font-bold rounded-2xl transition-all ${mode === 'coach' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-           >
-             COACH
-           </button>
-           <button 
-             onClick={() => { setMode('athlete'); setError(false); }}
-             className={`flex-1 py-3 text-sm font-bold rounded-2xl transition-all ${mode === 'athlete' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-           >
-             ATLETA
-           </button>
-        </div>
+                {error && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-xs font-bold flex items-center gap-2"><AlertTriangle size={14}/> {error}</div>}
 
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-          {mode === 'coach' ? (
-            <form onSubmit={handleCoachSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">PIN Staff</label>
-                <input
-                  type="tel" inputMode="numeric" pattern="[0-9]*" 
-                  value={pin} onChange={(e) => { setError(false); setPin(e.target.value); }}
-                  placeholder="• • • •"
-                  className={`w-full bg-black/40 border-2 ${error ? 'border-red-500 text-red-500' : 'border-white/10 focus:border-red-500 text-white'} rounded-xl px-4 py-4 text-center text-3xl tracking-[1em] font-display font-bold outline-none transition-all placeholder-gray-700`}
-                  maxLength={4} autoFocus autoComplete="off"
-                />
-              </div>
-              {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">PIN INCORRECTO</div>}
-              <button type="submit" disabled={isLoading} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-red-900/20">
-                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ENTRAR</span><ArrowRight size={20} /></>}
-              </button>
+                <button type="submit" className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4">
+                    INGRESAR AL SISTEMA <ArrowRight size={18} />
+                </button>
             </form>
-          ) : (
-            <form onSubmit={handleAthleteSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider text-gray-400 font-semibold ml-1">Nombre o Email</label>
-                <input
-                  type="text"
-                  value={identity} onChange={(e) => { setError(false); setIdentity(e.target.value); }}
-                  placeholder="Ej: Juan Perez"
-                  className={`w-full bg-black/40 border-2 ${error ? 'border-red-500 text-red-500' : 'border-white/10 focus:border-blue-500 text-white'} rounded-xl px-4 py-4 text-lg font-medium outline-none transition-all placeholder-gray-700`}
-                />
-                <p className="text-[10px] text-gray-500 text-right">Ingresa tu nombre completo tal como te registró tu coach.</p>
-              </div>
-              {error && <div className="text-red-500 text-xs font-bold text-center animate-pulse">ATLETA NO ENCONTRADO</div>}
-              <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
-                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <><span>ACCEDER</span><ArrowRight size={20} /></>}
-              </button>
-            </form>
-          )}
+            
+            <div className="mt-8 text-center">
+                 <p className="text-xs text-gray-600">Demo Access:</p>
+                 <div className="flex justify-center gap-2 mt-2">
+                     <button onClick={() => setEmail('atleta@kinetix.com')} className="text-[10px] bg-white/5 hover:bg-white/10 px-2 py-1 rounded text-gray-400">Atleta</button>
+                     <button onClick={() => setEmail('coach@kinetix.com')} className="text-[10px] bg-white/5 hover:bg-white/10 px-2 py-1 rounded text-gray-400">Coach</button>
+                 </div>
+            </div>
         </div>
-      </div>
     </div>
   );
 };
 
-// --- MANUAL PLAN BUILDER ---
-const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
-  const [editedPlan, setEditedPlan] = useState<Plan>(plan);
-  const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
-  const [showExerciseSelector, setShowExerciseSelector] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string>('Todos');
+// --- CLIENTS VIEW ---
+const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void }) => {
+  const [clients, setClients] = useState<User[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  // Load exercises from DataEngine (merged DB)
-  const allExercises = useMemo(() => DataEngine.getExercises(), []);
-  const categories = useMemo(() => ['Todos', ...Array.from(new Set(allExercises.map(e => e.muscleGroup)))], [allExercises]);
+  useEffect(() => {
+    setClients(DataEngine.getUsers().filter(u => u.role === 'client'));
+  }, []);
 
-  const handleAddWorkout = () => {
-    const newWorkout: Workout = {
-      id: generateUUID(),
-      name: `DÍA ${editedPlan.workouts.length + 1}`,
-      day: editedPlan.workouts.length + 1,
-      exercises: []
-    };
-    setEditedPlan({...editedPlan, workouts: [...editedPlan.workouts, newWorkout]});
-    setSelectedWorkoutIndex(editedPlan.workouts.length);
+  const handleAddClient = (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const formData = new FormData(form);
+      
+      const newUser: User = {
+          id: generateUUID(),
+          name: formData.get('name') as string,
+          email: formData.get('email') as string,
+          goal: formData.get('goal') as Goal,
+          level: formData.get('level') as UserLevel,
+          role: 'client',
+          daysPerWeek: parseInt(formData.get('days') as string),
+          equipment: ['Gym Completo'], // Simplificado
+          streak: 0,
+          createdAt: new Date().toISOString()
+      };
+      
+      DataEngine.saveUser(newUser);
+      setClients(DataEngine.getUsers().filter(u => u.role === 'client'));
+      setShowAddModal(false);
   };
 
-  const handleAddExercise = (exercise: Exercise) => {
-    const newExercise: WorkoutExercise = {
-      exerciseId: exercise.id,
-      name: exercise.name,
-      targetSets: 4,
-      targetReps: '10-12',
-      targetLoad: '',
-      targetRest: 60, // Default rest time
-      coachCue: ''
-    };
-    
-    const updatedWorkouts = [...editedPlan.workouts];
-    updatedWorkouts[selectedWorkoutIndex].exercises.push(newExercise);
-    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
-    setShowExerciseSelector(false);
-  };
-
-  const updateExercise = (exerciseIndex: number, field: keyof WorkoutExercise, value: any) => {
-    const updatedWorkouts = [...editedPlan.workouts];
-    updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex] = {
-      ...updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex],
-      [field]: value
-    };
-    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
-  };
-
-  const removeExercise = (exerciseIndex: number) => {
-    const updatedWorkouts = [...editedPlan.workouts];
-    updatedWorkouts[selectedWorkoutIndex].exercises.splice(exerciseIndex, 1);
-    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
-  };
-
-  const filteredExercises = useMemo(() => {
-    let filtered = allExercises;
-    if (activeCategory !== 'Todos') {
-      filtered = filtered.filter(ex => ex.muscleGroup === activeCategory);
-    }
-    if (searchQuery) {
-      filtered = filtered.filter(ex => ex.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    }
-    return filtered;
-  }, [searchQuery, activeCategory, allExercises]);
+  const filteredClients = clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="bg-[#0A0A0C] min-h-screen fixed inset-0 z-50 overflow-y-auto pb-20 flex flex-col">
-      <div className="sticky top-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-40 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={onCancel}><X size={24} className="text-gray-400" /></button>
-          <input 
-            value={editedPlan.title}
-            onChange={(e) => setEditedPlan({...editedPlan, title: e.target.value})}
-            className="bg-transparent text-xl font-bold outline-none placeholder-gray-600 w-full"
-            placeholder="Nombre del Protocolo"
-          />
-        </div>
-        <button onClick={() => onSave(editedPlan)} className="bg-red-600 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
-          <Save size={16} /> <span className="hidden sm:inline">GUARDAR</span>
-        </button>
-      </div>
-
-      <div className="p-4 max-w-4xl mx-auto w-full flex-1">
-        {/* Workout Tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-4">
-          {editedPlan.workouts.map((w, idx) => (
-            <button 
-              key={w.id}
-              onClick={() => setSelectedWorkoutIndex(idx)}
-              className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${selectedWorkoutIndex === idx ? 'bg-white text-black' : 'bg-white/5 text-gray-400'}`}
-            >
-              DÍA {w.day}
-            </button>
-          ))}
-          <button onClick={handleAddWorkout} className="px-4 py-2 rounded-full bg-red-600/20 text-red-500 border border-red-500/50 flex items-center gap-1 text-sm font-bold">
-            <Plus size={14} /> DÍA
+    <div className="space-y-6 animate-fade-in">
+       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+              <h2 className="text-3xl font-bold font-display italic text-white">ATLETAS</h2>
+              <p className="text-gray-500 text-sm">Gestión de rendimiento y planes</p>
+          </div>
+          <button onClick={() => setShowAddModal(true)} className="bg-white text-black font-bold py-3 px-6 rounded-xl hover:bg-gray-200 transition-colors flex items-center gap-2 shadow-lg">
+              <UserPlus size={18} /> NUEVO ATLETA
           </button>
-        </div>
+       </div>
 
-        {editedPlan.workouts[selectedWorkoutIndex] ? (
-          <div className="space-y-4 animate-fade-in">
-             <input 
-               value={editedPlan.workouts[selectedWorkoutIndex].name}
-               onChange={(e) => {
-                 const updated = [...editedPlan.workouts];
-                 updated[selectedWorkoutIndex].name = e.target.value;
-                 setEditedPlan({...editedPlan, workouts: updated});
-               }}
-               className="bg-transparent text-2xl font-bold uppercase text-red-500 outline-none w-full mb-4"
-               placeholder="NOMBRE DEL DÍA (EJ: PIERNA)"
-             />
+       <div className="relative">
+          <Search className="absolute left-4 top-3.5 text-gray-500" size={18} />
+          <input 
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Buscar por nombre..."
+            className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none"
+          />
+       </div>
 
-             {editedPlan.workouts[selectedWorkoutIndex].exercises.map((ex, idx) => (
-               <div key={idx} className="bg-[#111] border border-white/10 rounded-xl p-4 relative group">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="font-bold text-lg">{ex.name}</span>
-                    <button onClick={() => removeExercise(idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={18} /></button>
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredClients.map(client => (
+              <div key={client.id} onClick={() => onSelectClient(client.id)} className="group bg-[#0F0F11] border border-white/5 p-5 rounded-2xl hover:border-red-500/50 cursor-pointer transition-all hover:translate-y-[-2px] relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ArrowRight size={18} className="text-red-500 -rotate-45" />
                   </div>
-                  
-                  <div className="grid grid-cols-4 gap-3 mb-3">
-                    <div>
-                      <label className="text-[10px] text-gray-500 uppercase font-bold">Series</label>
-                      <input 
-                        type="number" 
-                        inputMode="numeric"
-                        value={ex.targetSets}
-                        onChange={(e) => updateExercise(idx, 'targetSets', parseInt(e.target.value))}
-                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 uppercase font-bold">Reps</label>
-                      <input 
-                        type="text" 
-                        value={ex.targetReps}
-                        onChange={(e) => updateExercise(idx, 'targetReps', e.target.value)}
-                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 uppercase font-bold text-yellow-500">Carga (Kg)</label>
-                      <input 
-                        type="text" 
-                        inputMode="decimal"
-                        value={ex.targetLoad || ''}
-                        onChange={(e) => updateExercise(idx, 'targetLoad', e.target.value)}
-                        placeholder="Ej: 80"
-                        className="w-full bg-black border border-yellow-500/20 rounded-lg p-2 text-sm text-center font-bold text-yellow-400 placeholder-gray-700"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 uppercase font-bold text-blue-500">Descanso(s)</label>
-                      <input 
-                        type="number" 
-                        inputMode="numeric"
-                        value={ex.targetRest || ''}
-                        onChange={(e) => updateExercise(idx, 'targetRest', parseInt(e.target.value))}
-                        placeholder="60"
-                        className="w-full bg-black border border-blue-500/20 rounded-lg p-2 text-sm text-center font-bold text-blue-400 placeholder-gray-700"
-                      />
-                    </div>
+                  <div className="flex items-center gap-4 mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center font-bold text-gray-400 group-hover:bg-red-600 group-hover:text-white transition-colors">
+                          {client.name[0]}
+                      </div>
+                      <div>
+                          <h3 className="font-bold text-white group-hover:text-red-400 transition-colors">{client.name}</h3>
+                          <p className="text-xs text-gray-500">{client.email}</p>
+                      </div>
                   </div>
-                  
-                  <div>
-                    <label className="text-[10px] text-gray-500 uppercase font-bold">Notas Técnicas</label>
-                    <input 
-                      type="text" 
-                      value={ex.coachCue || ''}
-                      onChange={(e) => updateExercise(idx, 'coachCue', e.target.value)}
-                      placeholder="Instrucciones específicas..."
-                      className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-gray-300"
-                    />
+                  <div className="flex gap-2 text-[10px] uppercase font-bold tracking-wider">
+                      <span className="bg-white/5 px-2 py-1 rounded border border-white/5 text-gray-400">{client.goal}</span>
+                      <span className="bg-white/5 px-2 py-1 rounded border border-white/5 text-gray-400">{client.level}</span>
                   </div>
-               </div>
-             ))}
-
-             <button 
-               onClick={() => setShowExerciseSelector(true)}
-               className="w-full py-4 border-2 border-dashed border-white/10 rounded-xl text-gray-500 font-bold hover:border-red-500/50 hover:text-red-500 transition-colors flex items-center justify-center gap-2"
-             >
-               <Plus size={20} /> AÑADIR EJERCICIO
-             </button>
-          </div>
-        ) : (
-          <div className="text-center text-gray-500 mt-10">Agrega un día de entrenamiento para comenzar.</div>
-        )}
-      </div>
-
-      {/* Exercise Selector Modal */}
-      {showExerciseSelector && (
-        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col animate-fade-in">
-          <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]">
-             <button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24} /></button>
-             <div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2">
-               <Search size={18} className="text-gray-400" />
-               <input 
-                 autoFocus
-                 className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white"
-                 placeholder="Buscar ejercicio..."
-                 value={searchQuery}
-                 onChange={(e) => setSearchQuery(e.target.value)}
-               />
-             </div>
-          </div>
-          
-          {/* Categories */}
-          <div className="flex gap-2 overflow-x-auto p-2 border-b border-white/5 no-scrollbar bg-[#0A0A0C]">
-             {categories.map(cat => (
-               <button 
-                 key={cat}
-                 onClick={() => setActiveCategory(cat)}
-                 className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeCategory === cat ? 'bg-red-600 text-white' : 'bg-white/5 text-gray-400'}`}
-               >
-                 {cat}
-               </button>
-             ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 grid gap-2 pb-20">
-            {filteredExercises.map(ex => (
-              <button 
-                key={ex.id}
-                onClick={() => handleAddExercise(ex)}
-                className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors flex justify-between items-center"
-              >
-                <div>
-                  <div className="font-bold text-sm">{ex.name}</div>
-                  <div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div>
-                </div>
-                <Plus size={18} className="text-gray-600" />
-              </button>
-            ))}
-            {filteredExercises.length === 0 && (
-              <div className="text-center text-gray-500 mt-10">
-                No se encontraron ejercicios en esta categoría.
               </div>
-            )}
-          </div>
-        </div>
-      )}
+          ))}
+       </div>
+
+       {showAddModal && (
+           <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddModal(false)}>
+               <div className="bg-[#1A1A1D] w-full max-w-lg rounded-2xl p-6 border border-white/10 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                   <h3 className="text-xl font-bold text-white mb-6">Registrar Atleta</h3>
+                   <form onSubmit={handleAddClient} className="space-y-4">
+                       <input name="name" required placeholder="Nombre Completo" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                       <input name="email" type="email" required placeholder="Email" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                       <div className="grid grid-cols-2 gap-4">
+                           <select name="goal" className="bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-gray-300 outline-none">
+                               {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
+                           </select>
+                           <select name="level" className="bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-gray-300 outline-none">
+                               {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
+                           </select>
+                       </div>
+                       <input name="days" type="number" min="1" max="7" defaultValue="4" placeholder="Días/Semana" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                       
+                       <div className="flex gap-3 pt-4">
+                           <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button>
+                           <button type="submit" className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500">Guardar</button>
+                       </div>
+                   </form>
+               </div>
+           </div>
+       )}
     </div>
   );
+};
+
+// --- WORKOUTS VIEW (EXERCISES LIBRARY) ---
+const WorkoutsView = () => {
+    const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
+    const [filter, setFilter] = useState('');
+    const [showVideo, setShowVideo] = useState<string | null>(null);
+
+    const filtered = exercises.filter(e => 
+        e.name.toLowerCase().includes(filter.toLowerCase()) || 
+        e.muscleGroup.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-3xl font-bold font-display italic text-white">BIBLIOTECA</h2>
+                    <p className="text-gray-500 text-sm">Base de datos de ejercicios</p>
+                </div>
+             </div>
+
+             <div className="relative">
+                <Search className="absolute left-4 top-3.5 text-gray-500" size={18} />
+                <input 
+                    value={filter}
+                    onChange={e => setFilter(e.target.value)}
+                    placeholder="Buscar ejercicio o músculo..."
+                    className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none"
+                />
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                 {filtered.map(ex => (
+                     <div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/20 transition-colors">
+                         <div>
+                             <h4 className="font-bold text-white">{ex.name}</h4>
+                             <span className="text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block">{ex.muscleGroup}</span>
+                         </div>
+                         <button onClick={() => setShowVideo(ex.name)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-white/10 transition-colors">
+                             <Play size={16} />
+                         </button>
+                     </div>
+                 ))}
+             </div>
+
+             {showVideo && (
+                <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}>
+                    <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]">
+                            <h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3>
+                            <button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
+                        </div>
+                        <div className="aspect-video bg-black flex items-center justify-center relative group">
+                            <div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" />
+                            <a 
+                                href={exercises.find(e => e.name === showVideo)?.videoUrl || '#'} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"
+                            >
+                                <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40">
+                                    <Play size={32} fill="white" className="ml-1" />
+                                </div>
+                                <span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- PROFILE VIEW (UPDATED WITH CHARTS) ---
+const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+    const history = DataEngine.getClientHistory(user.id);
+    const [aiInsight, setAiInsight] = useState<string | null>(null);
+    const [analyzing, setAnalyzing] = useState(false);
+
+    // Prepare chart data
+    const chartData = useMemo(() => {
+        return history.slice().reverse().map(h => ({
+            date: new Date(h.date).toLocaleDateString('es-ES', {day: '2-digit', month: 'short'}),
+            volume: h.summary.totalVolume,
+        }));
+    }, [history]);
+
+    const handleAnalyze = async () => {
+        setAnalyzing(true);
+        try {
+            const insight = await analyzeProgress(user, history);
+            setAiInsight(insight);
+        } catch (e) {
+            alert("No se pudo conectar con el Coach IA.");
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
+    return (
+        <div className="animate-fade-in p-4 space-y-6">
+             <h2 className="text-2xl font-bold mb-6">Mi Perfil</h2>
+             
+             <div className="bg-[#0F0F11] rounded-2xl p-6 border border-white/5">
+                <div className="flex items-center gap-4 mb-4">
+                   <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center text-xl font-bold">{user.name[0]}</div>
+                   <div>
+                      <h3 className="font-bold text-lg">{user.name}</h3>
+                      <p className="text-gray-400 text-sm">{user.email}</p>
+                      <span className="text-[10px] uppercase bg-white/10 px-2 py-1 rounded mt-1 inline-block">{user.role}</span>
+                   </div>
+                </div>
+             </div>
+
+             {/* PROGRESS CHARTS */}
+             {history.length > 0 && (
+                 <div className="bg-[#0F0F11] rounded-2xl p-6 border border-white/5">
+                     <h3 className="font-bold text-lg text-white mb-4 flex items-center gap-2">
+                         <TrendingUp className="text-green-500" /> Progreso de Volumen
+                     </h3>
+                     <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData}>
+                                <defs>
+                                    <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                                <XAxis dataKey="date" stroke="#666" fontSize={12} tickLine={false} />
+                                <YAxis stroke="#666" fontSize={12} tickLine={false} />
+                                <Tooltip 
+                                    contentStyle={{backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px'}}
+                                    itemStyle={{color: '#fff'}}
+                                />
+                                <Area type="monotone" dataKey="volume" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                     </div>
+                     
+                     <button 
+                        onClick={handleAnalyze} 
+                        disabled={analyzing}
+                        className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
+                     >
+                        {analyzing ? <Loader2 className="animate-spin"/> : <Sparkles size={18} />}
+                        ANALIZAR MI PROGRESO CON IA
+                     </button>
+
+                     {aiInsight && (
+                         <div className="mt-4 p-4 bg-blue-900/10 border border-blue-500/20 rounded-xl animate-fade-in text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+                             <div className="flex items-center gap-2 mb-2 font-bold text-blue-400">
+                                 <BrainCircuit size={16} /> Coach Insights
+                             </div>
+                             {aiInsight}
+                         </div>
+                     )}
+                 </div>
+             )}
+
+             <button onClick={onLogout} className="w-full bg-red-600/10 text-red-500 py-4 rounded-xl font-bold border border-red-500/20 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2">
+                <LogOut size={20} /> CERRAR SESIÓN
+             </button>
+        </div>
+    );
 };
 
 // --- DASHBOARD VIEW ---
@@ -1123,127 +1198,11 @@ const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateTo
   );
 };
 
-// --- CLIENTS VIEW ---
-const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void }) => {
-  const [clients, setClients] = useState<User[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newClient, setNewClient] = useState<Partial<User>>({
-    name: '', email: '', goal: Goal.LOSE_FAT, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: []
-  });
-
-  useEffect(() => {
-    setClients(DataEngine.getUsers().filter(u => u.role === 'client'));
-  }, []);
-
-  const handleCreateClient = async () => {
-     if(!newClient.name || !newClient.email) return;
-     const client: User = {
-       id: generateUUID(),
-       name: newClient.name!,
-       email: newClient.email!,
-       role: 'client',
-       goal: newClient.goal || Goal.LOSE_FAT,
-       level: newClient.level || UserLevel.BEGINNER,
-       daysPerWeek: newClient.daysPerWeek || 3,
-       equipment: newClient.equipment || [],
-       streak: 0,
-       createdAt: new Date().toISOString()
-     };
-     await DataEngine.saveUser(client);
-     setClients([...clients, client]);
-     setShowAddModal(false);
-     setNewClient({ name: '', email: '', goal: Goal.LOSE_FAT, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: [] });
-  };
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-       <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Users className="text-red-500"/> Atletas <span className="text-gray-500 text-lg">({clients.length})</span>
-          </h2>
-          <button onClick={() => setShowAddModal(true)} className="bg-red-600 hover:bg-red-500 px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-red-900/20">
-            <UserPlus size={18} /> <span className="hidden sm:inline">Nuevo Atleta</span>
-          </button>
-       </div>
-
-       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {clients.map(client => (
-            <div key={client.id} onClick={() => onSelectClient(client.id)} className="bg-[#0F0F11] border border-white/5 p-5 rounded-2xl hover:border-red-500/50 cursor-pointer group transition-all hover:bg-white/5">
-               <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-4">
-                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center font-bold text-lg text-gray-400 group-hover:text-red-500 group-hover:border-red-500/50 transition-all">
-                        {client.name[0]}
-                     </div>
-                     <div>
-                        <h4 className="font-bold text-white group-hover:text-red-400 transition-colors text-lg leading-tight">{client.name}</h4>
-                        <p className="text-xs text-gray-500 mt-0.5">{client.email}</p>
-                     </div>
-                  </div>
-                  <div className="p-2 bg-white/5 rounded-full group-hover:bg-red-600 group-hover:text-white transition-all">
-                    <ChevronRight size={16} />
-                  </div>
-               </div>
-               <div className="flex flex-wrap gap-2">
-                  <span className="text-[10px] font-bold bg-blue-900/20 text-blue-400 border border-blue-500/20 px-2 py-1 rounded-md">{client.goal}</span>
-                  <span className="text-[10px] font-bold bg-purple-900/20 text-purple-400 border border-purple-500/20 px-2 py-1 rounded-md">{client.level}</span>
-               </div>
-            </div>
-          ))}
-          {clients.length === 0 && (
-             <div className="col-span-full py-12 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl">
-                No hay atletas registrados.
-             </div>
-          )}
-       </div>
-
-       {showAddModal && (
-         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
-            <div className="bg-[#111] w-full max-w-md rounded-3xl p-8 border border-white/10 shadow-2xl">
-               <div className="flex justify-between items-center mb-6">
-                 <h3 className="font-bold text-xl text-white">Nuevo Atleta</h3>
-                 <button onClick={() => setShowAddModal(false)}><X size={20} className="text-gray-500 hover:text-white"/></button>
-               </div>
-               <div className="space-y-4">
-                  <div>
-                    <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Nombre</label>
-                    <input className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none focus:border-red-500 text-white transition-colors" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} placeholder="Ej. Carlos Rodriguez" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Email</label>
-                    <input className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none focus:border-red-500 text-white transition-colors" value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} placeholder="Ej. carlos@email.com" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                     <div>
-                        <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Objetivo</label>
-                        <select className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none text-sm text-white" value={newClient.goal} onChange={(e: any) => setNewClient({...newClient, goal: e.target.value})}>
-                            {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
-                     </div>
-                     <div>
-                        <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Nivel</label>
-                        <select className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none text-sm text-white" value={newClient.level} onChange={(e: any) => setNewClient({...newClient, level: e.target.value})}>
-                            {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
-                        </select>
-                     </div>
-                  </div>
-                  <button onClick={handleCreateClient} className="w-full bg-red-600 hover:bg-red-500 py-4 rounded-xl font-bold mt-4 text-white transition-colors shadow-lg shadow-red-900/20">
-                    CREAR PERFIL
-                  </button>
-               </div>
-            </div>
-         </div>
-       )}
-    </div>
-  );
-};
-
-// --- CLIENT DETAIL VIEW (UPDATED WITH HISTORY TAB) ---
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
   const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
   const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
   const [history, setHistory] = useState<any[]>(DataEngine.getClientHistory(clientId));
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showManualBuilder, setShowManualBuilder] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'plan' | 'history'>('plan');
 
   if (!client) return <div className="p-8 text-center">Atleta no encontrado.</div>;
@@ -1275,14 +1234,6 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
     }
   };
 
-  if (showManualBuilder) {
-    return <ManualPlanBuilder 
-      plan={plan || { id: generateUUID(), title: `Plan ${client.name}`, userId: client.id, workouts: [], updatedAt: new Date().toISOString() }}
-      onSave={async (p) => { await DataEngine.savePlan(p); setPlan(p); setShowManualBuilder(false); }}
-      onCancel={() => setShowManualBuilder(false)}
-    />
-  }
-
   return (
     <div className="space-y-6 animate-fade-in pb-10">
        <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-2">
@@ -1305,21 +1256,12 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                         <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
                             <Zap size={14} className="text-yellow-500"/> {client.level}
                         </span>
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
-                            <CalendarDays size={14} className="text-green-500"/> {client.daysPerWeek} Días/Sem
-                        </span>
                     </div>
                 </div>
             </div>
-            
-            <div className="flex gap-3 self-end md:self-start">
-               <button onClick={() => setShowManualBuilder(true)} className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-white/5" title="Editar Plan">
-                   <Edit3 size={20} />
-               </button>
-               <button onClick={handleDeleteClient} className="p-3 bg-red-500/10 rounded-xl hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/10" title="Eliminar">
-                   <Trash2 size={20} />
-               </button>
-            </div>
+            <button onClick={handleDeleteClient} className="text-xs text-red-500 hover:text-red-400 border border-red-900/30 px-3 py-1.5 rounded-lg bg-red-900/10 transition-colors flex items-center gap-1">
+                <Trash2 size={12}/> Eliminar
+            </button>
           </div>
        </div>
 
@@ -1341,126 +1283,31 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                 <PlanViewer plan={plan} mode="coach" />
              </div>
            ) : (
-             <div className="py-16 border border-dashed border-white/10 rounded-3xl bg-[#0F0F11]/50 flex flex-col items-center justify-center text-center animate-fade-in">
-                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-                    <BrainCircuit size={32} className="text-gray-500" />
-                </div>
-                <h3 className="text-xl font-bold mb-2 text-white">Sin Protocolo Activo</h3>
-                <p className="text-gray-500 mb-8 max-w-sm">Este atleta aún no tiene un plan de entrenamiento asignado.</p>
-                
-                <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md px-4">
-                   <button onClick={handleGenerateAI} disabled={isGenerating} className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all text-white">
-                      {isGenerating ? <Loader2 size={20} className="animate-spin"/> : <Sparkles size={20} />}
-                      GENERAR CON IA
-                   </button>
-                   <button onClick={() => setShowManualBuilder(true)} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-white">
-                      <Pencil size={20} />
-                      CREAR MANUAL
-                   </button>
-                </div>
+             <div className="py-16 text-center text-gray-500 flex flex-col items-center">
+                <p className="mb-4">Sin plan activo.</p>
+                <button onClick={handleGenerateAI} disabled={isGenerating} className="text-sm font-bold bg-white text-black px-6 py-3 rounded-xl hover:bg-gray-200 transition-all flex items-center gap-2">
+                     {isGenerating ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16} />} GENERAR PRIMER PLAN
+                </button>
              </div>
            )
        )}
 
        {activeSubTab === 'history' && (
            <div className="space-y-4 animate-fade-in">
-               {history.length === 0 ? (
-                   <div className="text-center py-10 text-gray-500">No hay sesiones registradas aún.</div>
-               ) : (
-                   history.map((session, idx) => (
-                       <div key={idx} className="bg-[#0F0F11] border border-white/5 rounded-2xl p-4">
-                           <div className="flex justify-between items-center mb-2 border-b border-white/5 pb-2">
-                               <span className="font-bold text-white">{session.workoutName}</span>
-                               <span className="text-xs text-gray-500">{formatDate(session.date)}</span>
-                           </div>
-                           <div className="grid grid-cols-2 gap-4 text-xs mb-2">
-                               <div>
-                                   <span className="text-gray-500">Ejercicios:</span> <span className="text-white font-bold">{session.summary.exercisesCompleted}</span>
-                               </div>
-                               <div>
-                                   <span className="text-gray-500">Volumen:</span> <span className="text-white font-bold">{(session.summary.totalVolume).toLocaleString()} kg</span>
-                               </div>
-                           </div>
-                           <div className="mt-3 flex justify-end">
-                               <button className="text-xs text-red-500 font-bold flex items-center gap-1 hover:underline">
-                                   <ClipboardList size={14} /> Ver Detalles Completos
-                               </button>
-                           </div>
+               {history.length === 0 ? <div className="text-center py-10 text-gray-500">No hay sesiones.</div> : history.map((s, i) => (
+                   <div key={i} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center">
+                       <div>
+                           <div className="font-bold text-white">{s.workoutName}</div>
+                           <div className="text-xs text-gray-500">{formatDate(s.date)}</div>
                        </div>
-                   ))
-               )}
+                       <div className="text-right">
+                           <div className="font-bold text-white">{(s.summary.totalVolume/1000).toFixed(1)}k <span className="text-xs text-gray-500">VOL</span></div>
+                           {s.summary.prCount > 0 && <div className="text-[10px] text-yellow-500 font-bold">{s.summary.prCount} PRs</div>}
+                       </div>
+                   </div>
+               ))}
            </div>
        )}
-    </div>
-  );
-};
-
-// --- WORKOUTS VIEW ---
-const WorkoutsView = () => {
-  const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
-  const [search, setSearch] = useState('');
-  const [showVideo, setShowVideo] = useState<string | null>(null);
-
-  const filtered = exercises.filter(e => e.name.toLowerCase().includes(search.toLowerCase()) || e.muscleGroup.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-             <Dumbbell className="text-red-500"/> Biblioteca de Ejercicios
-          </h2>
-          <div className="bg-[#0F0F11] border border-white/10 rounded-xl flex items-center px-4 py-3 w-full md:w-80 shadow-sm focus-within:border-red-500/50 transition-colors">
-             <Search size={18} className="text-gray-500 shrink-0" />
-             <input className="bg-transparent border-none outline-none ml-3 text-sm w-full text-white placeholder-gray-600 font-medium" placeholder="Buscar ejercicio o músculo..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-       </div>
-
-       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(ex => (
-             <div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center hover:border-white/20 transition-colors group">
-                <div className="flex items-center gap-4">
-                   <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-500 font-bold group-hover:text-white transition-colors">
-                      {ex.name[0]}
-                   </div>
-                   <div>
-                      <h4 className="font-bold text-sm text-gray-200 group-hover:text-white">{ex.name}</h4>
-                      <span className="text-[10px] uppercase text-gray-500 bg-white/5 px-2 py-0.5 rounded inline-block mt-1 border border-white/5">{ex.muscleGroup}</span>
-                   </div>
-                </div>
-                <button onClick={() => setShowVideo(ex.name)} className="p-2.5 bg-white/5 rounded-full hover:bg-red-600 text-gray-400 hover:text-white transition-all shadow-sm">
-                   <Play size={16} fill="currentColor" />
-                </button>
-             </div>
-          ))}
-          {filtered.length === 0 && (
-            <div className="col-span-full py-12 text-center text-gray-500">No se encontraron ejercicios.</div>
-          )}
-       </div>
-
-       {showVideo && (
-         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-md" onClick={() => setShowVideo(null)}>
-            <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
-               <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]">
-                  <h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3>
-                  <button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
-               </div>
-               <div className="aspect-video bg-black flex items-center justify-center relative group">
-                  <div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" />
-                  <a 
-                    href={exercises.find(e => e.name === showVideo)?.videoUrl} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"
-                  >
-                    <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40">
-                       <Play size={32} fill="white" className="ml-1" />
-                    </div>
-                    <span className="text-xs font-bold tracking-widest uppercase">Ver en YouTube</span>
-                  </a>
-               </div>
-            </div>
-         </div>
-      )}
     </div>
   );
 };
@@ -1560,32 +1407,7 @@ export default function App() {
         
         {activeTab === 'workouts' && currentUser.role === 'coach' && <WorkoutsView />}
         
-        {activeTab === 'profile' && (
-          <div className="animate-fade-in p-4">
-             <h2 className="text-2xl font-bold mb-6">Mi Perfil</h2>
-             <div className="bg-[#0F0F11] rounded-2xl p-6 border border-white/5 mb-6">
-                <div className="flex items-center gap-4 mb-4">
-                   <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center text-xl font-bold">{currentUser.name[0]}</div>
-                   <div>
-                      <h3 className="font-bold text-lg">{currentUser.name}</h3>
-                      <p className="text-gray-400 text-sm">{currentUser.email}</p>
-                      <span className="text-[10px] uppercase bg-white/10 px-2 py-1 rounded mt-1 inline-block">{currentUser.role}</span>
-                   </div>
-                </div>
-                {currentUser.role === 'client' && (
-                  <div className="mt-4 p-4 bg-blue-600/10 rounded-xl border border-blue-600/20">
-                    <p className="text-sm text-blue-300 font-bold flex items-center gap-2">
-                       <Info size={16} /> Credenciales
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">Usa tu Nombre ({currentUser.name}) o tu Email ({currentUser.email}) para iniciar sesión.</p>
-                  </div>
-                )}
-             </div>
-             <button onClick={handleLogout} className="w-full bg-red-600/10 text-red-500 py-4 rounded-xl font-bold border border-red-500/20 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2">
-                <LogOut size={20} /> CERRAR SESIÓN
-             </button>
-          </div>
-        )}
+        {activeTab === 'profile' && <ProfileView user={currentUser} onLogout={handleLogout} />}
       </main>
 
       {/* MOBILE NAV */}

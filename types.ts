@@ -57,6 +57,7 @@ export interface SetEntry {
   setNumber: number;
   weight: string; // Peso real levantado
   reps: string;   // Reps reales
+  rpe?: number;   // Rate of Perceived Exertion (1-10)
   completed: boolean;
   timestamp: number;
 }
@@ -64,6 +65,13 @@ export interface SetEntry {
 // Estructura optimizada para persistencia local rápida
 export interface WorkoutProgress {
   [exerciseIndex: number]: SetEntry[];
+}
+
+export interface SessionSummary {
+  exercisesCompleted: number;
+  totalVolume: number;
+  durationMinutes: number;
+  prCount: number; // Récords personales rotos
 }
 
 export interface Plan {
