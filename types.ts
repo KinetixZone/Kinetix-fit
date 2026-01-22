@@ -56,6 +56,8 @@ export interface Workout {
   id: string;
   name: string;
   day: number;
+  isClass?: boolean; // Identifica si es clase presencial (Hyrox, etc)
+  classType?: string; // Nombre de la clase
   exercises: WorkoutExercise[];
 }
 
@@ -68,7 +70,6 @@ export interface SetEntry {
   timestamp: number;
 }
 
-// Estructura optimizada para persistencia local rápida
 export interface WorkoutProgress {
   [exerciseIndex: number]: SetEntry[];
 }
