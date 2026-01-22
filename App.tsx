@@ -381,21 +381,39 @@ const DataEngine = {
 
 const BrandingLogo = ({ className = "w-8 h-8", textSize = "text-xl", showText = true }: { className?: string, textSize?: string, showText?: boolean }) => {
     const [config, setConfig] = useState(DataEngine.getConfig());
+    const [imgError, setImgError] = useState(false);
+
     useEffect(() => {
-        const update = () => setConfig(DataEngine.getConfig());
+        const update = () => {
+            setConfig(DataEngine.getConfig());
+            setImgError(false);
+        };
         window.addEventListener('storage-update', update);
         return () => window.removeEventListener('storage-update', update);
     }, []);
+
     return (
-        <div className="flex items-center gap-2">
-            {config.logoUrl ? (
-                <img src={config.logoUrl} alt="Logo" className={`${className} object-contain rounded-lg`} />
+        <div className="flex items-center gap-2.5 select-none group">
+            {config.logoUrl && !imgError ? (
+                <img 
+                    src={config.logoUrl} 
+                    alt="Logo" 
+                    className={`${className} object-contain rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`}
+                    onError={() => setImgError(true)}
+                />
             ) : (
-                <div className={`${className} bg-red-600 rounded-lg flex items-center justify-center font-display italic font-bold shadow-lg shadow-red-900/40 text-white`}>
-                    {config.appName.charAt(0)}
+                <div className={`${className} relative overflow-hidden rounded-xl bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center shadow-lg shadow-red-900/40 border border-white/10`}>
+                    <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-20 transition-opacity" />
+                    <span className="font-display italic font-black text-white transform -skew-x-12 translate-x-px text-shadow-sm">
+                        {config.appName.charAt(0)}
+                    </span>
                 </div>
             )}
-            {showText && <span className={`font-display font-bold italic tracking-tighter ${textSize} text-white`}>{config.appName.toUpperCase()}</span>}
+            {showText && (
+                <span className={`font-display font-black italic tracking-tighter ${textSize} text-white drop-shadow-md`}>
+                    {config.appName.toUpperCase()}
+                </span>
+            )}
         </div>
     );
 }
@@ -894,9 +912,9 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
         {plan.workouts.map((workout) => (
           <div key={workout.id}>
              <div className="flex items-center gap-2 mb-4">
-                <div className="h-px bg-white/10 flex-1"/>
-                <span className="text-xs font-bold text-red-500 uppercase tracking-widest">DÍA {workout.day} • {workout.name}</span>
-                <div className="h-px bg-white/10 flex-1"/>
+                 <div className="h-px bg-white/10 flex-1"/>
+                 <span className="text-xs font-bold text-red-500 uppercase tracking-widest">DÍA {workout.day} • {workout.name}</span>
+                 <div className="h-px bg-white/10 flex-1"/>
              </div>
              
              {workout.isClass && !activeRescue && (
