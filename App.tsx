@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -8,12 +9,12 @@ import {
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
-  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound
+  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
 } from 'recharts';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, SystemConfig, ChatMessage } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, SystemConfig, ChatMessage, UserRole } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabase, supabaseConnectionStatus } from './services/supabaseClient';
@@ -74,7 +75,6 @@ const DataEngine = {
   getConfig: (): SystemConfig => {
       const s = DataEngine.getStore();
       const loaded = s.CONFIG ? JSON.parse(s.CONFIG) : DEFAULT_CONFIG;
-      // Merge seguro para asegurar que la estructura ai.chatbot existe
       return { ...DEFAULT_CONFIG, ...loaded, ai: { ...DEFAULT_CONFIG.ai, ...loaded.ai } };
   },
 
@@ -269,6 +269,106 @@ const PlateCalculator = ({ targetWeight, onClose }: { targetWeight: number, onCl
   );
 };
 
+// --- USER INVITE MODAL (New Component) ---
+const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUser: User, onClose: () => void, onInviteSuccess: () => void }) => {
+    const [email, setEmail] = useState('');
+    const [name, setName] = useState('');
+    const [role, setRole] = useState<UserRole>('client');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    // Filter roles based on current user (Rules: Admin -> Coach/Client, Coach -> Client)
+    const availableRoles = useMemo(() => {
+        if (currentUser.role === 'admin') return ['client', 'coach'];
+        return ['client'];
+    }, [currentUser.role]);
+
+    const handleInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+
+        // 1. Validation: Check if exists
+        const existing = DataEngine.getUserByNameOrEmail(email);
+        if (existing) {
+            setError('El correo ya está registrado.');
+            setLoading(false);
+            return;
+        }
+
+        // 2. Create User Object
+        const newUser: User = {
+            id: generateUUID(),
+            name: name.toUpperCase(),
+            email: email.toLowerCase(),
+            goal: Goal.PERFORMANCE,
+            level: UserLevel.ADVANCED,
+            role: role,
+            daysPerWeek: 3,
+            equipment: [],
+            streak: 0,
+            createdAt: new Date().toISOString(),
+            isActive: true, // Created active so they can login immediately in this demo
+            coachId: currentUser.role === 'coach' ? currentUser.id : undefined // Auto-assign if Coach
+        };
+
+        // 3. Save
+        await DataEngine.saveUser(newUser);
+        
+        // 4. Feedback
+        alert(`Invitación enviada a ${email}. (Enlace simulado activado)`);
+        onInviteSuccess();
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/90 z-[90] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 relative" onClick={e => e.stopPropagation()}>
+                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={20} /></button>
+                
+                <h3 className="text-xl font-bold text-white mb-1">Invitar Nuevo Usuario</h3>
+                <p className="text-xs text-gray-500 mb-6">Se enviará un correo de activación.</p>
+
+                <form onSubmit={handleInvite} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre Completo</label>
+                        <input required value={name} onChange={e => setName(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" placeholder="EJ: JUAN PÉREZ" />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Correo Electrónico</label>
+                        <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" placeholder="usuario@email.com" />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Rol Asignado</label>
+                        <select 
+                            value={role} 
+                            onChange={e => setRole(e.target.value as UserRole)}
+                            className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none"
+                            disabled={availableRoles.length === 1}
+                        >
+                            {availableRoles.map(r => (
+                                <option key={r} value={r}>{r === 'client' ? 'Atleta' : 'Coach'}</option>
+                            ))}
+                        </select>
+                        {currentUser.role === 'coach' && <p className="text-[10px] text-gray-500 mt-2 italic">* El atleta será asignado automáticamente a ti.</p>}
+                    </div>
+
+                    {error && <div className="text-red-500 text-xs font-bold bg-red-500/10 p-3 rounded-lg flex items-center gap-2"><AlertTriangle size={12}/> {error}</div>}
+
+                    <div className="pt-4">
+                        <button type="submit" disabled={loading} className="w-full py-3 bg-white text-black rounded-xl font-bold text-sm hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                            {loading ? <Loader2 className="animate-spin" size={16} /> : <Mail size={16} />}
+                            ENVIAR INVITACIÓN
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 interface ExerciseCardProps {
   exercise: WorkoutExercise;
   index: number;
@@ -280,6 +380,7 @@ interface ExerciseCardProps {
   history: any[];
 }
 
+// ... (ExerciseCard component remains unchanged) ...
 // --- EXERCISE CARD (GOLD MODE & PR LOGIC RESTORED) ---
 const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
   exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history
@@ -455,7 +556,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   );
 };
 
-// ... (Chatbot & PlanViewer sin cambios en lógica core) ...
+// ... (Chatbot & PlanViewer & ManualPlanBuilder & WorkoutsView remain unchanged) ...
 const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([{role: 'ai', text: 'Soy tu asistente técnico. ¿Dudas con algún ejercicio?', timestamp: Date.now()}]);
     const [input, setInput] = useState('');
@@ -692,7 +793,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   );
 };
 
-// ... (ManualPlanBuilder & WorkoutsView - Sin cambios) ...
 const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
   const [editedPlan, setEditedPlan] = useState<Plan>(plan);
   const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
@@ -901,9 +1001,15 @@ const WorkoutsView = () => {
 };
 
 // --- CLIENTS VIEW (LIST OF ATHLETES) ---
-const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
+const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
     const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
     const [search, setSearch] = useState('');
+    const [showInviteModal, setShowInviteModal] = useState(false);
+
+    // Refresh users when modal closes or opens
+    useEffect(() => {
+        setUsers(DataEngine.getUsers().filter(u => u.role === 'client'));
+    }, [showInviteModal]);
 
     const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
 
@@ -911,15 +1017,21 @@ const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
         <div className="space-y-6 animate-fade-in">
              <div className="flex justify-between items-center">
                 <h2 className="text-3xl font-bold font-display italic text-white">ATLETAS</h2>
-                <div className="relative">
-                    <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
-                    <input 
-                        value={search} 
-                        onChange={e => setSearch(e.target.value)} 
-                        placeholder="Buscar atleta..." 
-                        className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-64"
-                    />
-                </div>
+                {user.role === 'coach' && (
+                    <button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors">
+                        <UserPlus size={16} /> Agregar Atleta
+                    </button>
+                )}
+             </div>
+             
+             <div className="relative">
+                <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
+                <input 
+                    value={search} 
+                    onChange={e => setSearch(e.target.value)} 
+                    placeholder="Buscar atleta..." 
+                    className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-full md:w-64"
+                />
              </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -949,6 +1061,14 @@ const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
                      </div>
                  )}
              </div>
+
+             {showInviteModal && (
+                 <UserInviteModal 
+                    currentUser={user} 
+                    onClose={() => setShowInviteModal(false)} 
+                    onInviteSuccess={() => setUsers(DataEngine.getUsers().filter(u => u.role === 'client'))}
+                 />
+             )}
         </div>
     );
 };
@@ -1286,11 +1406,17 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
     );
 };
 
-// --- ADMIN VIEW EXPANDED ---
+// --- ADMIN VIEW EXPANDED (Updated for User Invite) ---
 const AdminView = () => {
   const [config, setConfig] = useState(DataEngine.getConfig());
   const [activeTab, setActiveTab] = useState<'branding' | 'users'>('branding');
   const [users, setUsers] = useState<User[]>(DataEngine.getUsers());
+  const [showInviteModal, setShowInviteModal] = useState(false);
+
+  // Mock current user as admin for this view context (though strictly App passes it, AdminView logic assumes admin role)
+  // To use the modal properly, we should reconstruct a temporary Admin user object if we don't have it passed down,
+  // but better to rely on the fact this view is only accessible by admins.
+  const adminUserMock: User = { ...MOCK_USER, role: 'admin', id: ADMIN_UUID };
 
   const handleSaveConfig = () => {
       DataEngine.saveConfig(config);
@@ -1335,7 +1461,7 @@ const AdminView = () => {
           {activeTab === 'users' && (
               <div className="space-y-4">
                   <div className="flex justify-end">
-                       <button className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2"><UserPlus size={16}/> INVITAR USUARIO</button>
+                       <button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors"><UserPlus size={16}/> INVITAR USUARIO</button>
                   </div>
                   {users.map(u => (
                       <div key={u.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1355,6 +1481,14 @@ const AdminView = () => {
                       </div>
                   ))}
               </div>
+          )}
+
+          {showInviteModal && (
+              <UserInviteModal 
+                  currentUser={adminUserMock} 
+                  onClose={() => setShowInviteModal(false)} 
+                  onInviteSuccess={() => setUsers(DataEngine.getUsers())} 
+              />
           )}
       </div>
   );
@@ -1416,7 +1550,7 @@ function App() {
         {/* Main Content */}
         <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
             {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
-            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} />}
+            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
             {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
             {view === 'workouts' && <WorkoutsView />}
             {view === 'profile' && <ProfileView user={user} onLogout={logout} />}

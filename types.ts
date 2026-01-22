@@ -37,6 +37,7 @@ export interface User {
   streak: number;
   createdAt: string;
   isActive?: boolean; // Control de acceso
+  coachId?: string; // ID del coach asignado
 }
 
 export interface Exercise {
