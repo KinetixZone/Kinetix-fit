@@ -9,12 +9,12 @@ import {
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
-  Briefcase, BarChart4, AlertOctagon
+  Briefcase, BarChart4, AlertOctagon, MessageCircle
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
 } from 'recharts';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, SystemConfig } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, SystemConfig, ChatMessage } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabase, supabaseConnectionStatus } from './services/supabaseClient';
@@ -38,10 +38,9 @@ const formatDate = (isoString: string) => {
 // --- SYSTEM CONSTANTS & RESCUE ROUTINE ---
 const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
 const ADMIN_UUID = 'a1b2c3d4-0000-0000-0000-admin0000001';
-const STORAGE_KEY = 'KINETIX_DATA_PRO_V3'; 
-const SESSION_KEY = 'KINETIX_SESSION_PRO_V3';
+const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_5'; 
+const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_5';
 
-// Rutina de emergencia cuando no llegan a clase
 const RESCUE_WORKOUT: WorkoutExercise[] = [
     { exerciseId: 'res1', name: 'Burpees', targetSets: 4, targetReps: '15', targetRest: 60, coachCue: 'Mantén ritmo constante.' },
     { exerciseId: 'res2', name: 'Sentadillas Air', targetSets: 4, targetReps: '20', targetRest: 60, coachCue: 'Rompe paralelo.' },
@@ -86,6 +85,7 @@ const DataEngine = {
     let users = store.USERS ? JSON.parse(store.USERS) : [];
     let modified = false;
 
+    // Garantizar usuarios por defecto
     if (!users.find((u:User) => u.email === 'atleta@kinetix.com')) { users.push(MOCK_USER); modified = true; }
     if (!users.find((u:User) => u.email === 'coach@kinetix.com')) {
         users.push({ id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'coach', daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString() });
@@ -101,6 +101,7 @@ const DataEngine = {
         DataEngine.saveStore(store);
     }
     
+    // Garantizar ejercicios
     const storedExercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
     const mergedExercises = [...INITIAL_EXERCISES];
     storedExercises.forEach((se: Exercise) => {
@@ -141,7 +142,6 @@ const DataEngine = {
     s[`PLAN_${plan.userId}`] = JSON.stringify(plan);
     DataEngine.saveStore(s);
   },
-  pullFromCloud: async () => true,
   saveUser: async (user: User) => {
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
@@ -182,14 +182,14 @@ const DataEngine = {
     let totalVolume = 0;
     let prCount = 0;
     Object.values(logs).flat().forEach(entry => { if(entry.completed) totalVolume += (parseFloat(entry.weight) || 0) * (parseFloat(entry.reps) || 0); });
-    if (currentHistory.length > 0 && totalVolume > currentHistory[0].summary.totalVolume) prCount++;
+    // Check PR logic could be enhanced here by comparing exercises
     const session = {
       id: generateUUID(), workoutName: workout.name, workoutId: workout.id, date: new Date().toISOString(), logs: logs,
       summary: { exercisesCompleted: Object.keys(logs).length, totalVolume, durationMinutes, prCount }
     };
     currentHistory.unshift(session); 
     s[historyKey] = JSON.stringify(currentHistory);
-    delete s[`LOG_TEMP_${userId}_${workout.id}`];
+    delete s[`LOG_TEMP_${userId}_${workout.id}`]; // Clean temp
     const users = JSON.parse(s.USERS || '[]');
     const uIdx = users.findIndex((u:User) => u.id === userId);
     if(uIdx >= 0) { users[uIdx].streak += 1; s.USERS = JSON.stringify(users); }
@@ -238,12 +238,13 @@ const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSecond
     return () => clearInterval(interval);
   }, [isActive, timeLeft, onComplete]);
   const changeTime = (seconds: number) => { setTimeLeft(seconds); setTotalTime(seconds); setIsActive(true); };
+  const adjustTime = (amount: number) => { setTimeLeft(prev => Math.max(0, prev + amount)); };
   const formatTime = (seconds: number) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
   return (
     <div className="fixed bottom-24 right-4 md:right-8 bg-[#1A1A1D] border border-red-500/50 text-white p-4 rounded-2xl shadow-2xl z-50 flex flex-col gap-3 animate-fade-in-up w-[280px]">
       <div className="flex items-center gap-4">
         <div className="relative shrink-0"><svg className="w-12 h-12 transform -rotate-90"><circle cx="24" cy="24" r="20" stroke="#333" strokeWidth="4" fill="transparent" /><circle cx="24" cy="24" r="20" stroke="#EF4444" strokeWidth="4" fill="transparent" strokeDasharray={125} strokeDashoffset={125 - (125 * timeLeft) / (totalTime || 1)} className="transition-all duration-1000 ease-linear" /></svg><div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-mono font-bold text-sm">{formatTime(timeLeft)}</div></div>
-        <div className="flex-1"><p className="text-xs text-gray-400 font-bold uppercase mb-1">Descanso Activo</p><div className="flex gap-2"><button onClick={() => setTimeLeft(prev => prev + 30)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">+30s</button><button onClick={() => setIsActive(!isActive)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">{isActive ? 'Pausa' : 'Seguir'}</button></div></div>
+        <div className="flex-1"><p className="text-xs text-gray-400 font-bold uppercase mb-1">Descanso</p><div className="flex gap-2"><button onClick={() => adjustTime(30)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">+30s</button><button onClick={() => setIsActive(!isActive)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">{isActive ? 'Pausa' : 'Seguir'}</button></div></div>
         <button onClick={onClose} className="text-gray-500 hover:text-white self-start"><X size={16}/></button>
       </div>
       <div className="grid grid-cols-4 gap-2 border-t border-white/5 pt-2">{[30, 60, 90, 120].map(sec => (<button key={sec} onClick={() => changeTime(sec)} className={`text-[10px] font-bold py-1 rounded hover:bg-white/10 ${totalTime === sec ? 'text-red-500 bg-red-500/10' : 'text-gray-500'}`}>{sec}s</button>))}</div>
@@ -284,10 +285,14 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
 
   const lastSessionData = useMemo(() => {
       if(!history || history.length === 0) return null;
-      const lastSession = history[0];
-      if(lastSession.logs && lastSession.logs[index]) {
-          const sets = lastSession.logs[index] as SetEntry[];
-          if(sets.length > 0) return sets[sets.length-1];
+      // Buscar en el historial este ejercicio específico por nombre o ID, no solo por índice
+      for(const session of history) {
+          for(const logKey in session.logs) {
+              const sessionLogs = session.logs[logKey];
+              // Aproximación simple: asumimos orden o comparamos nombre si estuviara disponible en el log (idealmente guardar exerciseId en logs)
+              // Aquí usaremos la lógica simple de índice por ahora, pero en producción usar ID.
+              if(parseInt(logKey) === index && sessionLogs.length > 0) return sessionLogs[sessionLogs.length-1];
+          }
       }
       return null;
   }, [history, index]);
@@ -319,7 +324,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   const exerciseLogs = logs[index] || [];
 
   return (
-    <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 mb-4 shadow-md hover:border-white/10 transition-all">
+    <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 mb-4 shadow-md hover:border-white/10 transition-all relative">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-start gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-bold text-gray-400 text-sm border border-white/5">
@@ -332,13 +337,13 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
                 {exercise.targetLoad && (
                 <div className="inline-flex items-center gap-1.5 bg-yellow-500/10 px-2 py-1 rounded-md border border-yellow-500/20" title="Carga asignada por el Coach">
                     <ShieldAlert size={12} className="text-yellow-500" />
-                    <span className="text-xs font-bold text-yellow-500 uppercase tracking-wide">Meta: {exercise.targetLoad}</span>
+                    <span className="text-xs font-bold text-yellow-500 uppercase tracking-wide">Meta: {exercise.targetLoad}kg</span>
                 </div>
                 )}
                 {lastSessionData && (
                     <div className="inline-flex items-center gap-1.5 bg-gray-800 px-2 py-1 rounded-md border border-white/5">
                         <History size={12} className="text-gray-400" />
-                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Prev: {lastSessionData.weight}kg</span>
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Prev: {lastSessionData.weight}kg x {lastSessionData.reps}</span>
                     </div>
                 )}
             </div>
@@ -413,14 +418,14 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
                     />
                  </div>
                  <div className="col-span-2">
-                    <input 
-                      type="number"
-                      min="1" max="10" 
-                      placeholder="-"
-                      defaultValue={log?.rpe || ''}
-                      onBlur={(e) => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, e.target.value, !!isDone)}
-                      className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs text-blue-300 focus:border-blue-500 outline-none placeholder-gray-700"
-                    />
+                    <select 
+                        className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs text-blue-300 focus:border-blue-500 outline-none"
+                        value={log?.rpe || ''}
+                        onChange={(e) => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, e.target.value, !!isDone)}
+                    >
+                        <option value="">-</option>
+                        {[6,7,8,9,10].map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
                  </div>
                  <div className="col-span-3 flex justify-center">
                     <button 
@@ -449,6 +454,57 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   );
 };
 
+// --- CHATBOT ---
+const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
+    const [messages, setMessages] = useState<ChatMessage[]>([{role: 'ai', text: 'Soy tu asistente técnico. ¿Dudas con algún ejercicio?', timestamp: Date.now()}]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const handleSend = async () => {
+        if(!input.trim()) return;
+        const userMsg: ChatMessage = { role: 'user', text: input, timestamp: Date.now() };
+        setMessages(prev => [...prev, userMsg]);
+        setInput('');
+        setLoading(true);
+        try {
+            const advice = await getTechnicalAdvice(userMsg.text, DataEngine.getExercises());
+            const aiMsg: ChatMessage = { role: 'ai', text: advice || 'Lo siento, no pude procesar eso.', timestamp: Date.now() };
+            setMessages(prev => [...prev, aiMsg]);
+        } catch (e) {
+            setMessages(prev => [...prev, {role: 'ai', text: 'Error de conexión con Kinetix AI.', timestamp: Date.now()}]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+    return (
+        <div className="fixed bottom-24 right-4 md:right-8 bg-[#1A1A1D] border border-white/20 w-[320px] h-[450px] rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden animate-fade-in-up">
+            <div className="bg-[#0F0F11] p-4 border-b border-white/10 flex justify-between items-center">
+                <div className="flex items-center gap-2"><Sparkles size={16} className="text-blue-500"/> <span className="font-bold text-white text-sm">Kinetix Assistant</span></div>
+                <button onClick={onClose}><X size={16} className="text-gray-400"/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/20">
+                {messages.map((m, i) => (
+                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${m.role === 'user' ? 'bg-red-600 text-white' : 'bg-[#2A2A2D] text-gray-200'}`}>
+                            {m.text}
+                        </div>
+                    </div>
+                ))}
+                {loading && <div className="text-xs text-gray-500 animate-pulse">Escribiendo...</div>}
+                <div ref={messagesEndRef} />
+            </div>
+            <div className="p-3 bg-[#0F0F11] border-t border-white/10 flex gap-2">
+                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Pregunta algo..." className="flex-1 bg-white/5 rounded-full px-3 py-2 text-xs text-white outline-none focus:bg-white/10" />
+                <button onClick={handleSend} className="p-2 bg-blue-600 rounded-full text-white hover:bg-blue-500"><Send size={14}/></button>
+            </div>
+        </div>
+    );
+}
+
 // --- PLAN VIEWER WRAPPER (UPDATED WITH CLASS LOGIC) ---
 const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'athlete' }) => {
   const [showVideo, setShowVideo] = useState<string | null>(null);
@@ -469,23 +525,22 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   }, []);
 
   const handleFinishWorkout = (workout: Workout) => {
-     if(confirm("¿Has completado tu sesión?")) {
+     if(confirm("¿Has completado tu sesión? Esto la guardará en el historial.")) {
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
          const session = DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          setFinishScreen(session);
+         // Disparar evento para actualizar gráficas si es necesario
          setTimeout(() => window.dispatchEvent(new Event('storage-update')), 500);
      }
   };
 
   const handleClassAttendance = (workout: Workout, attended: boolean) => {
       if (attended) {
-          // Log as completed instantly
           if(confirm("¿Confirmar asistencia a clase?")) {
               DataEngine.archiveWorkout(plan.userId, workout, { 0: [{ setNumber: 1, weight: '0', reps: '1', completed: true, timestamp: Date.now() }] }, Date.now());
               setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
           }
       } else {
-          // Activate Rescue Routine logic
           setActiveRescue(workout.id);
       }
   };
@@ -511,12 +566,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                       <div className="text-3xl font-bold text-white mb-1">{finishScreen.summary.durationMinutes}m</div>
                       <div className="text-[10px] uppercase text-gray-500 font-bold">Duración</div>
                   </div>
-                  {finishScreen.summary.prCount > 0 && (
-                      <div className="col-span-2 bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-2xl flex items-center justify-center gap-3">
-                          <Trophy size={20} className="text-yellow-500" />
-                          <span className="text-yellow-500 font-bold uppercase text-sm">¡{finishScreen.summary.prCount} Récords Personales!</span>
-                      </div>
-                  )}
               </div>
 
               <button onClick={() => setFinishScreen(null)} className="mt-8 bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-gray-200 transition-colors shadow-lg">
@@ -647,7 +696,7 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   );
 };
 
-// --- MANUAL PLAN BUILDER (UPDATED FOR CLASS SUPPORT) ---
+// ... (ManualPlanBuilder & WorkoutsView - Sin cambios estructurales mayores, solo integración) ... 
 const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
   const [editedPlan, setEditedPlan] = useState<Plan>(plan);
   const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
@@ -779,7 +828,6 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   );
 };
 
-// --- WORKOUTS VIEW (WITH ADD EXERCISE) ---
 const WorkoutsView = () => {
     const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
     const [filter, setFilter] = useState('');
@@ -923,6 +971,7 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                   <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Trophy size={18} className="text-yellow-500"/> Plan Asignado</h3>
                   <div className="flex gap-2">
                       <button onClick={() => setShowManualBuilder(true)} className="text-xs font-bold bg-white/10 text-white border border-white/20 px-4 py-2 rounded-full hover:bg-white/20 transition-all flex items-center gap-2"><Edit3 size={12}/> EDITAR MANUAL</button>
+                      {/* Coach Only: Regenerate AI Plan */}
                       <button onClick={handleGenerateAI} disabled={isGenerating} className="text-xs font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 transition-all flex items-center gap-2">{isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} REGENERAR IA</button>
                   </div>
                 </div>
@@ -995,6 +1044,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                      <div className="flex gap-2 justify-center mt-2">
                          <button onClick={() => setEmail('atleta@kinetix.com')} className="text-xs bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white">Atleta</button>
                          <button onClick={() => setEmail('coach@kinetix.com')} className="text-xs bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white">Coach</button>
+                         <button onClick={() => setEmail('admin@kinetix.com')} className="text-xs bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white">Admin</button>
                      </div>
                  </div>
              </div>
@@ -1048,13 +1098,15 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: st
                              <h4 className="font-bold text-white">Biblioteca</h4>
                              <p className="text-xs text-gray-500 mt-1">Gestionar ejercicios y videos.</p>
                          </button>
-                         <button onClick={() => onNavigate('admin')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group">
-                             <div className="bg-yellow-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-yellow-500 mb-3 group-hover:scale-110 transition-transform">
-                                 <Briefcase size={20}/>
-                             </div>
-                             <h4 className="font-bold text-white">Administración</h4>
-                             <p className="text-xs text-gray-500 mt-1">Configuración del sistema.</p>
-                         </button>
+                         {user.role === 'admin' && (
+                             <button onClick={() => onNavigate('admin')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group">
+                                 <div className="bg-yellow-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-yellow-500 mb-3 group-hover:scale-110 transition-transform">
+                                     <Briefcase size={20}/>
+                                 </div>
+                                 <h4 className="font-bold text-white">Administración</h4>
+                                 <p className="text-xs text-gray-500 mt-1">Configuración del sistema.</p>
+                             </button>
+                         )}
                     </div>
                 </div>
             </div>
@@ -1119,10 +1171,24 @@ const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
 
 const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
     const history = DataEngine.getClientHistory(user.id);
+    const [analyzing, setAnalyzing] = useState(false);
+    
     const chartData = history.slice(0, 10).reverse().map(h => ({
         date: new Date(h.date).toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}),
         vol: h.summary.totalVolume
     }));
+
+    const handleAnalyze = async () => {
+        setAnalyzing(true);
+        try {
+            const advice = await analyzeProgress(user, history);
+            alert(advice); // Simplificado por UI, idealmente un modal
+        } catch(e) {
+            alert("No se pudo analizar el progreso.");
+        } finally {
+            setAnalyzing(false);
+        }
+    }
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -1135,6 +1201,13 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
                 </div>
             </div>
             
+            {user.role === 'client' && (
+                <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-4 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3 shadow-lg mb-2">
+                    {analyzing ? <Loader2 className="animate-spin" /> : <BrainCircuit size={24} className="text-blue-400" />}
+                    <span className="font-bold text-blue-100">ANALIZAR MI PROGRESO CON IA</span>
+                </button>
+            )}
+
             <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
                  <h3 className="font-bold text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-green-500"/> Progreso de Volumen</h3>
                  <div className="h-48 w-full">
@@ -1204,6 +1277,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState('dashboard'); // dashboard, workouts, clients, admin, profile
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [chatbotOpen, setChatbotOpen] = useState(false);
 
   useEffect(() => {
      DataEngine.init();
@@ -1277,6 +1351,16 @@ function App() {
             <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
         </div>
         
+        {/* Chatbot for Athletes */}
+        {user.role === 'client' && (
+            <>
+                <button onClick={() => setChatbotOpen(!chatbotOpen)} className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform hover:scale-110">
+                    <MessageCircle size={24} />
+                </button>
+                {chatbotOpen && <TechnicalChatbot onClose={() => setChatbotOpen(false)} />}
+            </>
+        )}
+
         <ConnectionStatus />
     </div>
   );

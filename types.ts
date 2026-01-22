@@ -89,3 +89,9 @@ export interface Plan {
   coachNotes?: string;
   updatedAt: string;
 }
+
+export interface ChatMessage {
+    role: 'user' | 'ai';
+    text: string;
+    timestamp: number;
+}
