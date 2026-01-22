@@ -623,6 +623,21 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
     }
   };
 
+  // WRAPPER PARA AUTO-FILL
+  const handleToggleCheck = (setNum: number, currentWeight: string, currentReps: string, rpe: string, isDone: boolean) => {
+      // Si el usuario da "Check" pero no ha puesto nada, asumimos los valores del Coach (Target)
+      // Esto evita que tenga que escribir y abrir el teclado si hizo lo que le pidieron.
+      let finalWeight = currentWeight;
+      let finalReps = currentReps;
+
+      if (!isDone) {
+          if (!finalWeight || finalWeight === '') finalWeight = exercise.targetLoad || '0';
+          if (!finalReps || finalReps === '') finalReps = exercise.targetReps || '0';
+      }
+
+      handleLogSet(setNum, finalWeight, finalReps, rpe, !isDone);
+  };
+
   const setsArray = Array.from({ length: exercise.targetSets }, (_, i) => i + 1);
   const exerciseLogs = logs[index] || [];
 
@@ -723,7 +738,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
                  </div>
                  <div className="col-span-3 flex justify-center">
                     <button 
-                      onClick={() => handleLogSet(setNum, log?.weight || '', log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !isDone)}
+                      onClick={() => handleToggleCheck(setNum, log?.weight || '', log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !!isDone)}
                       className={`w-full h-9 rounded-md flex items-center justify-center transition-all border ${isDone ? 'bg-green-500 border-green-500 text-black shadow-[0_0_10px_rgba(34,197,94,0.4)] animate-flash' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
                     >
                       {isDone ? <Check size={16} strokeWidth={4} /> : <Circle size={16} />}
@@ -819,7 +834,8 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
 
   const handleFinishWorkout = (workout: Workout) => {
      if(confirm("¿Has completado tu sesión? Esto la guardará en el historial.")) {
-         // 1. FORZAR CIERRE DE TECLADO
+         // 1. PROTOCOLO DE SALIDA SEGURA (ANTI-BLACK SCREEN)
+         // Forzar cierre de teclado (Blur) para recuperar Viewport
          if (document.activeElement instanceof HTMLElement) {
              document.activeElement.blur();
          }
@@ -827,14 +843,14 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
          const session = DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          
-         // 2. PRIMERO SCROLL AL TOP
+         // 2. SCROLL RESET INMEDIATO
          window.scrollTo(0, 0);
 
-         // 3. LUEGO MOSTRAR PANTALLA DE ÉXITO (Con pequeño delay para asegurar render)
+         // 3. MAGIC DELAY: Esperar 150ms a que el navegador redibuje el Viewport tras cerrar teclado
          setTimeout(() => {
             setFinishScreen(session);
             window.dispatchEvent(new Event('storage-update'));
-         }, 100);
+         }, 150);
      }
   };
 
@@ -847,7 +863,7 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
               window.scrollTo(0,0);
               setTimeout(() => {
                 setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
-              }, 50);
+              }, 150);
           }
       } else {
           setActiveRescue(workout.id);
