@@ -57,7 +57,7 @@ const DEFAULT_CONFIG: SystemConfig = {
     }
 };
 
-// --- DATA ENGINE ---
+// --- DATA ENGINE (HYBRID: LOCAL + CLOUD) ---
 const DataEngine = {
   getStore: () => {
     try {
@@ -84,12 +84,14 @@ const DataEngine = {
       DataEngine.saveStore(s);
   },
 
-  init: () => {
+  // --- INITIALIZATION & SYNC ---
+  init: async () => {
     const store = DataEngine.getStore();
     let users = store.USERS ? JSON.parse(store.USERS) : [];
+    let exercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
     let modified = false;
 
-    // Garantizar usuarios por defecto con isActive
+    // 1. Cargar desde LocalStorage (Instantáneo)
     if (!users.find((u:User) => u.email === 'atleta@kinetix.com')) { users.push({...MOCK_USER, isActive: true}); modified = true; }
     if (!users.find((u:User) => u.email === 'coach@kinetix.com')) {
         users.push({ id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'coach', daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString(), isActive: true });
@@ -100,19 +102,58 @@ const DataEngine = {
         modified = true;
     }
 
-    if(modified) {
-        store.USERS = JSON.stringify(users);
-        DataEngine.saveStore(store);
-    }
-    
-    // Garantizar ejercicios
-    const storedExercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
+    // Fusionar Ejercicios Locales
     const mergedExercises = [...INITIAL_EXERCISES];
-    storedExercises.forEach((se: Exercise) => {
+    exercises.forEach((se: Exercise) => {
       if (!mergedExercises.find(me => me.id === se.id)) mergedExercises.push(se);
     });
-    store.EXERCISES = JSON.stringify(mergedExercises);
-    DataEngine.saveStore(store);
+    
+    if(modified) {
+        store.USERS = JSON.stringify(users);
+        store.EXERCISES = JSON.stringify(mergedExercises);
+        DataEngine.saveStore(store);
+    }
+
+    // 2. BACKGROUND SYNC (Optimización de Nube)
+    // Intentamos traer datos reales de Supabase sin bloquear la UI
+    if (supabaseConnectionStatus.isConfigured) {
+        try {
+            // Sincronizar Usuarios
+            const { data: dbUsers } = await supabase.from('users').select('*');
+            if (dbUsers && dbUsers.length > 0) {
+                // Mapear DB a estructura local (snake_case a camelCase)
+                const mappedUsers = dbUsers.map((u: any) => ({
+                    id: u.id, name: u.name, email: u.email, goal: u.goal, level: u.level,
+                    role: u.role, daysPerWeek: u.days_per_week, equipment: u.equipment || [],
+                    streak: u.streak, createdAt: u.created_at, isActive: true // Asumimos activos si vienen de DB
+                }));
+                // Fusionar inteligentemente
+                const finalUsers = [...users];
+                mappedUsers.forEach((mu: User) => {
+                    const idx = finalUsers.findIndex(fu => fu.id === mu.id);
+                    if (idx >= 0) finalUsers[idx] = mu; else finalUsers.push(mu);
+                });
+                store.USERS = JSON.stringify(finalUsers);
+            }
+
+            // Sincronizar Ejercicios
+            const { data: dbExercises } = await supabase.from('exercises').select('*');
+            if (dbExercises && dbExercises.length > 0) {
+                const mappedEx = dbExercises.map((e: any) => ({
+                   id: e.id, name: e.name, muscleGroup: e.muscle_group, 
+                   videoUrl: e.video_url, technique: e.technique, commonErrors: e.common_errors || []
+                }));
+                const finalEx = [...mergedExercises];
+                mappedEx.forEach((me: Exercise) => {
+                   if (!finalEx.find(fe => fe.id === me.id)) finalEx.push(me);
+                });
+                store.EXERCISES = JSON.stringify(finalEx);
+            }
+            DataEngine.saveStore(store);
+        } catch (e) {
+            console.warn("Modo Offline: No se pudo sincronizar con Supabase", e);
+        }
+    }
   },
   
   getUsers: (): User[] => {
@@ -125,44 +166,89 @@ const DataEngine = {
     const q = query.toLowerCase().trim();
     return users.find(u => u.email.toLowerCase() === q || u.name.toLowerCase() === q);
   },
+  
   getExercises: (): Exercise[] => {
     const s = DataEngine.getStore();
     return s.EXERCISES ? JSON.parse(s.EXERCISES) : INITIAL_EXERCISES;
   },
-  addExercise: (exercise: Exercise) => {
+
+  addExercise: async (exercise: Exercise) => {
     const s = DataEngine.getStore();
     const current = s.EXERCISES ? JSON.parse(s.EXERCISES) : [];
     current.push(exercise);
     s.EXERCISES = JSON.stringify(current);
     DataEngine.saveStore(s);
+
+    // Cloud Sync
+    if (supabaseConnectionStatus.isConfigured) {
+        await supabase.from('exercises').upsert({
+            id: exercise.id, name: exercise.name, muscle_group: exercise.muscleGroup,
+            video_url: exercise.videoUrl, technique: exercise.technique
+        });
+    }
   },
+
   getPlan: (uid: string): Plan | null => {
     const s = DataEngine.getStore();
     const p = s[`PLAN_${uid}`];
     return p ? JSON.parse(p) : null;
   },
+  
   savePlan: async (plan: Plan) => {
+    // 1. Guardado Local (Inmediato)
     const s = DataEngine.getStore();
     s[`PLAN_${plan.userId}`] = JSON.stringify(plan);
     DataEngine.saveStore(s);
+
+    // 2. Cloud Sync (Fondo)
+    if (supabaseConnectionStatus.isConfigured) {
+        // Guardamos el plan maestro
+        const { data: planData, error } = await supabase.from('plans').upsert({
+            id: plan.id, title: plan.title, user_id: plan.userId, updated_at: new Date().toISOString()
+        }).select();
+
+        if (!error && planData) {
+            // Nota: La sincronización completa de ejercicios del plan es compleja. 
+            // Para V12.5 guardamos la estructura relacional básica o JSON si la tabla lo permitiera.
+            // Por ahora, priorizamos que el plan EXISTA en la BD.
+        }
+    }
   },
+
   saveUser: async (user: User) => {
+    // 1. Local
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
     const idx = users.findIndex((u: User) => u.id === user.id);
     if (idx >= 0) users[idx] = user; else users.push(user);
     s.USERS = JSON.stringify(users);
     DataEngine.saveStore(s);
+
+    // 2. Cloud Sync (Vital para no perder usuarios)
+    if (supabaseConnectionStatus.isConfigured) {
+        await supabase.from('users').upsert({
+            id: user.id, name: user.name, email: user.email, goal: user.goal,
+            level: user.level, role: user.role, days_per_week: user.daysPerWeek,
+            equipment: user.equipment, streak: user.streak
+        });
+    }
   },
-  deleteUser: (userId: string) => {
+
+  deleteUser: async (userId: string) => {
     const s = DataEngine.getStore();
     let users = JSON.parse(s.USERS || '[]');
     users = users.filter((u: User) => u.id !== userId);
     s.USERS = JSON.stringify(users);
     delete s[`PLAN_${userId}`];
     DataEngine.saveStore(s);
+
+    if (supabaseConnectionStatus.isConfigured) {
+        await supabase.from('users').delete().eq('id', userId);
+    }
   },
+
   saveSetLog: (userId: string, workoutId: string, exerciseIndex: number, setEntry: SetEntry) => {
+    // Solo local para rendimiento (Optimización Sports Science)
     const s = DataEngine.getStore();
     const key = `LOG_TEMP_${userId}_${workoutId}`;
     const currentLog: WorkoutProgress = s[key] ? JSON.parse(s[key]) : {};
@@ -172,12 +258,15 @@ const DataEngine = {
     s[key] = JSON.stringify(currentLog);
     DataEngine.saveStore(s);
   },
+
   getWorkoutLog: (userId: string, workoutId: string): WorkoutProgress => {
     const s = DataEngine.getStore();
     const key = `LOG_TEMP_${userId}_${workoutId}`;
     return s[key] ? JSON.parse(s[key]) : {};
   },
-  archiveWorkout: (userId: string, workout: Workout, logs: WorkoutProgress, startTime: number) => {
+
+  archiveWorkout: async (userId: string, workout: Workout, logs: WorkoutProgress, startTime: number) => {
+    // 1. Procesamiento Local
     const s = DataEngine.getStore();
     const historyKey = `HISTORY_${userId}`;
     const currentHistory = s[historyKey] ? JSON.parse(s[historyKey]) : [];
@@ -185,21 +274,76 @@ const DataEngine = {
     const durationMinutes = Math.floor((endTime - startTime) / 60000);
     let totalVolume = 0;
     let prCount = 0;
-    Object.values(logs).flat().forEach(entry => { if(entry.completed) totalVolume += (parseFloat(entry.weight) || 0) * (parseFloat(entry.reps) || 0); });
-    // Check PR logic could be enhanced here by comparing exercises
+    
+    // Cálculo de volumen para análisis
+    Object.values(logs).flat().forEach(entry => { 
+        if(entry.completed) totalVolume += (parseFloat(entry.weight) || 0) * (parseFloat(entry.reps) || 0); 
+    });
+
     const session = {
       id: generateUUID(), workoutName: workout.name, workoutId: workout.id, date: new Date().toISOString(), logs: logs,
       summary: { exercisesCompleted: Object.keys(logs).length, totalVolume, durationMinutes, prCount }
     };
+    
     currentHistory.unshift(session); 
     s[historyKey] = JSON.stringify(currentHistory);
-    delete s[`LOG_TEMP_${userId}_${workout.id}`]; // Clean temp
+    delete s[`LOG_TEMP_${userId}_${workout.id}`]; 
+    
+    // Update streak
     const users = JSON.parse(s.USERS || '[]');
     const uIdx = users.findIndex((u:User) => u.id === userId);
     if(uIdx >= 0) { users[uIdx].streak += 1; s.USERS = JSON.stringify(users); }
     DataEngine.saveStore(s);
+
+    // 2. CLOUD ARCHIVING (CRÍTICO: NO PERDER HISTORIAL)
+    // Aquí es donde aseguramos que la data sobreviva
+    if (supabaseConnectionStatus.isConfigured) {
+        try {
+            // A. Guardar el Log General
+            const { data: logData, error: logError } = await supabase.from('workout_logs').insert({
+                user_id: userId,
+                workout_id: workout.id, // Nota: Asume que el ID del workout existe o es UUID válido
+                date: new Date().toISOString()
+            }).select().single();
+
+            if (!logError && logData) {
+                // B. Guardar los Sets individuales (Batch Insert para eficiencia)
+                const setsToInsert: any[] = [];
+                Object.keys(logs).forEach(exIdx => {
+                    const exerciseId = workout.exercises[parseInt(exIdx)]?.exerciseId;
+                    // Solo guardamos si tenemos el ID del ejercicio
+                    if (!exerciseId) return;
+
+                    logs[parseInt(exIdx)].forEach(entry => {
+                        if (entry.completed) {
+                            setsToInsert.push({
+                                log_id: logData.id,
+                                exercise_id: exerciseId, // Debe coincidir con ID en tabla exercises
+                                weight: parseFloat(entry.weight) || 0,
+                                reps: parseInt(entry.reps) || 0,
+                                done: true
+                            });
+                        }
+                    });
+                });
+
+                if (setsToInsert.length > 0) {
+                    await supabase.from('set_logs').insert(setsToInsert);
+                }
+            }
+            // Update user streak in cloud
+            await supabase.from('users').update({ streak: users[uIdx].streak }).eq('id', userId);
+
+        } catch (e) {
+            console.error("Error archivando en nube:", e);
+            // No lanzamos error para no interrumpir la experiencia del usuario,
+            // la data ya está guardada localmente.
+        }
+    }
+
     return session;
   },
+  
   getClientHistory: (userId: string) => {
     const s = DataEngine.getStore();
     const historyKey = `HISTORY_${userId}`;
@@ -923,7 +1067,8 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   );
 };
 
-const WorkoutsView = () => {
+// --- WORKOUTS VIEW (UPDATED: Protected Add Button) ---
+const WorkoutsView = ({ user }: { user: User }) => {
     const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
     const [filter, setFilter] = useState('');
     const [showVideo, setShowVideo] = useState<string | null>(null);
@@ -951,7 +1096,12 @@ const WorkoutsView = () => {
         <div className="space-y-6 animate-fade-in">
              <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-bold font-display italic text-white">BIBLIOTECA</h2>
-                <button onClick={() => setShowAddModal(true)} className="text-xs font-bold bg-white text-black px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-200"><Plus size={16}/> Nuevo</button>
+                {/* PROTECTED: Only Coach/Admin can add exercises */}
+                {(user.role === 'coach' || user.role === 'admin') && (
+                    <button onClick={() => setShowAddModal(true)} className="text-xs font-bold bg-white text-black px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-200">
+                        <Plus size={16}/> Nuevo
+                    </button>
+                )}
              </div>
 
              <div className="relative">
@@ -1572,7 +1722,7 @@ function App() {
             {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
             {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
             {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
-            {view === 'workouts' && <WorkoutsView />}
+            {view === 'workouts' && <WorkoutsView user={user} />}
             {view === 'profile' && <ProfileView user={user} onLogout={logout} />}
             {view === 'admin' && <AdminView />}
         </main>
