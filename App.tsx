@@ -544,29 +544,32 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   const [currentRestTime, setCurrentRestTime] = useState(60);
   const [finishScreen, setFinishScreen] = useState<any | null>(null);
   const [activeRescue, setActiveRescue] = useState<string | null>(null);
+  
+  // FIX: Using state for history to force updates when workout finishes
+  const [history, setHistory] = useState<any[]>(() => {
+      if(mode === 'athlete') return DataEngine.getClientHistory(plan.userId);
+      return [];
+  });
+
   const startTime = useRef(Date.now());
   
-  const history = useMemo(() => {
-     if(mode === 'athlete') return DataEngine.getClientHistory(plan.userId);
-     return [];
-  }, [plan.userId, mode]);
-
   const handleSetComplete = useCallback((restSeconds?: number) => {
      setCurrentRestTime(restSeconds || 60);
      setShowTimer(true);
   }, []);
 
-  // CRITICAL FIX: ASYNC/AWAIT TO PREVENT UI FREEZE
   const handleFinishWorkout = async (workout: Workout) => {
      if(confirm("¿Has completado tu sesión? Esto la guardará en el historial.")) {
-         // SAFETY PROTOCOL: No keyboard should be open, but we force blur anyway.
          if (document.activeElement instanceof HTMLElement) { document.activeElement.blur(); }
 
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
-         // AWAITING the async operation to ensure we have the session object, not a Promise.
          const session = await DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          
-         // SCROLL RESET & DELAY
+         // UPDATE HISTORY STATE IMMEDIATELY
+         if (mode === 'athlete') {
+            setHistory(DataEngine.getClientHistory(plan.userId));
+         }
+
          window.scrollTo(0, 0);
          setTimeout(() => {
             setFinishScreen(session);
@@ -579,12 +582,25 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
       if (attended) {
           if(confirm("¿Confirmar asistencia a clase?")) {
               DataEngine.archiveWorkout(plan.userId, workout, { 0: [{ setNumber: 1, weight: '0', reps: '1', completed: true, timestamp: Date.now() }] }, Date.now());
+              if (mode === 'athlete') setHistory(DataEngine.getClientHistory(plan.userId));
               window.scrollTo(0,0);
               setTimeout(() => {
                 setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
               }, 100);
           }
       } else { setActiveRescue(workout.id); }
+  };
+
+  const isWorkoutDoneToday = (wId: string) => {
+    if(!history) return false;
+    const now = new Date();
+    return history.some(h => {
+        const hDate = new Date(h.date);
+        return h.workoutId === wId && 
+               hDate.getDate() === now.getDate() && 
+               hDate.getMonth() === now.getMonth() && 
+               hDate.getFullYear() === now.getFullYear();
+    });
   };
 
   if (finishScreen) {
@@ -606,7 +622,9 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
     <div className="space-y-6 animate-fade-in relative pb-20">
       <div className="flex items-center justify-between sticky top-0 bg-[#050507]/90 backdrop-blur-xl z-30 py-4 border-b border-white/5"><h2 className="text-xl font-bold flex items-center gap-2 text-white"><CalendarDays size={20} className="text-red-500" />{plan.title}</h2>{mode === 'athlete' && (<div className="flex items-center gap-2"><span className="text-[10px] font-black tracking-widest text-green-400 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/20 flex items-center gap-1"><Flame size={12}/> ACTIVE</span></div>)}</div>
       <div className="grid md:grid-cols-2 gap-6">
-        {plan.workouts.map((workout) => (
+        {plan.workouts.map((workout) => {
+          const isDone = isWorkoutDoneToday(workout.id);
+          return (
           <div key={workout.id}>
              <div className="flex items-center gap-2 mb-4"><div className="h-px bg-white/10 flex-1"/><span className="text-xs font-bold text-red-500 uppercase tracking-widest">DÍA {workout.day} • {workout.name}</span><div className="h-px bg-white/10 flex-1"/></div>
              {workout.isClass && !activeRescue && (
@@ -645,11 +663,21 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                     />
                  ))
              )}
-             {mode === 'athlete' && (!workout.isClass || activeRescue === workout.id) && (
-                 <button onClick={() => handleFinishWorkout(workout)} className="w-full mt-4 bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-900/20 transition-all active:scale-[0.98]"><CheckCircle2 size={20} /> FINALIZAR ENTRENAMIENTO</button>
+             {isDone ? (
+                <div className="p-6 bg-green-900/20 border border-green-500/30 rounded-xl flex items-center justify-center gap-3 mt-4 animate-fade-in">
+                    <CheckCircle2 size={32} className="text-green-500" />
+                    <div>
+                        <h4 className="font-bold text-green-400 text-lg">¡Entrenamiento Completado!</h4>
+                        <p className="text-xs text-gray-400">Descansa y recupérate para mañana.</p>
+                    </div>
+                </div>
+             ) : (
+                 mode === 'athlete' && (!workout.isClass || activeRescue === workout.id) && (
+                     <button onClick={() => handleFinishWorkout(workout)} className="w-full mt-4 bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-900/20 transition-all active:scale-[0.98]"><CheckCircle2 size={20} /> FINALIZAR ENTRENAMIENTO</button>
+                 )
              )}
           </div>
-        ))}
+        )})}
       </div>
        {showVideo && (
          <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}>
