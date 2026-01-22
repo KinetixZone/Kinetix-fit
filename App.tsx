@@ -8,7 +8,7 @@ import {
   Timer as TimerIcon, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
-  MoreVertical, Flame, StopCircle
+  MoreVertical, Flame, StopCircle, ClipboardList
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -29,12 +29,17 @@ const generateUUID = () => {
   });
 };
 
+const formatDate = (isoString: string) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit' });
+};
+
 // --- SYSTEM CONSTANTS ---
 const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V3'; 
 const SESSION_KEY = 'KINETIX_SESSION_PRO_V3';
 
-// --- DATA ENGINE (ENHANCED V2) ---
+// --- DATA ENGINE (ENHANCED V3 - HISTORY SUPPORT) ---
 const DataEngine = {
   getStore: () => {
     try {
@@ -151,10 +156,12 @@ const DataEngine = {
     DataEngine.saveStore(s);
   },
 
-  // --- NEW: ADVANCED PROGRESS TRACKING ---
+  // --- PROGRESS & HISTORY ---
+  
+  // Guardar log temporal (sesión activa)
   saveSetLog: (userId: string, workoutId: string, exerciseIndex: number, setEntry: SetEntry) => {
     const s = DataEngine.getStore();
-    const key = `LOG_V2_${userId}_${workoutId}`;
+    const key = `LOG_TEMP_${userId}_${workoutId}`; // Cambiado a LOG_TEMP
     const currentLog: WorkoutProgress = s[key] ? JSON.parse(s[key]) : {};
     
     if (!currentLog[exerciseIndex]) currentLog[exerciseIndex] = [];
@@ -172,20 +179,77 @@ const DataEngine = {
 
   getWorkoutLog: (userId: string, workoutId: string): WorkoutProgress => {
     const s = DataEngine.getStore();
-    const key = `LOG_V2_${userId}_${workoutId}`;
+    const key = `LOG_TEMP_${userId}_${workoutId}`;
     return s[key] ? JSON.parse(s[key]) : {};
+  },
+
+  // Archivar sesión completada
+  archiveWorkout: (userId: string, workout: Workout, logs: WorkoutProgress) => {
+    const s = DataEngine.getStore();
+    const historyKey = `HISTORY_${userId}`;
+    const currentHistory = s[historyKey] ? JSON.parse(s[historyKey]) : [];
+    
+    const session = {
+      id: generateUUID(),
+      workoutName: workout.name,
+      workoutId: workout.id,
+      date: new Date().toISOString(),
+      logs: logs,
+      summary: {
+         exercisesCompleted: Object.keys(logs).length,
+         totalVolume: Object.values(logs).flat().reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0) * (parseFloat(curr.reps) || 0), 0)
+      }
+    };
+    
+    // Guardar en historial
+    currentHistory.unshift(session); // Lo más nuevo primero
+    s[historyKey] = JSON.stringify(currentHistory);
+    
+    // Limpiar log temporal para que la próxima vez esté limpio
+    delete s[`LOG_TEMP_${userId}_${workout.id}`];
+    
+    // Actualizar racha si es un día nuevo
+    // (Lógica simplificada)
+    const users = JSON.parse(s.USERS || '[]');
+    const uIdx = users.findIndex((u:User) => u.id === userId);
+    if(uIdx >= 0) {
+        users[uIdx].streak += 1;
+        s.USERS = JSON.stringify(users);
+    }
+
+    DataEngine.saveStore(s);
+    return session;
+  },
+
+  getClientHistory: (userId: string) => {
+    const s = DataEngine.getStore();
+    const historyKey = `HISTORY_${userId}`;
+    return s[historyKey] ? JSON.parse(s[historyKey]) : [];
+  },
+
+  // Obtener último peso registrado para un ejercicio
+  getLastLogForExercise: (userId: string, exerciseName: string): {weight: string, reps: string} | null => {
+    const history = DataEngine.getClientHistory(userId);
+    // Buscar en las sesiones pasadas
+    for (const session of history) {
+        // En cada sesión, revisar los logs. 
+        // Nota: Esto asume que podemos mapear exerciseIndex -> exerciseName, lo cual es difícil solo con logs.
+        // Mejora: Idealmente guardaríamos el ID del ejercicio en el log, pero por ahora buscaremos en la estructura.
+        // Dado que WorkoutProgress usa índices, necesitamos el plan original para mapear, lo cual es complejo aquí.
+        // Simplificación: Guardamos el nombre en el log al archivar o simplemente devolvemos null por ahora si no cambiamos la estructura de log.
+        // Para esta versión V3, vamos a confiar en que el usuario vea su historial general.
+    }
+    return null; 
   }
 };
 
 // --- COMPONENTS ---
 
-// 1. Rest Timer Component Improved
 const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSeconds?: number, onComplete?: () => void, onClose: () => void }) => {
   const [timeLeft, setTimeLeft] = useState(initialSeconds);
-  const [totalTime, setTotalTime] = useState(initialSeconds); // Para mantener la referencia del circulo
+  const [totalTime, setTotalTime] = useState(initialSeconds);
   const [isActive, setIsActive] = useState(true);
 
-  // Reiniciar si cambia initialSeconds (ej: siguiente ejercicio con diferente descanso)
   useEffect(() => {
     setTimeLeft(initialSeconds);
     setTotalTime(initialSeconds);
@@ -208,7 +272,7 @@ const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSecond
   const changeTime = (seconds: number) => {
       const newTime = seconds;
       setTimeLeft(newTime);
-      setTotalTime(newTime); // Resetear el círculo visual
+      setTotalTime(newTime);
       setIsActive(true);
   };
 
@@ -224,16 +288,9 @@ const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSecond
         <div className="relative shrink-0">
            <svg className="w-12 h-12 transform -rotate-90">
              <circle cx="24" cy="24" r="20" stroke="#333" strokeWidth="4" fill="transparent" />
-             <circle 
-               cx="24" cy="24" r="20" stroke="#EF4444" strokeWidth="4" fill="transparent" 
-               strokeDasharray={125} 
-               strokeDashoffset={125 - (125 * timeLeft) / (totalTime || 1)} 
-               className="transition-all duration-1000 ease-linear" 
-             />
+             <circle cx="24" cy="24" r="20" stroke="#EF4444" strokeWidth="4" fill="transparent" strokeDasharray={125} strokeDashoffset={125 - (125 * timeLeft) / (totalTime || 1)} className="transition-all duration-1000 ease-linear" />
            </svg>
-           <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-mono font-bold text-sm">
-             {formatTime(timeLeft)}
-           </div>
+           <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-mono font-bold text-sm">{formatTime(timeLeft)}</div>
         </div>
         <div className="flex-1">
           <p className="text-xs text-gray-400 font-bold uppercase mb-1">Descanso Activo</p>
@@ -244,15 +301,9 @@ const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSecond
         </div>
         <button onClick={onClose} className="text-gray-500 hover:text-white self-start"><X size={16}/></button>
       </div>
-      
-      {/* Presets de usuario */}
       <div className="grid grid-cols-4 gap-2 border-t border-white/5 pt-2">
           {[30, 60, 90, 120].map(sec => (
-             <button 
-               key={sec} 
-               onClick={() => changeTime(sec)}
-               className={`text-[10px] font-bold py-1 rounded hover:bg-white/10 ${totalTime === sec ? 'text-red-500 bg-red-500/10' : 'text-gray-500'}`}
-             >
+             <button key={sec} onClick={() => changeTime(sec)} className={`text-[10px] font-bold py-1 rounded hover:bg-white/10 ${totalTime === sec ? 'text-red-500 bg-red-500/10' : 'text-gray-500'}`}>
                {sec}s
              </button>
           ))}
@@ -301,7 +352,7 @@ const StatCard = ({ label, value, icon }: { label: string, value: string | numbe
   </div>
 );
 
-// --- ACTIVE WORKOUT EXERCISE CARD ---
+// --- EXERCISE CARD ---
 
 interface ExerciseCardProps {
   exercise: WorkoutExercise;
@@ -311,6 +362,7 @@ interface ExerciseCardProps {
   onShowVideo: (name: string) => void;
   mode: 'coach' | 'athlete';
   onSetComplete: (restSeconds?: number) => void;
+  history?: any[]; // Historial pasado
 }
 
 const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
@@ -320,11 +372,25 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   userId, 
   onShowVideo, 
   mode,
-  onSetComplete 
+  onSetComplete,
+  history
 }) => {
   const [logs, setLogs] = useState<WorkoutProgress>({});
   
-  // Cargar logs al montar
+  // Encontrar el último peso registrado para este ejercicio en el historial
+  // (Nota: Esto es una búsqueda simplificada basada en el índice, idealmente usaría IDs persistentes)
+  const lastSessionData = useMemo(() => {
+      if(!history || history.length === 0) return null;
+      // Buscar la sesión más reciente que tenga datos para este índice de ejercicio
+      const lastSession = history[0]; // La primera es la más reciente
+      if(lastSession.logs && lastSession.logs[index]) {
+          const sets = lastSession.logs[index] as SetEntry[];
+          // Retornar el peso del mejor set o el último
+          if(sets.length > 0) return sets[sets.length-1];
+      }
+      return null;
+  }, [history, index]);
+
   useEffect(() => {
     if (mode === 'athlete') {
       const savedLogs = DataEngine.getWorkoutLog(userId, workoutId);
@@ -343,7 +409,6 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
     
     DataEngine.saveSetLog(userId, workoutId, index, entry);
     
-    // Update local state for UI feedback
     const currentExLogs = logs[index] || [];
     const newExLogs = [...currentExLogs];
     const existingIdx = newExLogs.findIndex(s => s.setNumber === setNum);
@@ -351,10 +416,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
     
     setLogs({...logs, [index]: newExLogs});
 
-    if (isCompleted) {
-        // Pasamos el tiempo de descanso definido por el coach, o undefined si no hay
-        onSetComplete(exercise.targetRest);
-    }
+    if (isCompleted) onSetComplete(exercise.targetRest);
   };
 
   const setsArray = Array.from({ length: exercise.targetSets }, (_, i) => i + 1);
@@ -369,20 +431,31 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
           </div>
           <div>
             <h3 className="font-bold text-lg text-white leading-tight">{exercise.name}</h3>
-            <div className="flex flex-wrap gap-2 mt-2">
+            
+            {/* Coach Target & Safety Info */}
+            <div className="flex flex-wrap gap-2 mt-2 items-center">
                 {exercise.targetLoad && (
-                <div className="inline-flex items-center gap-1.5 bg-yellow-500/10 px-2 py-1 rounded-md border border-yellow-500/20">
-                    <Dumbbell size={12} className="text-yellow-500" />
+                <div className="inline-flex items-center gap-1.5 bg-yellow-500/10 px-2 py-1 rounded-md border border-yellow-500/20" title="Carga asignada por el Coach">
+                    <ShieldAlert size={12} className="text-yellow-500" />
                     <span className="text-xs font-bold text-yellow-500 uppercase tracking-wide">Meta: {exercise.targetLoad}</span>
                 </div>
                 )}
-                {exercise.targetRest && (
-                <div className="inline-flex items-center gap-1.5 bg-blue-500/10 px-2 py-1 rounded-md border border-blue-500/20">
-                    <TimerIcon size={12} className="text-blue-500" />
-                    <span className="text-xs font-bold text-blue-500 uppercase tracking-wide">Descanso: {exercise.targetRest}s</span>
-                </div>
+                {/* Visualización de historial */}
+                {lastSessionData && (
+                    <div className="inline-flex items-center gap-1.5 bg-gray-800 px-2 py-1 rounded-md border border-white/5">
+                        <History size={12} className="text-gray-400" />
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Prev: {lastSessionData.weight}kg</span>
+                    </div>
                 )}
             </div>
+
+            {exercise.targetRest && (
+                <div className="flex items-center gap-1.5 mt-1">
+                    <TimerIcon size={12} className="text-blue-500" />
+                    <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Descanso: {exercise.targetRest}s</span>
+                </div>
+            )}
+            
             {exercise.coachCue && (
               <div className="flex items-start gap-1.5 mt-2 text-xs text-blue-300">
                 <Info size={12} className="mt-0.5 shrink-0" />
@@ -400,7 +473,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
         <div className="space-y-2 mt-4 bg-black/20 p-3 rounded-xl border border-white/5">
            <div className="grid grid-cols-10 gap-2 text-[10px] text-gray-500 uppercase font-bold text-center mb-1">
               <div className="col-span-1">Set</div>
-              <div className="col-span-3">Kg (Real)</div>
+              <div className="col-span-3">Kg</div>
               <div className="col-span-3">Reps</div>
               <div className="col-span-3">Check</div>
            </div>
@@ -408,19 +481,23 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
              const log = exerciseLogs.find(l => l.setNumber === setNum);
              const isDone = log?.completed;
              
+             // Safety Check: Si el usuario pone más peso del target
+             const isOverloading = exercise.targetLoad && log?.weight && parseFloat(log.weight) > parseFloat(exercise.targetLoad) * 1.1;
+
              return (
                <div key={setNum} className={`grid grid-cols-10 gap-2 items-center transition-all ${isDone ? 'opacity-50' : 'opacity-100'}`}>
                  <div className="col-span-1 flex justify-center">
                     <span className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400">{setNum}</span>
                  </div>
-                 <div className="col-span-3">
+                 <div className="col-span-3 relative">
                     <input 
                       type="text" 
                       inputMode="decimal"
+                      // Placeholder es la META del coach (seguridad), no el historial
                       placeholder={exercise.targetLoad || "-"}
                       defaultValue={log?.weight || ''}
                       onBlur={(e) => handleLogSet(setNum, e.target.value, log?.reps || exercise.targetReps, !!isDone)}
-                      className="w-full bg-[#1A1A1D] border border-white/10 rounded-md py-1.5 px-1 text-center text-xs font-bold text-yellow-400 focus:border-yellow-500 outline-none placeholder-gray-700"
+                      className={`w-full bg-[#1A1A1D] border ${isOverloading ? 'border-red-500 text-red-500' : 'border-white/10 text-yellow-400'} rounded-md py-1.5 px-1 text-center text-xs font-bold focus:border-yellow-500 outline-none placeholder-gray-700`}
                     />
                  </div>
                  <div className="col-span-3">
@@ -469,15 +546,62 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
 const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'athlete' }) => {
   const [showVideo, setShowVideo] = useState<string | null>(null);
   const [showTimer, setShowTimer] = useState(false);
-  const [currentRestTime, setCurrentRestTime] = useState(60); // Default 60s
+  const [currentRestTime, setCurrentRestTime] = useState(60);
+  const [finishScreen, setFinishScreen] = useState<any | null>(null);
   
+  // Cargar historial para mostrar referencias
+  const history = useMemo(() => {
+     if(mode === 'athlete') return DataEngine.getClientHistory(plan.userId);
+     return [];
+  }, [plan.userId, mode]);
+
   const handleSetComplete = useCallback((restSeconds?: number) => {
-     setCurrentRestTime(restSeconds || 60); // Usa el tiempo del coach o 60s por defecto
+     setCurrentRestTime(restSeconds || 60);
      setShowTimer(true);
   }, []);
 
+  const handleFinishWorkout = (workout: Workout) => {
+     if(confirm("¿Has completado tu sesión? Esto guardará tu progreso en el historial.")) {
+         const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
+         const session = DataEngine.archiveWorkout(plan.userId, workout, logs);
+         setFinishScreen(session);
+         // Forzar actualización de UI para limpiar inputs (usando reload suave o state reset)
+         // En React puro, idealmente resetearíamos keys, pero por simplicidad de este archivo único:
+         setTimeout(() => window.dispatchEvent(new Event('storage-update')), 500);
+     }
+  };
+
+  if (finishScreen) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in space-y-6">
+              <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.5)] mb-4">
+                  <Trophy size={48} className="text-black ml-1" />
+              </div>
+              <div>
+                  <h2 className="text-4xl font-display font-black italic text-white">¡SESIÓN COMPLETADA!</h2>
+                  <p className="text-gray-400 mt-2">Buen trabajo, {MOCK_USER.name.split(' ')[0]}.</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 w-full max-w-sm mt-8">
+                  <div className="bg-[#0F0F11] border border-white/10 p-4 rounded-xl">
+                      <div className="text-3xl font-bold text-white">{finishScreen.summary.exercisesCompleted}</div>
+                      <div className="text-[10px] uppercase text-gray-500 font-bold">Ejercicios</div>
+                  </div>
+                  <div className="bg-[#0F0F11] border border-white/10 p-4 rounded-xl">
+                      <div className="text-3xl font-bold text-white">{(finishScreen.summary.totalVolume / 1000).toFixed(1)}k</div>
+                      <div className="text-[10px] uppercase text-gray-500 font-bold">Volumen (Kg)</div>
+                  </div>
+              </div>
+
+              <button onClick={() => setFinishScreen(null)} className="mt-8 bg-white text-black px-8 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">
+                  VOLVER AL DASHBOARD
+              </button>
+          </div>
+      )
+  }
+
   return (
-    <div className="space-y-6 animate-fade-in relative">
+    <div className="space-y-6 animate-fade-in relative pb-20">
       <div className="flex items-center justify-between sticky top-0 bg-[#050507]/90 backdrop-blur-xl z-30 py-4 border-b border-white/5">
         <h2 className="text-xl font-bold flex items-center gap-2 text-white">
           <CalendarDays size={20} className="text-red-500" />
@@ -505,8 +629,18 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                    onShowVideo={setShowVideo} 
                    mode={mode}
                    onSetComplete={handleSetComplete}
+                   history={history}
                 />
              ))}
+             
+             {mode === 'athlete' && (
+                 <button 
+                    onClick={() => handleFinishWorkout(workout)}
+                    className="w-full mt-4 bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-900/20 transition-all active:scale-[0.98]"
+                 >
+                    <CheckCircle2 size={20} /> FINALIZAR ENTRENAMIENTO
+                 </button>
+             )}
           </div>
         ))}
       </div>
@@ -1103,15 +1237,15 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
   );
 };
 
-// --- CLIENT DETAIL VIEW ---
+// --- CLIENT DETAIL VIEW (UPDATED WITH HISTORY TAB) ---
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
   const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
   const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
+  const [history, setHistory] = useState<any[]>(DataEngine.getClientHistory(clientId));
   const [isGenerating, setIsGenerating] = useState(false);
   const [showManualBuilder, setShowManualBuilder] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'plan' | 'history'>('plan');
 
-  // Poll for updates if needed, currently manual
-  
   if (!client) return <div className="p-8 text-center">Atleta no encontrado.</div>;
 
   const handleGenerateAI = async () => {
@@ -1189,35 +1323,73 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
           </div>
        </div>
 
-       {plan ? (
-         <div className="space-y-4">
-            <div className="flex justify-between items-center px-2">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Trophy size={18} className="text-yellow-500"/> Plan Asignado</h3>
-              <button onClick={handleGenerateAI} disabled={isGenerating} className="text-xs font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 transition-all flex items-center gap-2">
-                 {isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} REGENERAR IA
-              </button>
-            </div>
-            <PlanViewer plan={plan} mode="coach" />
-         </div>
-       ) : (
-         <div className="py-16 border border-dashed border-white/10 rounded-3xl bg-[#0F0F11]/50 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-                <BrainCircuit size={32} className="text-gray-500" />
-            </div>
-            <h3 className="text-xl font-bold mb-2 text-white">Sin Protocolo Activo</h3>
-            <p className="text-gray-500 mb-8 max-w-sm">Este atleta aún no tiene un plan de entrenamiento asignado.</p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md px-4">
-               <button onClick={handleGenerateAI} disabled={isGenerating} className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all text-white">
-                  {isGenerating ? <Loader2 size={20} className="animate-spin"/> : <Sparkles size={20} />}
-                  GENERAR CON IA
-               </button>
-               <button onClick={() => setShowManualBuilder(true)} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-white">
-                  <Pencil size={20} />
-                  CREAR MANUAL
-               </button>
-            </div>
-         </div>
+       {/* Sub-tabs */}
+       <div className="flex border-b border-white/10 gap-6">
+           <button onClick={() => setActiveSubTab('plan')} className={`pb-3 text-sm font-bold transition-colors ${activeSubTab === 'plan' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Protocolo Activo</button>
+           <button onClick={() => setActiveSubTab('history')} className={`pb-3 text-sm font-bold transition-colors ${activeSubTab === 'history' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Historial ({history.length})</button>
+       </div>
+
+       {activeSubTab === 'plan' && (
+           plan ? (
+             <div className="space-y-4 animate-fade-in">
+                <div className="flex justify-between items-center px-2">
+                  <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Trophy size={18} className="text-yellow-500"/> Plan Asignado</h3>
+                  <button onClick={handleGenerateAI} disabled={isGenerating} className="text-xs font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 transition-all flex items-center gap-2">
+                     {isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} REGENERAR IA
+                  </button>
+                </div>
+                <PlanViewer plan={plan} mode="coach" />
+             </div>
+           ) : (
+             <div className="py-16 border border-dashed border-white/10 rounded-3xl bg-[#0F0F11]/50 flex flex-col items-center justify-center text-center animate-fade-in">
+                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                    <BrainCircuit size={32} className="text-gray-500" />
+                </div>
+                <h3 className="text-xl font-bold mb-2 text-white">Sin Protocolo Activo</h3>
+                <p className="text-gray-500 mb-8 max-w-sm">Este atleta aún no tiene un plan de entrenamiento asignado.</p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md px-4">
+                   <button onClick={handleGenerateAI} disabled={isGenerating} className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all text-white">
+                      {isGenerating ? <Loader2 size={20} className="animate-spin"/> : <Sparkles size={20} />}
+                      GENERAR CON IA
+                   </button>
+                   <button onClick={() => setShowManualBuilder(true)} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-white">
+                      <Pencil size={20} />
+                      CREAR MANUAL
+                   </button>
+                </div>
+             </div>
+           )
+       )}
+
+       {activeSubTab === 'history' && (
+           <div className="space-y-4 animate-fade-in">
+               {history.length === 0 ? (
+                   <div className="text-center py-10 text-gray-500">No hay sesiones registradas aún.</div>
+               ) : (
+                   history.map((session, idx) => (
+                       <div key={idx} className="bg-[#0F0F11] border border-white/5 rounded-2xl p-4">
+                           <div className="flex justify-between items-center mb-2 border-b border-white/5 pb-2">
+                               <span className="font-bold text-white">{session.workoutName}</span>
+                               <span className="text-xs text-gray-500">{formatDate(session.date)}</span>
+                           </div>
+                           <div className="grid grid-cols-2 gap-4 text-xs mb-2">
+                               <div>
+                                   <span className="text-gray-500">Ejercicios:</span> <span className="text-white font-bold">{session.summary.exercisesCompleted}</span>
+                               </div>
+                               <div>
+                                   <span className="text-gray-500">Volumen:</span> <span className="text-white font-bold">{(session.summary.totalVolume).toLocaleString()} kg</span>
+                               </div>
+                           </div>
+                           <div className="mt-3 flex justify-end">
+                               <button className="text-xs text-red-500 font-bold flex items-center gap-1 hover:underline">
+                                   <ClipboardList size={14} /> Ver Detalles Completos
+                               </button>
+                           </div>
+                       </div>
+                   ))
+               )}
+           </div>
        )}
     </div>
   );
