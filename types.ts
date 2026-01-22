@@ -13,6 +13,12 @@ export enum UserLevel {
 
 export type UserRole = 'coach' | 'client' | 'admin';
 
+export interface SystemConfig {
+  appName: string;
+  logoUrl: string; // URL de la imagen
+  themeColor: string;
+}
+
 export interface User {
   id: string;
   name: string;

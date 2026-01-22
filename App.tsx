@@ -7,12 +7,12 @@ import {
   Timer as TimerIcon, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
-  MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp
+  MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
 } from 'recharts';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, SystemConfig } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabase, supabaseConnectionStatus } from './services/supabaseClient';
@@ -35,8 +35,15 @@ const formatDate = (isoString: string) => {
 
 // --- SYSTEM CONSTANTS ---
 const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
+const ADMIN_UUID = 'a1b2c3d4-0000-0000-0000-admin0000001';
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V3'; 
 const SESSION_KEY = 'KINETIX_SESSION_PRO_V3';
+
+const DEFAULT_CONFIG: SystemConfig = {
+    appName: 'KINETIX',
+    logoUrl: '', // String vacío usa la K por defecto
+    themeColor: '#ef4444'
+};
 
 // --- DATA ENGINE ---
 const DataEngine = {
@@ -53,9 +60,52 @@ const DataEngine = {
     } catch (e) { console.error("Storage Limit Reached", e); }
   },
   
+  getConfig: (): SystemConfig => {
+      const s = DataEngine.getStore();
+      return s.CONFIG ? JSON.parse(s.CONFIG) : DEFAULT_CONFIG;
+  },
+
+  saveConfig: (config: SystemConfig) => {
+      const s = DataEngine.getStore();
+      s.CONFIG = JSON.stringify(config);
+      DataEngine.saveStore(s);
+  },
+
   init: () => {
     const store = DataEngine.getStore();
-    if (!store.USERS) store.USERS = JSON.stringify([MOCK_USER]);
+    let users = store.USERS ? JSON.parse(store.USERS) : [];
+    let modified = false;
+
+    // 1. Ensure Client Exists
+    if (!users.find((u:User) => u.email === 'atleta@kinetix.com')) {
+        users.push(MOCK_USER);
+        modified = true;
+    }
+
+    // 2. Ensure Coach Exists (Fixing Login Issue)
+    if (!users.find((u:User) => u.email === 'coach@kinetix.com')) {
+        users.push({
+            id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com',
+            goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'coach',
+            daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString()
+        });
+        modified = true;
+    }
+
+    // 3. Ensure Admin Exists
+    if (!users.find((u:User) => u.email === 'admin@kinetix.com')) {
+        users.push({
+            id: ADMIN_UUID, name: 'ADMINISTRADOR', email: 'admin@kinetix.com',
+            goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'admin',
+            daysPerWeek: 0, equipment: [], streak: 0, createdAt: new Date().toISOString()
+        });
+        modified = true;
+    }
+
+    if(modified) {
+        store.USERS = JSON.stringify(users);
+        DataEngine.saveStore(store);
+    }
     
     // Merge Exercises
     const storedExercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
@@ -109,7 +159,6 @@ const DataEngine = {
   },
 
   pullFromCloud: async () => {
-    // Placeholder for Supabase logic
     return true;
   },
 
@@ -174,9 +223,8 @@ const DataEngine = {
         }
     });
 
-    // Detectar PRs simple (mejoras vs historial) - simplificado
+    // Detectar PRs simple
     if (currentHistory.length > 0) {
-        // Logica simple: Si el volumen total es mayor al promedio de las ultimas 3 sesiones
         const lastVol = currentHistory[0].summary.totalVolume;
         if(totalVolume > lastVol) prCount++;
     }
@@ -219,60 +267,34 @@ const DataEngine = {
 
 // --- COMPONENTS ---
 
-// 1. Plate Calculator Modal
-const PlateCalculator = ({ targetWeight, onClose }: { targetWeight: number, onClose: () => void }) => {
-  const barWeight = 20; // Barra olímpica estándar
-  const plates = [20, 15, 10, 5, 2.5];
-  
-  const calculatePlates = () => {
-    let weightPerSide = (targetWeight - barWeight) / 2;
-    if (weightPerSide <= 0) return [];
+const BrandingLogo = ({ className = "w-8 h-8", textSize = "text-xl", showText = true }: { className?: string, textSize?: string, showText?: boolean }) => {
+    const [config, setConfig] = useState(DataEngine.getConfig());
     
-    const result: number[] = [];
-    plates.forEach(plate => {
-      while (weightPerSide >= plate) {
-        result.push(plate);
-        weightPerSide -= plate;
-      }
-    });
-    return result;
-  };
+    useEffect(() => {
+        const update = () => setConfig(DataEngine.getConfig());
+        window.addEventListener('storage-update', update);
+        return () => window.removeEventListener('storage-update', update);
+    }, []);
 
-  const calculated = calculatePlates();
+    return (
+        <div className="flex items-center gap-2">
+            {config.logoUrl ? (
+                <img src={config.logoUrl} alt="Logo" className={`${className} object-contain rounded-lg`} />
+            ) : (
+                <div className={`${className} bg-red-600 rounded-lg flex items-center justify-center font-display italic font-bold shadow-lg shadow-red-900/40 text-white`}>
+                    {config.appName.charAt(0)}
+                </div>
+            )}
+            {showText && (
+                <span className={`font-display font-bold italic tracking-tighter ${textSize} text-white`}>
+                    {config.appName.toUpperCase()}
+                </span>
+            )}
+        </div>
+    );
+}
 
-  return (
-    <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-       <div className="bg-[#1A1A1D] border border-white/10 rounded-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
-          <h3 className="text-xl font-bold text-white mb-2">Calculadora de Discos</h3>
-          <p className="text-gray-400 text-sm mb-6">Para {targetWeight}kg (Barra 20kg)</p>
-          
-          <div className="flex items-center justify-center gap-1 mb-8">
-             <div className="h-4 w-10 bg-gray-500 rounded-sm"></div> {/* Barra */}
-             {calculated.length === 0 ? <span className="text-xs text-gray-600">Solo Barra</span> : calculated.map((plate, idx) => (
-                <div key={idx} className={`h-12 w-3 rounded-sm border border-black/50 ${
-                    plate === 20 ? 'bg-blue-600 h-16' : 
-                    plate === 15 ? 'bg-yellow-500 h-14' : 
-                    plate === 10 ? 'bg-green-600 h-12' : 
-                    plate === 5 ? 'bg-white h-10' : 'bg-red-500 h-8'
-                }`} title={`${plate}kg`}></div>
-             ))}
-             <div className="h-4 w-4 bg-gray-500 rounded-sm"></div> {/* Tope */}
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-left bg-black/20 p-4 rounded-xl">
-              <span className="text-xs text-gray-500 uppercase font-bold">Por lado:</span>
-              <div className="flex flex-wrap gap-1">
-                 {calculated.map((p, i) => <span key={i} className="text-xs font-bold text-white bg-white/10 px-1.5 rounded">{p}</span>)}
-              </div>
-          </div>
-          
-          <button onClick={onClose} className="mt-6 w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-colors">Cerrar</button>
-       </div>
-    </div>
-  );
-};
-
-// 2. Chatbot Component
+// 2. Chatbot Component (Mobile Fix)
 const AIChatbot = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<{role: 'user'|'ai', text: string}[]>([]);
@@ -306,45 +328,59 @@ const AIChatbot = () => {
 
     return (
         <>
-           <button onClick={() => setIsOpen(true)} className="fixed bottom-24 right-4 z-40 p-4 bg-blue-600 rounded-full shadow-2xl shadow-blue-600/40 text-white hover:scale-110 transition-transform">
+           <button 
+             onClick={() => setIsOpen(true)} 
+             className="fixed bottom-24 right-4 md:bottom-8 md:right-8 z-[100] p-4 bg-blue-600 rounded-full shadow-2xl shadow-blue-600/40 text-white hover:scale-110 transition-transform active:scale-95"
+           >
                <MessageSquare size={24} />
            </button>
 
            {isOpen && (
-               <div className="fixed bottom-24 right-4 z-50 w-80 md:w-96 h-[400px] bg-[#111] border border-white/20 rounded-2xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden">
-                   <div className="bg-[#1A1A1D] p-3 flex justify-between items-center border-b border-white/10">
-                       <h3 className="font-bold text-white flex items-center gap-2"><Sparkles size={16} className="text-blue-500"/> Kinetix AI</h3>
-                       <button onClick={() => setIsOpen(false)}><X size={18} className="text-gray-400 hover:text-white"/></button>
-                   </div>
-                   <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/50">
-                       {messages.length === 0 && <div className="text-xs text-gray-500 text-center mt-10">Pregunta sobre técnica, sustituciones o consejos rápidos.</div>}
-                       {messages.map((m, i) => (
-                           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                               <div className={`max-w-[80%] p-2 rounded-xl text-xs leading-relaxed ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-[#222] text-gray-200 rounded-tl-none border border-white/5'}`}>
-                                   {m.text}
+               <div className="fixed inset-0 z-[101] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                   <div className="w-full max-w-md h-[500px] bg-[#111] border border-white/20 rounded-2xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden relative">
+                       <div className="bg-[#1A1A1D] p-4 flex justify-between items-center border-b border-white/10">
+                           <h3 className="font-bold text-white flex items-center gap-2"><Sparkles size={16} className="text-blue-500"/> Kinetix AI</h3>
+                           <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/10 rounded-full"><X size={20} className="text-gray-400 hover:text-white"/></button>
+                       </div>
+                       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/50">
+                           {messages.length === 0 && (
+                               <div className="text-center mt-10 space-y-2">
+                                   <div className="w-12 h-12 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto text-blue-500 mb-2"><BrainCircuit size={24}/></div>
+                                   <p className="text-sm font-bold text-white">Asistente Técnico</p>
+                                   <p className="text-xs text-gray-500 max-w-[200px] mx-auto">Pregunta sobre técnica, sustituciones o consejos rápidos.</p>
                                </div>
-                           </div>
-                       ))}
-                       {isLoading && <div className="text-xs text-gray-500 animate-pulse">Escribiendo...</div>}
-                       <div ref={messagesEndRef} />
-                   </div>
-                   <div className="p-2 border-t border-white/10 bg-[#1A1A1D] flex gap-2">
-                       <input 
-                         value={input}
-                         onChange={e => setInput(e.target.value)}
-                         onKeyDown={e => e.key === 'Enter' && handleSend()}
-                         placeholder="Escribe tu duda..."
-                         className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                       />
-                       <button onClick={handleSend} disabled={isLoading} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 text-blue-400">
-                           <Send size={16} />
-                       </button>
+                           )}
+                           {messages.map((m, i) => (
+                               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                   <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-[#222] text-gray-200 rounded-tl-none border border-white/5'}`}>
+                                       {m.text}
+                                   </div>
+                               </div>
+                           ))}
+                           {isLoading && <div className="text-xs text-gray-500 animate-pulse ml-2">Escribiendo...</div>}
+                           <div ref={messagesEndRef} />
+                       </div>
+                       <div className="p-3 border-t border-white/10 bg-[#1A1A1D] flex gap-2">
+                           <input 
+                             value={input}
+                             onChange={e => setInput(e.target.value)}
+                             onKeyDown={e => e.key === 'Enter' && handleSend()}
+                             placeholder="Escribe tu duda..."
+                             className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
+                             autoFocus
+                           />
+                           <button onClick={handleSend} disabled={isLoading} className="p-3 bg-blue-600/20 rounded-xl hover:bg-blue-600/30 text-blue-500 transition-colors">
+                               <Send size={18} />
+                           </button>
+                       </div>
                    </div>
                </div>
            )}
         </>
     );
 };
+
+// ... (RestTimer, ConnectionStatus, NavButton, StatCard, PlateCalculator remain the same)
 
 const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSeconds?: number, onComplete?: () => void, onClose: () => void }) => {
   const [timeLeft, setTimeLeft] = useState(initialSeconds);
@@ -452,6 +488,58 @@ const StatCard = ({ label, value, icon }: { label: string, value: string | numbe
      <span className="text-2xl font-bold font-display truncate">{value}</span>
   </div>
 );
+
+const PlateCalculator = ({ targetWeight, onClose }: { targetWeight: number, onClose: () => void }) => {
+  const barWeight = 20; 
+  const plates = [20, 15, 10, 5, 2.5];
+  
+  const calculatePlates = () => {
+    let weightPerSide = (targetWeight - barWeight) / 2;
+    if (weightPerSide <= 0) return [];
+    
+    const result: number[] = [];
+    plates.forEach(plate => {
+      while (weightPerSide >= plate) {
+        result.push(plate);
+        weightPerSide -= plate;
+      }
+    });
+    return result;
+  };
+
+  const calculated = calculatePlates();
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+       <div className="bg-[#1A1A1D] border border-white/10 rounded-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+          <h3 className="text-xl font-bold text-white mb-2">Calculadora de Discos</h3>
+          <p className="text-gray-400 text-sm mb-6">Para {targetWeight}kg (Barra 20kg)</p>
+          
+          <div className="flex items-center justify-center gap-1 mb-8">
+             <div className="h-4 w-10 bg-gray-500 rounded-sm"></div> 
+             {calculated.length === 0 ? <span className="text-xs text-gray-600">Solo Barra</span> : calculated.map((plate, idx) => (
+                <div key={idx} className={`h-12 w-3 rounded-sm border border-black/50 ${
+                    plate === 20 ? 'bg-blue-600 h-16' : 
+                    plate === 15 ? 'bg-yellow-500 h-14' : 
+                    plate === 10 ? 'bg-green-600 h-12' : 
+                    plate === 5 ? 'bg-white h-10' : 'bg-red-500 h-8'
+                }`} title={`${plate}kg`}></div>
+             ))}
+             <div className="h-4 w-4 bg-gray-500 rounded-sm"></div> 
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-left bg-black/20 p-4 rounded-xl">
+              <span className="text-xs text-gray-500 uppercase font-bold">Por lado:</span>
+              <div className="flex flex-wrap gap-1">
+                 {calculated.map((p, i) => <span key={i} className="text-xs font-bold text-white bg-white/10 px-1.5 rounded">{p}</span>)}
+              </div>
+          </div>
+          
+          <button onClick={onClose} className="mt-6 w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-colors">Cerrar</button>
+       </div>
+    </div>
+  );
+};
 
 
 // --- EXERCISE CARD (ELITE VERSION) ---
@@ -793,12 +881,8 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
     
     if (user) {
       onLogin(user);
-    } else if (email === 'admin' || email === 'coach') {
-        // Fallback for demo if coach user missing
-        const coachUser: User = { ...MOCK_USER, id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com', role: 'coach' };
-        onLogin(coachUser);
     } else {
-      setError('Usuario no encontrado. Prueba: atleta@kinetix.com');
+      setError('Usuario no encontrado. Intenta: coach@kinetix.com o admin@kinetix.com');
     }
   };
 
@@ -809,7 +893,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
         
         <div className="w-full max-w-md bg-[#0F0F11]/80 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-2xl relative z-10 animate-fade-in-up">
             <div className="text-center mb-10">
-                <h1 className="text-5xl font-display font-black italic text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-white mb-2">KINETIX</h1>
+                <BrandingLogo className="w-16 h-16 mx-auto mb-4" textSize="text-3xl" />
                 <p className="text-gray-500 tracking-[0.3em] text-xs font-bold uppercase">Elite Performance System</p>
             </div>
 
@@ -822,7 +906,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
                             type="text" 
                             value={email}
                             onChange={e => setEmail(e.target.value)}
-                            placeholder="usuario@kinetix.com"
+                            placeholder="tu@email.com"
                             className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-red-500 outline-none transition-all placeholder-gray-700 font-medium"
                         />
                     </div>
@@ -836,10 +920,11 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
             </form>
             
             <div className="mt-8 text-center">
-                 <p className="text-xs text-gray-600">Demo Access:</p>
-                 <div className="flex justify-center gap-2 mt-2">
+                 <p className="text-xs text-gray-600">Accesos Directos (Demo):</p>
+                 <div className="flex justify-center gap-2 mt-2 flex-wrap">
                      <button onClick={() => setEmail('atleta@kinetix.com')} className="text-[10px] bg-white/5 hover:bg-white/10 px-2 py-1 rounded text-gray-400">Atleta</button>
                      <button onClick={() => setEmail('coach@kinetix.com')} className="text-[10px] bg-white/5 hover:bg-white/10 px-2 py-1 rounded text-gray-400">Coach</button>
+                     <button onClick={() => setEmail('admin@kinetix.com')} className="text-[10px] bg-red-900/20 border border-red-500/20 hover:bg-red-900/30 px-2 py-1 rounded text-red-500">Admin</button>
                  </div>
             </div>
         </div>
@@ -847,7 +932,102 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
   );
 };
 
-// --- CLIENTS VIEW ---
+// --- ADMIN VIEW (New Command Center) ---
+const AdminView = () => {
+    const [config, setConfig] = useState(DataEngine.getConfig());
+    const [users, setUsers] = useState(DataEngine.getUsers());
+
+    const handleSaveConfig = () => {
+        DataEngine.saveConfig(config);
+        alert('Configuración guardada. La marca se actualizará en toda la app.');
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in pb-24">
+            <h2 className="text-3xl font-bold font-display italic text-white flex items-center gap-2">
+                <Shield className="text-red-500" /> COMMAND CENTER
+            </h2>
+
+            <div className="grid md:grid-cols-2 gap-6">
+                {/* Branding Section */}
+                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Palette size={18}/> Identidad de Marca</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-xs text-gray-500 font-bold uppercase block mb-1">Nombre de la App</label>
+                            <input 
+                                value={config.appName}
+                                onChange={e => setConfig({...config, appName: e.target.value})}
+                                className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-500 font-bold uppercase block mb-1">URL del Logo (Imagen)</label>
+                            <input 
+                                value={config.logoUrl}
+                                onChange={e => setConfig({...config, logoUrl: e.target.value})}
+                                placeholder="https://..."
+                                className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white text-sm"
+                            />
+                            <p className="text-[10px] text-gray-600 mt-1">Deja vacío para usar el logo por defecto.</p>
+                        </div>
+                        
+                        <div className="pt-2">
+                            <p className="text-xs text-gray-500 font-bold uppercase mb-2">Previsualización:</p>
+                            <div className="bg-black p-4 rounded-xl border border-white/5 flex justify-center">
+                                <div className="flex items-center gap-2">
+                                    {config.logoUrl ? (
+                                        <img src={config.logoUrl} className="w-10 h-10 object-contain rounded" />
+                                    ) : (
+                                        <div className="w-10 h-10 bg-red-600 rounded flex items-center justify-center font-bold text-white shadow-lg shadow-red-900/40">
+                                            {config.appName.charAt(0)}
+                                        </div>
+                                    )}
+                                    <span className="font-display font-bold italic text-xl">{config.appName.toUpperCase()}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onClick={handleSaveConfig} className="w-full bg-white text-black font-bold py-3 rounded-xl hover:bg-gray-200 mt-2">
+                            GUARDAR CAMBIOS
+                        </button>
+                    </div>
+                </div>
+
+                {/* System Stats / Users */}
+                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Users size={18}/> Usuarios del Sistema</h3>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                        {users.map(u => (
+                            <div key={u.id} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
+                                <div>
+                                    <div className="font-bold text-sm">{u.name}</div>
+                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                </div>
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${
+                                    u.role === 'admin' ? 'bg-red-900/30 text-red-500' : 
+                                    u.role === 'coach' ? 'bg-blue-900/30 text-blue-500' : 
+                                    'bg-green-900/30 text-green-500'
+                                }`}>{u.role}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-4 p-4 bg-yellow-900/10 border border-yellow-500/20 rounded-xl">
+                        <p className="text-xs text-yellow-500 font-bold flex items-center gap-2">
+                            <ShieldAlert size={14}/> Nota de Seguridad
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                            Como Administrador, tienes acceso total. Los cambios de marca afectan a todos los usuarios inmediatamente.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ... (ClientsView, ClientDetailView, WorkoutsView, ProfileView remain the same)
+// Re-inserting ClientsView for context completeness in XML
 const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void }) => {
   const [clients, setClients] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -870,7 +1050,7 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
           level: formData.get('level') as UserLevel,
           role: 'client',
           daysPerWeek: parseInt(formData.get('days') as string),
-          equipment: ['Gym Completo'], // Simplificado
+          equipment: ['Gym Completo'], 
           streak: 0,
           createdAt: new Date().toISOString()
       };
@@ -956,7 +1136,6 @@ const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void 
   );
 };
 
-// --- WORKOUTS VIEW (EXERCISES LIBRARY) ---
 const WorkoutsView = () => {
     const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
     const [filter, setFilter] = useState('');
@@ -1028,13 +1207,11 @@ const WorkoutsView = () => {
     );
 };
 
-// --- PROFILE VIEW (UPDATED WITH CHARTS) ---
 const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
     const history = DataEngine.getClientHistory(user.id);
     const [aiInsight, setAiInsight] = useState<string | null>(null);
     const [analyzing, setAnalyzing] = useState(false);
 
-    // Prepare chart data
     const chartData = useMemo(() => {
         return history.slice().reverse().map(h => ({
             date: new Date(h.date).toLocaleDateString('es-ES', {day: '2-digit', month: 'short'}),
@@ -1069,7 +1246,6 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
                 </div>
              </div>
 
-             {/* PROGRESS CHARTS */}
              {history.length > 0 && (
                  <div className="bg-[#0F0F11] rounded-2xl p-6 border border-white/5">
                      <h3 className="font-bold text-lg text-white mb-4 flex items-center gap-2">
@@ -1121,81 +1297,6 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
              </button>
         </div>
     );
-};
-
-// --- DASHBOARD VIEW ---
-const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateToClients: () => void }) => {
-  const [plan, setPlan] = useState<Plan | null>(null);
-
-  useEffect(() => {
-    if (user.role === 'client') {
-      const p = DataEngine.getPlan(user.id);
-      setPlan(p);
-    }
-  }, [user]);
-
-  if (user.role === 'coach') {
-    const clients = DataEngine.getUsers().filter(u => u.role === 'client');
-    const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
-    
-    return (
-      <div className="space-y-6 animate-fade-in">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-           <StatCard label="Atletas" value={clients.length} icon={<Users size={20} className="text-blue-500" />} />
-           <StatCard label="Planes" value={activePlans} icon={<FileJson size={20} className="text-green-500" />} />
-           <StatCard label="Ejercicios" value={DataEngine.getExercises().length} icon={<Dumbbell size={20} className="text-yellow-500" />} />
-           <StatCard label="Sistema" value="ONLINE" icon={<Activity size={20} className="text-red-500" />} />
-        </div>
-        
-        <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
-          <h3 className="font-bold text-lg mb-4 text-white">Gestión Rápida</h3>
-          <div className="flex gap-4">
-             <button onClick={onNavigateToClients} className="bg-white/5 hover:bg-white/10 p-4 rounded-xl flex flex-col items-center gap-2 flex-1 transition-colors border border-white/5 group">
-                <div className="p-3 rounded-full bg-red-600/10 group-hover:bg-red-600/20 text-red-500 transition-colors">
-                  <UserPlus size={24} />
-                </div>
-                <span className="text-sm font-bold text-gray-300 group-hover:text-white">Nuevo Atleta</span>
-             </button>
-             <button className="bg-white/5 hover:bg-white/10 p-4 rounded-xl flex flex-col items-center gap-2 flex-1 transition-colors border border-white/5 group">
-                <div className="p-3 rounded-full bg-blue-600/10 group-hover:bg-blue-600/20 text-blue-500 transition-colors">
-                  <Settings size={24} />
-                </div>
-                <span className="text-sm font-bold text-gray-300 group-hover:text-white">Ajustes</span>
-             </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between border-b border-white/5 pb-6">
-         <div>
-           <h2 className="text-3xl font-bold font-display italic text-white">HOLA, {user.name.split(' ')[0]}</h2>
-           <p className="text-gray-500 text-sm font-medium tracking-wide">NO PAIN, NO GAIN.</p>
-         </div>
-         <div className="text-right bg-white/5 px-4 py-2 rounded-xl border border-white/5">
-           <div className="text-2xl font-bold text-red-500">{user.streak} <span className="text-xs text-gray-400 font-normal">DÍAS</span></div>
-           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Racha</p>
-         </div>
-      </div>
-
-      {plan ? (
-        <PlanViewer plan={plan} mode="athlete" />
-      ) : (
-        <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-           <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mb-6 animate-pulse">
-              <Clock size={40} className="text-gray-600" />
-           </div>
-           <h3 className="text-2xl font-bold mb-3 text-white">Plan en Construcción</h3>
-           <p className="text-gray-400 max-w-md mx-auto leading-relaxed">
-             Tu coach está diseñando tu protocolo personalizado. Recibirás una notificación cuando esté listo para entrenar.
-           </p>
-        </div>
-      )}
-    </div>
-  );
 };
 
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
@@ -1312,10 +1413,109 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
   );
 };
 
+const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateToClients: () => void }) => {
+  if (user.role === 'coach' || user.role === 'admin') {
+      const users = DataEngine.getUsers();
+      const clients = users.filter(u => u.role === 'client');
+      const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
+      
+      return (
+          <div className="space-y-6 animate-fade-in">
+              <div className="flex justify-between items-center">
+                 <div>
+                     <h2 className="text-3xl font-bold font-display italic text-white">DASHBOARD</h2>
+                     <p className="text-gray-500 text-sm">Resumen de operaciones</p>
+                 </div>
+                 <div className="text-right hidden md:block">
+                     <p className="text-xs text-gray-500 font-bold uppercase">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <StatCard label="Atletas Totales" value={clients.length} icon={<Users className="text-blue-500" size={20} />} />
+                  <StatCard label="Planes Activos" value={activePlans} icon={<Activity className="text-green-500" size={20} />} />
+                  <StatCard label="Ejercicios" value={DataEngine.getExercises().length} icon={<Dumbbell className="text-orange-500" size={20} />} />
+                  <StatCard label="Alertas" value="0" icon={<ShieldAlert className="text-red-500" size={20} />} />
+              </div>
+
+              <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="font-bold text-lg text-white">Acciones Rápidas</h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <button onClick={onNavigateToClients} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group">
+                           <div className="bg-red-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-red-500 mb-3 group-hover:scale-110 transition-transform">
+                               <UserPlus size={20}/>
+                           </div>
+                           <h4 className="font-bold text-white">Gestionar Atletas</h4>
+                           <p className="text-xs text-gray-500 mt-1">Ver lista, crear planes, asignar rutinas.</p>
+                       </button>
+                       <button className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group">
+                           <div className="bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-blue-500 mb-3 group-hover:scale-110 transition-transform">
+                               <Zap size={20}/>
+                           </div>
+                           <h4 className="font-bold text-white">Rutina Rápida</h4>
+                           <p className="text-xs text-gray-500 mt-1">Generar rutina express con IA.</p>
+                       </button>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  // Athlete Dashboard
+  const plan = DataEngine.getPlan(user.id);
+
+  return (
+      <div className="space-y-6 animate-fade-in">
+           <div className="flex justify-between items-center mb-2">
+               <div>
+                  <h2 className="text-3xl font-bold font-display italic text-white flex items-center gap-2">
+                      HOLA, {user.name.split(' ')[0]} <span className="text-2xl">👋</span>
+                  </h2>
+                  <p className="text-gray-500 text-sm">Tu evolución comienza hoy.</p>
+               </div>
+           </div>
+
+           {!plan ? (
+               <div className="bg-[#0F0F11] border border-white/5 rounded-3xl p-8 text-center flex flex-col items-center justify-center min-h-[400px]">
+                   <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                       <Dumbbell size={32} className="text-gray-500"/>
+                   </div>
+                   <h3 className="text-xl font-bold text-white mb-2">Sin Plan Asignado</h3>
+                   <p className="text-gray-400 max-w-md mx-auto mb-6">Tu coach aún no ha cargado tu protocolo de entrenamiento. Relájate, la fuerza llega con paciencia.</p>
+                   <button className="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm text-gray-300 transition-colors">
+                       Contactar Coach
+                   </button>
+               </div>
+           ) : (
+               <div className="bg-[#0F0F11] border border-white/5 rounded-3xl overflow-hidden relative">
+                  <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151518]">
+                      <div>
+                           <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                              <Trophy size={16} className="text-yellow-500"/> {plan.title}
+                           </h3>
+                           <p className="text-xs text-gray-500 mt-1">Plan Actual • Semana 1</p>
+                      </div>
+                      <div className="text-right">
+                           <div className="text-2xl font-bold font-display text-white">{user.streak} <span className="text-sm font-sans font-normal text-gray-500">días</span></div>
+                           <div className="text-[10px] uppercase font-bold text-green-500 flex items-center justify-end gap-1"><Flame size={10}/> Racha</div>
+                      </div>
+                  </div>
+                  
+                  <div className="p-4 md:p-6">
+                       <PlanViewer plan={plan} mode="athlete" />
+                  </div>
+               </div>
+           )}
+      </div>
+  );
+};
+
 // --- MAIN APP ---
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'workouts' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'workouts' | 'profile' | 'admin'>('dashboard');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [triggerUpdate, setTriggerUpdate] = useState(0); 
 
@@ -1355,9 +1555,8 @@ export default function App() {
       
       {/* HEADER MOBILE */}
       <header className="md:hidden flex items-center justify-between p-4 border-b border-white/5 bg-[#050507]/90 backdrop-blur-md sticky top-0 z-40">
-        <div className="flex items-center gap-2" onClick={() => setActiveTab('dashboard')}>
-           <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center font-display italic font-bold shadow-lg shadow-red-900/40">K</div>
-           <span className="font-display font-bold italic tracking-tighter">KINETIX</span>
+        <div onClick={() => setActiveTab('dashboard')}>
+           <BrandingLogo className="w-8 h-8" textSize="text-xl" />
         </div>
         <div className="flex items-center gap-3">
            {currentUser.role === 'coach' && (
@@ -1374,16 +1573,24 @@ export default function App() {
       {/* SIDEBAR DESKTOP */}
       <aside className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 border-r border-white/5 bg-[#050507]">
         <div className="p-8 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-          <h1 className="font-display text-3xl italic font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-white">KINETIX</h1>
-          <p className="text-xs text-gray-500 tracking-[0.3em] font-bold mt-1">ELITE ZONE</p>
+          <BrandingLogo className="w-8 h-8 mb-2" textSize="text-2xl" />
+          <p className="text-xs text-gray-500 tracking-[0.3em] font-bold mt-2">ELITE ZONE</p>
         </div>
         <nav className="flex-1 px-4 space-y-2">
           <NavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={20} />} label="Dashboard" />
-          {currentUser.role === 'coach' && (
+          
+          {(currentUser.role === 'coach' || currentUser.role === 'admin') && (
              <>
                 <NavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
                 <NavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />
              </>
+          )}
+
+          {currentUser.role === 'admin' && (
+              <div className="pt-4 mt-4 border-t border-white/5">
+                  <p className="px-4 text-[10px] text-gray-500 font-bold uppercase mb-2">Administración</p>
+                  <NavButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Shield size={20} />} label="Command Center" />
+              </div>
           )}
         </nav>
         <div className="p-4 border-t border-white/5">
@@ -1397,28 +1604,36 @@ export default function App() {
       <main className="md:ml-64 p-4 md:p-8 max-w-7xl mx-auto min-h-[calc(100vh-80px)]">
         {activeTab === 'dashboard' && <DashboardView user={currentUser} onNavigateToClients={() => setActiveTab(currentUser.role === 'coach' ? 'clients' : 'dashboard')} />}
         
-        {activeTab === 'clients' && currentUser.role === 'coach' && !selectedClientId && (
+        {(activeTab === 'clients' && (currentUser.role === 'coach' || currentUser.role === 'admin')) && !selectedClientId && (
           <ClientsView onSelectClient={navigateToClient} />
         )}
         
-        {activeTab === 'clients' && currentUser.role === 'coach' && selectedClientId && (
+        {(activeTab === 'clients' && (currentUser.role === 'coach' || currentUser.role === 'admin')) && selectedClientId && (
           <ClientDetailView clientId={selectedClientId} onBack={() => setSelectedClientId(null)} />
         )}
         
-        {activeTab === 'workouts' && currentUser.role === 'coach' && <WorkoutsView />}
+        {(activeTab === 'workouts' && (currentUser.role === 'coach' || currentUser.role === 'admin')) && <WorkoutsView />}
         
+        {activeTab === 'admin' && currentUser.role === 'admin' && <AdminView />}
+
         {activeTab === 'profile' && <ProfileView user={currentUser} onLogout={handleLogout} />}
       </main>
 
       {/* MOBILE NAV */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-t border-white/10 flex justify-around p-2 z-50 pb-safe shadow-2xl">
         <MobileNavButton active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedClientId(null); }} icon={<LayoutDashboard size={20} />} label="Inicio" />
-        {currentUser.role === 'coach' && (
+        
+        {(currentUser.role === 'coach' || currentUser.role === 'admin') && (
            <>
              <MobileNavButton active={activeTab === 'clients'} onClick={() => { setActiveTab('clients'); setSelectedClientId(null); }} icon={<Users size={20} />} label="Atletas" />
              <MobileNavButton active={activeTab === 'workouts'} onClick={() => setActiveTab('workouts')} icon={<Dumbbell size={20} />} label="Entreno" />
            </>
         )}
+        
+        {currentUser.role === 'admin' && (
+             <MobileNavButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Shield size={20} />} label="Admin" />
+        )}
+
         <MobileNavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<Menu size={20} />} label="Perfil" />
       </nav>
     </div>
