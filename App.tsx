@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -78,7 +77,6 @@ const DataEngine = {
       const s = DataEngine.getStore();
       const loaded = s.CONFIG ? JSON.parse(s.CONFIG) : {};
       
-      // CRITICAL FIX: Ensure Logo fallback if empty string or missing
       let logoUrl = loaded.logoUrl;
       if (!logoUrl || logoUrl.trim() === '') {
           logoUrl = OFFICIAL_LOGO_URL;
@@ -129,21 +127,17 @@ const DataEngine = {
     }
 
     // 2. STORAGE CLEANUP (Nuevo Feature)
-    // Limpieza automática para prevenir localStorage overflow
     const cleanUpLocalStorage = () => {
         try {
             const currentStore = DataEngine.getStore();
             let hasChanges = false;
-            // Iterar sobre claves de historial
             Object.keys(currentStore).forEach(key => {
                 if (key.startsWith('HISTORY_')) {
                     const history = JSON.parse(currentStore[key]);
-                    // MANTENER SOLO LAS ÚLTIMAS 50 SESIONES
                     if (history.length > 50) {
                         const trimmedHistory = history.slice(0, 50);
                         currentStore[key] = JSON.stringify(trimmedHistory);
                         hasChanges = true;
-                        console.log(`🧹 KINETIX CLEANUP: Historial purgado para ${key} (Manteniendo 50 recientes)`);
                     }
                 }
             });
@@ -155,19 +149,15 @@ const DataEngine = {
     cleanUpLocalStorage();
 
     // 3. BACKGROUND SYNC (Optimización de Nube)
-    // Intentamos traer datos reales de Supabase sin bloquear la UI
     if (supabaseConnectionStatus.isConfigured) {
         try {
-            // Sincronizar Usuarios
             const { data: dbUsers } = await supabase.from('users').select('*');
             if (dbUsers && dbUsers.length > 0) {
-                // Mapear DB a estructura local (snake_case a camelCase)
                 const mappedUsers = dbUsers.map((u: any) => ({
                     id: u.id, name: u.name, email: u.email, goal: u.goal, level: u.level,
                     role: u.role, daysPerWeek: u.days_per_week, equipment: u.equipment || [],
-                    streak: u.streak, createdAt: u.created_at, isActive: true // Asumimos activos si vienen de DB
+                    streak: u.streak, createdAt: u.created_at, isActive: true
                 }));
-                // Fusionar inteligentemente
                 const finalUsers = [...users];
                 mappedUsers.forEach((mu: User) => {
                     const idx = finalUsers.findIndex(fu => fu.id === mu.id);
@@ -176,7 +166,6 @@ const DataEngine = {
                 store.USERS = JSON.stringify(finalUsers);
             }
 
-            // Sincronizar Ejercicios
             const { data: dbExercises } = await supabase.from('exercises').select('*');
             if (dbExercises && dbExercises.length > 0) {
                 const mappedEx = dbExercises.map((e: any) => ({
@@ -218,8 +207,6 @@ const DataEngine = {
     current.push(exercise);
     s.EXERCISES = JSON.stringify(current);
     DataEngine.saveStore(s);
-
-    // Cloud Sync
     if (supabaseConnectionStatus.isConfigured) {
         await supabase.from('exercises').upsert({
             id: exercise.id, name: exercise.name, muscle_group: exercise.muscleGroup,
@@ -235,36 +222,23 @@ const DataEngine = {
   },
   
   savePlan: async (plan: Plan) => {
-    // 1. Guardado Local (Inmediato)
     const s = DataEngine.getStore();
     s[`PLAN_${plan.userId}`] = JSON.stringify(plan);
     DataEngine.saveStore(s);
-
-    // 2. Cloud Sync (Fondo)
     if (supabaseConnectionStatus.isConfigured) {
-        // Guardamos el plan maestro
         const { data: planData, error } = await supabase.from('plans').upsert({
             id: plan.id, title: plan.title, user_id: plan.userId, updated_at: new Date().toISOString()
         }).select();
-
-        if (!error && planData) {
-            // Nota: La sincronización completa de ejercicios del plan es compleja. 
-            // Para V12.5 guardamos la estructura relacional básica o JSON si la tabla lo permitiera.
-            // Por ahora, priorizamos que el plan EXISTA en la BD.
-        }
     }
   },
 
   saveUser: async (user: User) => {
-    // 1. Local
     const s = DataEngine.getStore();
     const users = JSON.parse(s.USERS || '[]');
     const idx = users.findIndex((u: User) => u.id === user.id);
     if (idx >= 0) users[idx] = user; else users.push(user);
     s.USERS = JSON.stringify(users);
     DataEngine.saveStore(s);
-
-    // 2. Cloud Sync (Vital para no perder usuarios)
     if (supabaseConnectionStatus.isConfigured) {
         await supabase.from('users').upsert({
             id: user.id, name: user.name, email: user.email, goal: user.goal,
@@ -281,14 +255,12 @@ const DataEngine = {
     s.USERS = JSON.stringify(users);
     delete s[`PLAN_${userId}`];
     DataEngine.saveStore(s);
-
     if (supabaseConnectionStatus.isConfigured) {
         await supabase.from('users').delete().eq('id', userId);
     }
   },
 
   saveSetLog: (userId: string, workoutId: string, exerciseIndex: number, setEntry: SetEntry) => {
-    // Solo local para rendimiento (Optimización Sports Science)
     const s = DataEngine.getStore();
     const key = `LOG_TEMP_${userId}_${workoutId}`;
     const currentLog: WorkoutProgress = s[key] ? JSON.parse(s[key]) : {};
@@ -306,7 +278,6 @@ const DataEngine = {
   },
 
   archiveWorkout: async (userId: string, workout: Workout, logs: WorkoutProgress, startTime: number) => {
-    // 1. Procesamiento Local
     const s = DataEngine.getStore();
     const historyKey = `HISTORY_${userId}`;
     const currentHistory = s[historyKey] ? JSON.parse(s[historyKey]) : [];
@@ -315,9 +286,15 @@ const DataEngine = {
     let totalVolume = 0;
     let prCount = 0;
     
-    // Cálculo de volumen para análisis
+    // Cálculo de volumen seguro
     Object.values(logs).flat().forEach(entry => { 
-        if(entry.completed) totalVolume += (parseFloat(entry.weight) || 0) * (parseFloat(entry.reps) || 0); 
+        if(entry.completed) {
+            const weight = parseFloat(entry.weight);
+            const reps = parseFloat(entry.reps);
+            const safeWeight = isNaN(weight) ? 0 : weight;
+            const safeReps = isNaN(reps) ? 0 : reps;
+            totalVolume += safeWeight * safeReps; 
+        }
     });
 
     const session = {
@@ -329,58 +306,48 @@ const DataEngine = {
     s[historyKey] = JSON.stringify(currentHistory);
     delete s[`LOG_TEMP_${userId}_${workout.id}`]; 
     
-    // Update streak
     const users = JSON.parse(s.USERS || '[]');
     const uIdx = users.findIndex((u:User) => u.id === userId);
     if(uIdx >= 0) { users[uIdx].streak += 1; s.USERS = JSON.stringify(users); }
     DataEngine.saveStore(s);
 
-    // 2. CLOUD ARCHIVING (CRÍTICO: NO PERDER HISTORIAL)
-    // Aquí es donde aseguramos que la data sobreviva
     if (supabaseConnectionStatus.isConfigured) {
         try {
-            // A. Guardar el Log General
             const { data: logData, error: logError } = await supabase.from('workout_logs').insert({
                 user_id: userId,
-                workout_id: workout.id, // Nota: Asume que el ID del workout existe o es UUID válido
+                workout_id: workout.id,
                 date: new Date().toISOString()
             }).select().single();
 
             if (!logError && logData) {
-                // B. Guardar los Sets individuales (Batch Insert para eficiencia)
                 const setsToInsert: any[] = [];
                 Object.keys(logs).forEach(exIdx => {
                     const exerciseId = workout.exercises[parseInt(exIdx)]?.exerciseId;
-                    // Solo guardamos si tenemos el ID del ejercicio
                     if (!exerciseId) return;
 
                     logs[parseInt(exIdx)].forEach(entry => {
                         if (entry.completed) {
+                            const w = parseFloat(entry.weight);
+                            const r = parseInt(entry.reps);
                             setsToInsert.push({
                                 log_id: logData.id,
-                                exercise_id: exerciseId, // Debe coincidir con ID en tabla exercises
-                                weight: parseFloat(entry.weight) || 0,
-                                reps: parseInt(entry.reps) || 0,
+                                exercise_id: exerciseId,
+                                weight: isNaN(w) ? 0 : w,
+                                reps: isNaN(r) ? 0 : r,
                                 done: true
                             });
                         }
                     });
                 });
-
                 if (setsToInsert.length > 0) {
                     await supabase.from('set_logs').insert(setsToInsert);
                 }
             }
-            // Update user streak in cloud
             await supabase.from('users').update({ streak: users[uIdx].streak }).eq('id', userId);
-
         } catch (e) {
             console.error("Error archivando en nube:", e);
-            // No lanzamos error para no interrumpir la experiencia del usuario,
-            // la data ya está guardada localmente.
         }
     }
-
     return session;
   },
   
@@ -396,61 +363,30 @@ const DataEngine = {
 const BrandingLogo = ({ className = "w-8 h-8", textSize = "text-xl", showText = true }: { className?: string, textSize?: string, showText?: boolean }) => {
     const [config, setConfig] = useState(DataEngine.getConfig());
     const [imgError, setImgError] = useState(false);
-
     useEffect(() => {
-        const update = () => {
-            setConfig(DataEngine.getConfig());
-            setImgError(false);
-        };
+        const update = () => { setConfig(DataEngine.getConfig()); setImgError(false); };
         window.addEventListener('storage-update', update);
         return () => window.removeEventListener('storage-update', update);
     }, []);
-
-    // Force default if config is broken
     const displayUrl = (!config.logoUrl || config.logoUrl === '') ? OFFICIAL_LOGO_URL : config.logoUrl;
-
     return (
         <div className="flex items-center gap-2.5 select-none group">
             {!imgError ? (
-                <img 
-                    src={displayUrl} 
-                    alt="Logo" 
-                    className={`${className} object-cover rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`}
-                    onError={() => {
-                        console.error("Error loading logo, reverting to default");
-                        setImgError(true);
-                    }}
-                />
+                <img src={displayUrl} alt="Logo" className={`${className} object-cover rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`} onError={() => setImgError(true)} />
             ) : (
-                <img 
-                    src={OFFICIAL_LOGO_URL} 
-                    alt="Logo Backup" 
-                    className={`${className} object-cover rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`}
-                />
+                <img src={OFFICIAL_LOGO_URL} alt="Logo Backup" className={`${className} object-cover rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`} />
             )}
-            {showText && (
-                <span className={`font-display font-black italic tracking-tighter ${textSize} text-white drop-shadow-md`}>
-                    {config.appName.toUpperCase()}
-                </span>
-            )}
+            {showText && (<span className={`font-display font-black italic tracking-tighter ${textSize} text-white drop-shadow-md`}>{config.appName.toUpperCase()}</span>)}
         </div>
     );
 }
 
-// --- SOCIAL MEDIA BAR ---
 const SocialLinks = ({ className = "" }: { className?: string }) => {
     return (
         <div className={`flex gap-3 justify-center ${className}`}>
-            <a href="https://www.instagram.com/kinetix.zone/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-gradient-to-tr hover:from-purple-600 hover:to-pink-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
-                <Instagram size={18} />
-            </a>
-            <a href="https://www.facebook.com/people/Kinetix-Functional-Zone/61577641223744/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-blue-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
-                <Facebook size={18} />
-            </a>
-            {/* WhatsApp Placeholder: Add real number here if needed e.g. https://wa.me/521234567890 */}
-            <a href="https://wa.me/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-green-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
-                <MessageCircle size={18} />
-            </a>
+            <a href="https://www.instagram.com/kinetix.zone/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-gradient-to-tr hover:from-purple-600 hover:to-pink-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110"><Instagram size={18} /></a>
+            <a href="https://www.facebook.com/people/Kinetix-Functional-Zone/61577641223744/" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-blue-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110"><Facebook size={18} /></a>
+            <a href="https://wa.me/525627303189" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-green-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110"><MessageCircle size={18} /></a>
         </div>
     );
 }
@@ -883,10 +819,22 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
 
   const handleFinishWorkout = (workout: Workout) => {
      if(confirm("¿Has completado tu sesión? Esto la guardará en el historial.")) {
+         // 1. FORZAR CIERRE DE TECLADO
+         if (document.activeElement instanceof HTMLElement) {
+             document.activeElement.blur();
+         }
+
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
          const session = DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
-         setFinishScreen(session);
-         setTimeout(() => window.dispatchEvent(new Event('storage-update')), 500);
+         
+         // 2. PRIMERO SCROLL AL TOP
+         window.scrollTo(0, 0);
+
+         // 3. LUEGO MOSTRAR PANTALLA DE ÉXITO (Con pequeño delay para asegurar render)
+         setTimeout(() => {
+            setFinishScreen(session);
+            window.dispatchEvent(new Event('storage-update'));
+         }, 100);
      }
   };
 
@@ -894,7 +842,12 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
       if (attended) {
           if(confirm("¿Confirmar asistencia a clase?")) {
               DataEngine.archiveWorkout(plan.userId, workout, { 0: [{ setNumber: 1, weight: '0', reps: '1', completed: true, timestamp: Date.now() }] }, Date.now());
-              setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
+              
+              // Scroll first logic here too
+              window.scrollTo(0,0);
+              setTimeout(() => {
+                setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
+              }, 50);
           }
       } else {
           setActiveRescue(workout.id);
@@ -1813,6 +1766,11 @@ function App() {
      }
   }, []);
 
+  // GLOBAL SCROLL RESET FIX
+  useEffect(() => {
+     window.scrollTo(0, 0);
+  }, [view]);
+
   const login = (u: User) => {
       localStorage.setItem(SESSION_KEY, u.id);
       setUser(u);
@@ -1827,7 +1785,7 @@ function App() {
   if (!user) return <LoginPage onLogin={login} />;
 
   return (
-    <div className="min-h-screen bg-[#050507] text-gray-200 font-sans selection:bg-red-500/30">
+    <div className="min-h-[100dvh] bg-[#050507] text-gray-200 font-sans selection:bg-red-500/30">
         {/* Desktop Sidebar */}
         <aside className="fixed left-0 top-0 h-full w-64 bg-[#0F0F11] border-r border-white/5 p-6 hidden md:flex flex-col z-40">
             <BrandingLogo />
