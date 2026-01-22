@@ -17,6 +17,11 @@ export interface SystemConfig {
   appName: string;
   logoUrl: string; // URL de la imagen
   themeColor: string;
+  ai: {
+      chatbot: {
+          enabled: boolean; // Por defecto FALSE según reglas
+      }
+  }
 }
 
 export interface User {
@@ -31,6 +36,7 @@ export interface User {
   injuries?: string;
   streak: number;
   createdAt: string;
+  isActive?: boolean; // Control de acceso
 }
 
 export interface Exercise {

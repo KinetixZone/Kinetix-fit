@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -9,7 +8,7 @@ import {
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
-  Briefcase, BarChart4, AlertOctagon, MessageCircle
+  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
@@ -51,7 +50,10 @@ const RESCUE_WORKOUT: WorkoutExercise[] = [
 const DEFAULT_CONFIG: SystemConfig = {
     appName: 'KINETIX',
     logoUrl: '', 
-    themeColor: '#ef4444'
+    themeColor: '#ef4444',
+    ai: {
+        chatbot: { enabled: false } // Regla 5: False por defecto
+    }
 };
 
 // --- DATA ENGINE ---
@@ -71,7 +73,9 @@ const DataEngine = {
   
   getConfig: (): SystemConfig => {
       const s = DataEngine.getStore();
-      return s.CONFIG ? JSON.parse(s.CONFIG) : DEFAULT_CONFIG;
+      const loaded = s.CONFIG ? JSON.parse(s.CONFIG) : DEFAULT_CONFIG;
+      // Merge seguro para asegurar que la estructura ai.chatbot existe
+      return { ...DEFAULT_CONFIG, ...loaded, ai: { ...DEFAULT_CONFIG.ai, ...loaded.ai } };
   },
 
   saveConfig: (config: SystemConfig) => {
@@ -85,14 +89,14 @@ const DataEngine = {
     let users = store.USERS ? JSON.parse(store.USERS) : [];
     let modified = false;
 
-    // Garantizar usuarios por defecto
-    if (!users.find((u:User) => u.email === 'atleta@kinetix.com')) { users.push(MOCK_USER); modified = true; }
+    // Garantizar usuarios por defecto con isActive
+    if (!users.find((u:User) => u.email === 'atleta@kinetix.com')) { users.push({...MOCK_USER, isActive: true}); modified = true; }
     if (!users.find((u:User) => u.email === 'coach@kinetix.com')) {
-        users.push({ id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'coach', daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString() });
+        users.push({ id: COACH_UUID, name: 'COACH KINETIX', email: 'coach@kinetix.com', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'coach', daysPerWeek: 6, equipment: [], streak: 999, createdAt: new Date().toISOString(), isActive: true });
         modified = true;
     }
     if (!users.find((u:User) => u.email === 'admin@kinetix.com')) {
-        users.push({ id: ADMIN_UUID, name: 'ADMINISTRADOR', email: 'admin@kinetix.com', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'admin', daysPerWeek: 0, equipment: [], streak: 0, createdAt: new Date().toISOString() });
+        users.push({ id: ADMIN_UUID, name: 'ADMINISTRADOR', email: 'admin@kinetix.com', goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, role: 'admin', daysPerWeek: 0, equipment: [], streak: 0, createdAt: new Date().toISOString(), isActive: true });
         modified = true;
     }
 
@@ -285,12 +289,9 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
 
   const lastSessionData = useMemo(() => {
       if(!history || history.length === 0) return null;
-      // Buscar en el historial este ejercicio específico por nombre o ID, no solo por índice
       for(const session of history) {
           for(const logKey in session.logs) {
               const sessionLogs = session.logs[logKey];
-              // Aproximación simple: asumimos orden o comparamos nombre si estuviara disponible en el log (idealmente guardar exerciseId en logs)
-              // Aquí usaremos la lógica simple de índice por ahora, pero en producción usar ID.
               if(parseInt(logKey) === index && sessionLogs.length > 0) return sessionLogs[sessionLogs.length-1];
           }
       }
@@ -454,7 +455,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   );
 };
 
-// --- CHATBOT ---
+// ... (Chatbot & PlanViewer sin cambios en lógica core) ...
 const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([{role: 'ai', text: 'Soy tu asistente técnico. ¿Dudas con algún ejercicio?', timestamp: Date.now()}]);
     const [input, setInput] = useState('');
@@ -505,13 +506,12 @@ const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
     );
 }
 
-// --- PLAN VIEWER WRAPPER (UPDATED WITH CLASS LOGIC) ---
 const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'athlete' }) => {
   const [showVideo, setShowVideo] = useState<string | null>(null);
   const [showTimer, setShowTimer] = useState(false);
   const [currentRestTime, setCurrentRestTime] = useState(60);
   const [finishScreen, setFinishScreen] = useState<any | null>(null);
-  const [activeRescue, setActiveRescue] = useState<string | null>(null); // ID of workout using rescue
+  const [activeRescue, setActiveRescue] = useState<string | null>(null);
   const startTime = useRef(Date.now());
   
   const history = useMemo(() => {
@@ -529,7 +529,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
          const session = DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          setFinishScreen(session);
-         // Disparar evento para actualizar gráficas si es necesario
          setTimeout(() => window.dispatchEvent(new Event('storage-update')), 500);
      }
   };
@@ -598,7 +597,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                 <div className="h-px bg-white/10 flex-1"/>
              </div>
              
-             {/* CLASS LOGIC */}
              {workout.isClass && !activeRescue && (
                  <div className="bg-gradient-to-br from-[#1A1A1D] to-[#000] border border-red-500/30 rounded-2xl p-6 text-center relative overflow-hidden group">
                      <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"/>
@@ -621,7 +619,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                  </div>
              )}
 
-             {/* RESCUE ROUTINE */}
              {activeRescue === workout.id && (
                  <div className="mb-4 bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl flex items-start gap-3">
                      <ShieldAlert className="text-blue-400 shrink-0 mt-1" size={20} />
@@ -632,7 +629,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                  </div>
              )}
 
-             {/* STANDARD EXERCISES OR RESCUE EXERCISES */}
              {(!workout.isClass || activeRescue === workout.id) && (
                  (activeRescue === workout.id ? RESCUE_WORKOUT : workout.exercises).map((ex, idx) => (
                     <ExerciseCard 
@@ -696,7 +692,7 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   );
 };
 
-// ... (ManualPlanBuilder & WorkoutsView - Sin cambios estructurales mayores, solo integración) ... 
+// ... (ManualPlanBuilder & WorkoutsView - Sin cambios) ...
 const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
   const [editedPlan, setEditedPlan] = useState<Plan>(plan);
   const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
@@ -904,6 +900,60 @@ const WorkoutsView = () => {
     );
 };
 
+// --- CLIENTS VIEW (LIST OF ATHLETES) ---
+const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
+    const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
+    const [search, setSearch] = useState('');
+
+    const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="flex justify-between items-center">
+                <h2 className="text-3xl font-bold font-display italic text-white">ATLETAS</h2>
+                <div className="relative">
+                    <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
+                    <input 
+                        value={search} 
+                        onChange={e => setSearch(e.target.value)} 
+                        placeholder="Buscar atleta..." 
+                        className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-64"
+                    />
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                 {filtered.map(client => {
+                     const plan = DataEngine.getPlan(client.id);
+                     return (
+                         <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 cursor-pointer transition-all group relative overflow-hidden">
+                             <div className="flex items-center gap-4 relative z-10">
+                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center font-bold text-white shadow-lg border border-white/5 group-hover:scale-110 transition-transform">
+                                     {client.name[0]}
+                                 </div>
+                                 <div>
+                                     <h4 className="font-bold text-white group-hover:text-red-500 transition-colors">{client.name}</h4>
+                                     <p className="text-xs text-gray-500">{client.email}</p>
+                                     <div className="flex gap-2 mt-2">
+                                         <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/5">{client.goal}</span>
+                                         {plan && <span className="text-[10px] bg-green-900/20 text-green-500 px-2 py-0.5 rounded border border-green-500/20 flex items-center gap-1"><CheckCircle2 size={10}/> Plan Activo</span>}
+                                     </div>
+                                 </div>
+                             </div>
+                         </div>
+                     );
+                 })}
+                 {filtered.length === 0 && (
+                     <div className="col-span-full text-center py-10 text-gray-500">
+                         No se encontraron atletas.
+                     </div>
+                 )}
+             </div>
+        </div>
+    );
+};
+
+// ... (ClientDetailView & LoginPage & DashboardView - Sin cambios) ...
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
   const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
   const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
@@ -1017,7 +1067,10 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const u = DataEngine.getUserByNameOrEmail(email);
-        if(u) onLogin(u);
+        if(u) {
+            if(u.isActive === false) { setError('Usuario desactivado'); return; }
+            onLogin(u);
+        }
         else setError('Usuario no encontrado');
     }
 
@@ -1151,24 +1204,7 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: st
     );
 };
 
-const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
-    const clients = DataEngine.getUsers().filter(u => u.role === 'client');
-    return (
-        <div className="space-y-4 animate-fade-in">
-            <h2 className="text-3xl font-bold text-white mb-6">ATLETAS</h2>
-            {clients.map(c => (
-                <div key={c.id} onClick={() => onSelect(c.id)} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center hover:border-red-500/50 cursor-pointer transition-all">
-                    <div className="flex items-center gap-4">
-                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center font-bold text-gray-500">{c.name[0]}</div>
-                         <div><h4 className="font-bold text-white">{c.name}</h4><div className="text-xs text-gray-500">{c.goal} • {c.level}</div></div>
-                    </div>
-                    <ChevronRight className="text-gray-600" />
-                </div>
-            ))}
-        </div>
-    )
-}
-
+// ... (ProfileView with AI Analysis button) ...
 const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
     const history = DataEngine.getClientHistory(user.id);
     const [analyzing, setAnalyzing] = useState(false);
@@ -1202,9 +1238,11 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
             </div>
             
             {user.role === 'client' && (
-                <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-4 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3 shadow-lg mb-2">
-                    {analyzing ? <Loader2 className="animate-spin" /> : <BrainCircuit size={24} className="text-blue-400" />}
-                    <span className="font-bold text-blue-100">ANALIZAR MI PROGRESO CON IA</span>
+                <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-4 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3 shadow-lg mb-2 relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-blue-600/20 group-hover:bg-blue-600/30 transition-colors" />
+                    {analyzing ? <Loader2 className="animate-spin text-blue-200" /> : <BrainCircuit size={24} className="text-blue-300" />}
+                    <span className="font-bold text-blue-100 z-10">ANALIZAR MI PROGRESO CON IA</span>
+                    <Sparkles className="absolute right-4 text-blue-300 opacity-50" size={20} />
                 </button>
             )}
 
@@ -1248,36 +1286,86 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
     );
 };
 
+// --- ADMIN VIEW EXPANDED ---
 const AdminView = () => {
   const [config, setConfig] = useState(DataEngine.getConfig());
-  const handleSave = () => {
+  const [activeTab, setActiveTab] = useState<'branding' | 'users'>('branding');
+  const [users, setUsers] = useState<User[]>(DataEngine.getUsers());
+
+  const handleSaveConfig = () => {
       DataEngine.saveConfig(config);
       alert("Configuración guardada.");
   }
+
+  const toggleUserStatus = (u: User) => {
+      const updated = { ...u, isActive: !u.isActive };
+      DataEngine.saveUser(updated);
+      setUsers(DataEngine.getUsers());
+  }
+
+  const resetPassword = (u: User) => {
+      alert(`Enlace de recuperación enviado a ${u.email} (Simulado)`);
+  }
+
   return (
-      <div className="space-y-6 animate-fade-in">
-          <h2 className="text-3xl font-bold font-display italic text-white mb-6">COMMAND CENTER</h2>
-          <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl space-y-4">
-               <h3 className="font-bold text-white mb-4">Personalización de Marca</h3>
-               <div>
-                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre de la App</label>
-                   <input value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" />
-               </div>
-               <div>
-                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2">URL del Logo</label>
-                   <input value={config.logoUrl} onChange={e => setConfig({...config, logoUrl: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" placeholder="https://..." />
-               </div>
-               <button onClick={handleSave} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold text-sm">Guardar Cambios</button>
+      <div className="space-y-6 animate-fade-in pb-20">
+          <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-bold font-display italic text-white">COMMAND CENTER</h2>
+              <div className="flex gap-2 bg-white/5 p-1 rounded-lg">
+                  <button onClick={() => setActiveTab('branding')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === 'branding' ? 'bg-white text-black' : 'text-gray-400'}`}>MARCA</button>
+                  <button onClick={() => setActiveTab('users')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === 'users' ? 'bg-white text-black' : 'text-gray-400'}`}>USUARIOS</button>
+              </div>
           </div>
+          
+          {activeTab === 'branding' && (
+              <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl space-y-4">
+                   <h3 className="font-bold text-white mb-4">Personalización de Marca</h3>
+                   <div>
+                       <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre de la App</label>
+                       <input value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" />
+                   </div>
+                   <div>
+                       <label className="block text-xs font-bold text-gray-500 uppercase mb-2">URL del Logo</label>
+                       <input value={config.logoUrl} onChange={e => setConfig({...config, logoUrl: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" placeholder="https://..." />
+                   </div>
+                   <button onClick={handleSaveConfig} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold text-sm">Guardar Cambios</button>
+              </div>
+          )}
+
+          {activeTab === 'users' && (
+              <div className="space-y-4">
+                  <div className="flex justify-end">
+                       <button className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2"><UserPlus size={16}/> INVITAR USUARIO</button>
+                  </div>
+                  {users.map(u => (
+                      <div key={u.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4">
+                          <div className="flex items-center gap-4 w-full">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${u.isActive !== false ? 'bg-green-600' : 'bg-red-600'}`}>{u.name[0]}</div>
+                              <div>
+                                  <div className="font-bold text-white">{u.name} <span className="text-xs text-gray-500 bg-white/10 px-2 rounded ml-2">{u.role}</span></div>
+                                  <div className="text-xs text-gray-500">{u.email}</div>
+                              </div>
+                          </div>
+                          <div className="flex gap-2 w-full md:w-auto">
+                              <button onClick={() => resetPassword(u)} className="flex-1 md:flex-none px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-gray-300 flex items-center justify-center gap-2" title="Reset Password"><KeyRound size={14}/> RESET</button>
+                              <button onClick={() => toggleUserStatus(u)} className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 ${u.isActive !== false ? 'bg-red-900/20 text-red-500 hover:bg-red-900/30' : 'bg-green-900/20 text-green-500 hover:bg-green-900/30'}`}>
+                                  {u.isActive !== false ? <><UserX size={14}/> DESACTIVAR</> : <><UserCheck size={14}/> ACTIVAR</>}
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          )}
       </div>
   );
 };
 
+// ... (App function with chatbot logic) ...
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState('dashboard'); // dashboard, workouts, clients, admin, profile
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [chatbotOpen, setChatbotOpen] = useState(false);
+  const [chatbotOpen, setChatbotOpen] = useState(false); // Manually triggered, default closed (Rule 5)
 
   useEffect(() => {
      DataEngine.init();
@@ -1312,7 +1400,6 @@ function App() {
                 {user.role === 'coach' && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
                 {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}
                 {user.role === 'admin' && <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={<Shield size={20} />} label="Admin" />}
-                {/* Coach Dashboard is mapped to 'dashboard' too, but renders different content */}
                 {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
                 <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
             </nav>
@@ -1351,7 +1438,7 @@ function App() {
             <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
         </div>
         
-        {/* Chatbot for Athletes */}
+        {/* Chatbot for Athletes: Manual Trigger Only (Rule 5) */}
         {user.role === 'client' && (
             <>
                 <button onClick={() => setChatbotOpen(!chatbotOpen)} className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform hover:scale-110">
