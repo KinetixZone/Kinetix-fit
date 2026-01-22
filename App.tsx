@@ -179,9 +179,18 @@ const DataEngine = {
 
 // --- COMPONENTS ---
 
+// 1. Rest Timer Component Improved
 const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSeconds?: number, onComplete?: () => void, onClose: () => void }) => {
   const [timeLeft, setTimeLeft] = useState(initialSeconds);
+  const [totalTime, setTotalTime] = useState(initialSeconds); // Para mantener la referencia del circulo
   const [isActive, setIsActive] = useState(true);
+
+  // Reiniciar si cambia initialSeconds (ej: siguiente ejercicio con diferente descanso)
+  useEffect(() => {
+    setTimeLeft(initialSeconds);
+    setTotalTime(initialSeconds);
+    setIsActive(true);
+  }, [initialSeconds]);
 
   useEffect(() => {
     let interval: any = null;
@@ -196,6 +205,13 @@ const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSecond
     return () => clearInterval(interval);
   }, [isActive, timeLeft, onComplete]);
 
+  const changeTime = (seconds: number) => {
+      const newTime = seconds;
+      setTimeLeft(newTime);
+      setTotalTime(newTime); // Resetear el círculo visual
+      setIsActive(true);
+  };
+
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -203,24 +219,44 @@ const RestTimer = ({ initialSeconds = 60, onComplete, onClose }: { initialSecond
   };
 
   return (
-    <div className="fixed bottom-24 right-4 md:right-8 bg-[#1A1A1D] border border-red-500/50 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 animate-fade-in-up w-[280px]">
-      <div className="relative">
-         <svg className="w-12 h-12 transform -rotate-90">
-           <circle cx="24" cy="24" r="20" stroke="#333" strokeWidth="4" fill="transparent" />
-           <circle cx="24" cy="24" r="20" stroke="#EF4444" strokeWidth="4" fill="transparent" strokeDasharray={125} strokeDashoffset={125 - (125 * timeLeft) / initialSeconds} className="transition-all duration-1000 ease-linear" />
-         </svg>
-         <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-mono font-bold text-sm">
-           {formatTime(timeLeft)}
-         </div>
-      </div>
-      <div className="flex-1">
-        <p className="text-xs text-gray-400 font-bold uppercase mb-1">Descanso</p>
-        <div className="flex gap-2">
-           <button onClick={() => setTimeLeft(prev => prev + 30)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">+30s</button>
-           <button onClick={() => setIsActive(!isActive)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">{isActive ? 'Pausa' : 'Seguir'}</button>
+    <div className="fixed bottom-24 right-4 md:right-8 bg-[#1A1A1D] border border-red-500/50 text-white p-4 rounded-2xl shadow-2xl z-50 flex flex-col gap-3 animate-fade-in-up w-[280px]">
+      <div className="flex items-center gap-4">
+        <div className="relative shrink-0">
+           <svg className="w-12 h-12 transform -rotate-90">
+             <circle cx="24" cy="24" r="20" stroke="#333" strokeWidth="4" fill="transparent" />
+             <circle 
+               cx="24" cy="24" r="20" stroke="#EF4444" strokeWidth="4" fill="transparent" 
+               strokeDasharray={125} 
+               strokeDashoffset={125 - (125 * timeLeft) / (totalTime || 1)} 
+               className="transition-all duration-1000 ease-linear" 
+             />
+           </svg>
+           <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-mono font-bold text-sm">
+             {formatTime(timeLeft)}
+           </div>
         </div>
+        <div className="flex-1">
+          <p className="text-xs text-gray-400 font-bold uppercase mb-1">Descanso Activo</p>
+          <div className="flex gap-2">
+             <button onClick={() => setTimeLeft(prev => prev + 30)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">+30s</button>
+             <button onClick={() => setIsActive(!isActive)} className="px-2 py-1 bg-white/10 rounded text-xs font-bold hover:bg-white/20">{isActive ? 'Pausa' : 'Seguir'}</button>
+          </div>
+        </div>
+        <button onClick={onClose} className="text-gray-500 hover:text-white self-start"><X size={16}/></button>
       </div>
-      <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={16}/></button>
+      
+      {/* Presets de usuario */}
+      <div className="grid grid-cols-4 gap-2 border-t border-white/5 pt-2">
+          {[30, 60, 90, 120].map(sec => (
+             <button 
+               key={sec} 
+               onClick={() => changeTime(sec)}
+               className={`text-[10px] font-bold py-1 rounded hover:bg-white/10 ${totalTime === sec ? 'text-red-500 bg-red-500/10' : 'text-gray-500'}`}
+             >
+               {sec}s
+             </button>
+          ))}
+      </div>
     </div>
   );
 };
@@ -274,7 +310,7 @@ interface ExerciseCardProps {
   userId: string;
   onShowVideo: (name: string) => void;
   mode: 'coach' | 'athlete';
-  onSetComplete: () => void;
+  onSetComplete: (restSeconds?: number) => void;
 }
 
 const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
@@ -315,7 +351,10 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
     
     setLogs({...logs, [index]: newExLogs});
 
-    if (isCompleted) onSetComplete();
+    if (isCompleted) {
+        // Pasamos el tiempo de descanso definido por el coach, o undefined si no hay
+        onSetComplete(exercise.targetRest);
+    }
   };
 
   const setsArray = Array.from({ length: exercise.targetSets }, (_, i) => i + 1);
@@ -330,12 +369,20 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
           </div>
           <div>
             <h3 className="font-bold text-lg text-white leading-tight">{exercise.name}</h3>
-            {exercise.targetLoad && (
-              <div className="inline-flex items-center gap-1.5 mt-2 bg-yellow-500/10 px-2 py-1 rounded-md border border-yellow-500/20">
-                <Dumbbell size={12} className="text-yellow-500" />
-                <span className="text-xs font-bold text-yellow-500 uppercase tracking-wide">Meta: {exercise.targetLoad}</span>
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2 mt-2">
+                {exercise.targetLoad && (
+                <div className="inline-flex items-center gap-1.5 bg-yellow-500/10 px-2 py-1 rounded-md border border-yellow-500/20">
+                    <Dumbbell size={12} className="text-yellow-500" />
+                    <span className="text-xs font-bold text-yellow-500 uppercase tracking-wide">Meta: {exercise.targetLoad}</span>
+                </div>
+                )}
+                {exercise.targetRest && (
+                <div className="inline-flex items-center gap-1.5 bg-blue-500/10 px-2 py-1 rounded-md border border-blue-500/20">
+                    <TimerIcon size={12} className="text-blue-500" />
+                    <span className="text-xs font-bold text-blue-500 uppercase tracking-wide">Descanso: {exercise.targetRest}s</span>
+                </div>
+                )}
+            </div>
             {exercise.coachCue && (
               <div className="flex items-start gap-1.5 mt-2 text-xs text-blue-300">
                 <Info size={12} className="mt-0.5 shrink-0" />
@@ -402,20 +449,30 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
       
       {mode === 'coach' && (
          <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 bg-white/5 p-2 rounded-lg">
-            <span className="font-bold text-white">{exercise.targetSets}</span> Sets x <span className="font-bold text-white">{exercise.targetReps}</span> Reps
+            <span className="font-bold text-white">{exercise.targetSets}</span> Sets 
+            <span className="mx-1">•</span> 
+            <span className="font-bold text-white">{exercise.targetReps}</span> Reps
+            {exercise.targetRest && (
+                <>
+                <span className="mx-1">•</span>
+                <span className="font-bold text-blue-400">{exercise.targetRest}s</span> Rest
+                </>
+            )}
          </div>
       )}
     </div>
   );
 };
 
-// --- PLAN VIEWER WRAPPER ---
 
+// --- PLAN VIEWER WRAPPER ---
 const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'athlete' }) => {
   const [showVideo, setShowVideo] = useState<string | null>(null);
   const [showTimer, setShowTimer] = useState(false);
+  const [currentRestTime, setCurrentRestTime] = useState(60); // Default 60s
   
-  const handleSetComplete = useCallback(() => {
+  const handleSetComplete = useCallback((restSeconds?: number) => {
+     setCurrentRestTime(restSeconds || 60); // Usa el tiempo del coach o 60s por defecto
      setShowTimer(true);
   }, []);
 
@@ -490,18 +547,21 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
 
       {/* REST TIMER */}
       {showTimer && mode === 'athlete' && (
-         <RestTimer onClose={() => setShowTimer(false)} />
+         <RestTimer 
+           initialSeconds={currentRestTime} 
+           onClose={() => setShowTimer(false)} 
+         />
       )}
     </div>
   );
 };
 
-// --- LOGIN PAGE ---
 
+// LOGIN PAGE
 const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const [mode, setMode] = useState<'coach' | 'athlete'>('coach');
   const [pin, setPin] = useState('');
-  const [identity, setIdentity] = useState('');
+  const [identity, setIdentity] = useState(''); // Puede ser email o nombre
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -529,6 +589,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
     setIsLoading(true);
     await new Promise(r => setTimeout(r, 800));
     
+    // Buscar atleta localmente por nombre o email
     const user = DataEngine.getUserByNameOrEmail(identity);
     if (user && user.role === 'client') {
       onLogin(user);
@@ -609,7 +670,6 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
 };
 
 // --- MANUAL PLAN BUILDER ---
-
 const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
   const [editedPlan, setEditedPlan] = useState<Plan>(plan);
   const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
@@ -617,6 +677,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
 
+  // Load exercises from DataEngine (merged DB)
   const allExercises = useMemo(() => DataEngine.getExercises(), []);
   const categories = useMemo(() => ['Todos', ...Array.from(new Set(allExercises.map(e => e.muscleGroup)))], [allExercises]);
 
@@ -638,6 +699,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
       targetSets: 4,
       targetReps: '10-12',
       targetLoad: '',
+      targetRest: 60, // Default rest time
       coachCue: ''
     };
     
@@ -691,6 +753,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
       </div>
 
       <div className="p-4 max-w-4xl mx-auto w-full flex-1">
+        {/* Workout Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-4">
           {editedPlan.workouts.map((w, idx) => (
             <button 
@@ -726,11 +789,12 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                     <button onClick={() => removeExercise(idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={18} /></button>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div className="grid grid-cols-4 gap-3 mb-3">
                     <div>
                       <label className="text-[10px] text-gray-500 uppercase font-bold">Series</label>
                       <input 
                         type="number" 
+                        inputMode="numeric"
                         value={ex.targetSets}
                         onChange={(e) => updateExercise(idx, 'targetSets', parseInt(e.target.value))}
                         className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold"
@@ -749,10 +813,22 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                       <label className="text-[10px] text-gray-500 uppercase font-bold text-yellow-500">Carga (Kg)</label>
                       <input 
                         type="text" 
+                        inputMode="decimal"
                         value={ex.targetLoad || ''}
                         onChange={(e) => updateExercise(idx, 'targetLoad', e.target.value)}
                         placeholder="Ej: 80"
                         className="w-full bg-black border border-yellow-500/20 rounded-lg p-2 text-sm text-center font-bold text-yellow-400 placeholder-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 uppercase font-bold text-blue-500">Descanso(s)</label>
+                      <input 
+                        type="number" 
+                        inputMode="numeric"
+                        value={ex.targetRest || ''}
+                        onChange={(e) => updateExercise(idx, 'targetRest', parseInt(e.target.value))}
+                        placeholder="60"
+                        className="w-full bg-black border border-blue-500/20 rounded-lg p-2 text-sm text-center font-bold text-blue-400 placeholder-gray-700"
                       />
                     </div>
                   </div>
@@ -782,6 +858,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
         )}
       </div>
 
+      {/* Exercise Selector Modal */}
       {showExerciseSelector && (
         <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col animate-fade-in">
           <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]">
@@ -798,6 +875,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
              </div>
           </div>
           
+          {/* Categories */}
           <div className="flex gap-2 overflow-x-auto p-2 border-b border-white/5 no-scrollbar bg-[#0A0A0C]">
              {categories.map(cat => (
                <button 
@@ -836,391 +914,380 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   );
 };
 
-// --- VIEW COMPONENTS ---
-
+// --- DASHBOARD VIEW ---
 const DashboardView = ({ user, onNavigateToClients }: { user: User, onNavigateToClients: () => void }) => {
-  const [athletePlan, setAthletePlan] = useState<Plan | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
 
   useEffect(() => {
     if (user.role === 'client') {
-       setAthletePlan(DataEngine.getPlan(user.id));
+      const p = DataEngine.getPlan(user.id);
+      setPlan(p);
     }
   }, [user]);
 
-  return (
-    <div className="space-y-6 animate-fade-in pb-10">
-      <div className="bg-gradient-to-r from-red-900/40 to-black border border-red-500/20 rounded-3xl p-6 relative overflow-hidden group cursor-pointer" onClick={user.role === 'coach' ? onNavigateToClients : undefined}>
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-2 text-red-400 font-bold text-sm tracking-wider uppercase">
-             <Activity size={16} /> Panel de Control
-          </div>
-          <h2 className="text-3xl md:text-4xl font-display font-bold italic mb-2">HOLA, {user.name.split(' ')[0]}</h2>
-          <p className="text-gray-400 max-w-md text-sm">
-            {user.role === 'coach' ? 'Gestiona tus atletas de alto rendimiento.' : 'Tu transformación comienza hoy.'}
-          </p>
+  if (user.role === 'coach') {
+    const clients = DataEngine.getUsers().filter(u => u.role === 'client');
+    const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
+    
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+           <StatCard label="Atletas" value={clients.length} icon={<Users size={20} className="text-blue-500" />} />
+           <StatCard label="Planes" value={activePlans} icon={<FileJson size={20} className="text-green-500" />} />
+           <StatCard label="Ejercicios" value={DataEngine.getExercises().length} icon={<Dumbbell size={20} className="text-yellow-500" />} />
+           <StatCard label="Sistema" value="ONLINE" icon={<Activity size={20} className="text-red-500" />} />
         </div>
-        <div className="absolute right-[-20px] top-[-20px] w-40 h-40 bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
-        {user.role === 'coach' && <ChevronRight className="absolute right-6 top-1/2 -translate-y-1/2 text-white/20 group-hover:text-white transition-colors" size={32} />}
+        
+        <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
+          <h3 className="font-bold text-lg mb-4 text-white">Gestión Rápida</h3>
+          <div className="flex gap-4">
+             <button onClick={onNavigateToClients} className="bg-white/5 hover:bg-white/10 p-4 rounded-xl flex flex-col items-center gap-2 flex-1 transition-colors border border-white/5 group">
+                <div className="p-3 rounded-full bg-red-600/10 group-hover:bg-red-600/20 text-red-500 transition-colors">
+                  <UserPlus size={24} />
+                </div>
+                <span className="text-sm font-bold text-gray-300 group-hover:text-white">Nuevo Atleta</span>
+             </button>
+             <button className="bg-white/5 hover:bg-white/10 p-4 rounded-xl flex flex-col items-center gap-2 flex-1 transition-colors border border-white/5 group">
+                <div className="p-3 rounded-full bg-blue-600/10 group-hover:bg-blue-600/20 text-blue-500 transition-colors">
+                  <Settings size={24} />
+                </div>
+                <span className="text-sm font-bold text-gray-300 group-hover:text-white">Ajustes</span>
+             </button>
+          </div>
+        </div>
       </div>
-
-      {user.role === 'coach' ? (
-         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <StatCard label="Atletas" value={DataEngine.getUsers().length - 1} icon={<Users size={18} className="text-blue-400" />} />
-            <StatCard label="Planes Activos" value="12" icon={<CalendarDays size={18} className="text-green-400" />} />
-            <StatCard label="Ejercicios DB" value={DataEngine.getExercises().length} icon={<Dumbbell size={18} className="text-gray-400" />} />
-            <StatCard label="Estado" value="Activo" icon={<CheckCircle2 size={18} className="text-green-400" />} />
-         </div>
-      ) : (
-         <div className="grid grid-cols-2 gap-3">
-             <StatCard label="Racha" value={`${user.streak} días`} icon={<Zap size={18} className="text-yellow-400" />} />
-             <StatCard label="Nivel" value={user.level} icon={<Trophy size={18} className="text-purple-400" />} />
-         </div>
-      )}
-
-      {user.role === 'client' && (
-         <div className="space-y-4">
-            <h3 className="text-xl font-bold border-b border-white/10 pb-2">Tu Protocolo</h3>
-            {athletePlan ? (
-              <PlanViewer plan={athletePlan} mode="athlete" />
-            ) : (
-              <div className="p-8 bg-white/5 rounded-3xl border border-white/5 border-dashed text-center">
-                 <BrainCircuit className="mx-auto text-gray-600 mb-4" size={48} />
-                 <p className="text-gray-400 font-medium">Tu Coach aún no ha asignado un protocolo.</p>
-                 <p className="text-xs text-gray-600 mt-2">Mantente atento.</p>
-              </div>
-            )}
-         </div>
-      )}
-    </div>
-  );
-};
-
-const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void }) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  
-  const [tempUser, setTempUser] = useState<Partial<User>>({
-    name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4
-  });
-
-  const refreshUsers = useCallback(() => {
-     setUsers(DataEngine.getUsers().filter(u => u.role === 'client'));
-  }, []);
-
-  useEffect(() => { refreshUsers(); }, [refreshUsers]);
-
-  const handleCreateUser = async () => {
-    if (!tempUser.name) return;
-    const userToSave: User = {
-      id: generateUUID(), name: tempUser.name, email: tempUser.email || 'no-email',
-      goal: tempUser.goal as Goal, level: tempUser.level as UserLevel, role: 'client',
-      daysPerWeek: tempUser.daysPerWeek || 4, equipment: [], streak: 0, createdAt: new Date().toISOString()
-    };
-    await DataEngine.saveUser(userToSave);
-    refreshUsers();
-    setShowAddModal(false);
-    setTempUser({ name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4 });
-  };
-
-  const handleDeleteUser = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (window.confirm("¿Estás seguro de eliminar a este atleta y su plan?")) {
-      DataEngine.deleteUser(id);
-      refreshUsers();
-    }
-  };
-
-  const openCreateModal = () => {
-     setTempUser({ name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.INTERMEDIATE, daysPerWeek: 4 });
-     setShowAddModal(true);
+    );
   }
 
   return (
-    <div className="animate-fade-in pb-20">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-           <h2 className="text-2xl font-bold">Atletas</h2>
-           <p className="text-xs text-gray-500">Gestión de equipo</p>
-        </div>
-        <button onClick={openCreateModal} className="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-red-500 active:scale-95 transition-all">
-          <UserPlus size={16} /> <span>NUEVO</span>
-        </button>
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between border-b border-white/5 pb-6">
+         <div>
+           <h2 className="text-3xl font-bold font-display italic text-white">HOLA, {user.name.split(' ')[0]}</h2>
+           <p className="text-gray-500 text-sm font-medium tracking-wide">NO PAIN, NO GAIN.</p>
+         </div>
+         <div className="text-right bg-white/5 px-4 py-2 rounded-xl border border-white/5">
+           <div className="text-2xl font-bold text-red-500">{user.streak} <span className="text-xs text-gray-400 font-normal">DÍAS</span></div>
+           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Racha</p>
+         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {users.map(client => (
-          <div 
-            key={client.id} 
-            onClick={() => onSelectClient(client.id)}
-            className="bg-[#0F0F11] border border-white/5 rounded-2xl p-4 flex items-center gap-4 hover:border-red-500/30 hover:bg-white/5 transition-all cursor-pointer active:scale-[0.98] group relative overflow-hidden"
-          >
-            <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center font-bold text-sm border border-white/10 group-hover:border-red-500/50 transition-colors z-10 relative">
-              {client.name.charAt(0)}
-            </div>
-            <div className="flex-1 z-10 relative">
-              <h3 className="font-bold text-sm text-white group-hover:text-red-400 transition-colors">{client.name}</h3>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider">{client.goal}</p>
-            </div>
-            <div className="flex items-center gap-1 z-20">
-               <button 
-                 onClick={(e) => handleDeleteUser(e, client.id)} 
-                 className="p-2 text-gray-600 hover:text-red-500 hover:bg-white/10 rounded-full transition-colors"
-               >
-                 <Trash2 size={16} />
-               </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in-up">
-            <h3 className="text-lg font-bold mb-2">Nuevo Atleta</h3>
-            <div className="space-y-3">
-              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Nombre Completo" value={tempUser.name} onChange={e => setTempUser({...tempUser, name: e.target.value})} />
-              <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none" placeholder="Email" value={tempUser.email} onChange={e => setTempUser({...tempUser, email: e.target.value})} />
-              <div className="grid grid-cols-2 gap-2">
-                 <select className="bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none" value={tempUser.goal} onChange={e => setTempUser({...tempUser, goal: e.target.value as Goal})}>
-                    {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
-                 </select>
-                 <select className="bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none" value={tempUser.level} onChange={e => setTempUser({...tempUser, level: e.target.value as UserLevel})}>
-                    {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
-                 </select>
-              </div>
-              <div className="flex gap-2 pt-2">
-                 <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-xs font-bold text-gray-400">CANCELAR</button>
-                 <button onClick={handleCreateUser} className="flex-1 py-3 rounded-xl bg-red-600 text-xs font-bold">CREAR</button>
-              </div>
-            </div>
-          </div>
+      {plan ? (
+        <PlanViewer plan={plan} mode="athlete" />
+      ) : (
+        <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+           <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mb-6 animate-pulse">
+              <Clock size={40} className="text-gray-600" />
+           </div>
+           <h3 className="text-2xl font-bold mb-3 text-white">Plan en Construcción</h3>
+           <p className="text-gray-400 max-w-md mx-auto leading-relaxed">
+             Tu coach está diseñando tu protocolo personalizado. Recibirás una notificación cuando esté listo para entrenar.
+           </p>
         </div>
       )}
     </div>
   );
 };
 
+// --- CLIENTS VIEW ---
+const ClientsView = ({ onSelectClient }: { onSelectClient: (id: string) => void }) => {
+  const [clients, setClients] = useState<User[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newClient, setNewClient] = useState<Partial<User>>({
+    name: '', email: '', goal: Goal.LOSE_FAT, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: []
+  });
+
+  useEffect(() => {
+    setClients(DataEngine.getUsers().filter(u => u.role === 'client'));
+  }, []);
+
+  const handleCreateClient = async () => {
+     if(!newClient.name || !newClient.email) return;
+     const client: User = {
+       id: generateUUID(),
+       name: newClient.name!,
+       email: newClient.email!,
+       role: 'client',
+       goal: newClient.goal || Goal.LOSE_FAT,
+       level: newClient.level || UserLevel.BEGINNER,
+       daysPerWeek: newClient.daysPerWeek || 3,
+       equipment: newClient.equipment || [],
+       streak: 0,
+       createdAt: new Date().toISOString()
+     };
+     await DataEngine.saveUser(client);
+     setClients([...clients, client]);
+     setShowAddModal(false);
+     setNewClient({ name: '', email: '', goal: Goal.LOSE_FAT, level: UserLevel.BEGINNER, daysPerWeek: 3, equipment: [] });
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+       <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Users className="text-red-500"/> Atletas <span className="text-gray-500 text-lg">({clients.length})</span>
+          </h2>
+          <button onClick={() => setShowAddModal(true)} className="bg-red-600 hover:bg-red-500 px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-red-900/20">
+            <UserPlus size={18} /> <span className="hidden sm:inline">Nuevo Atleta</span>
+          </button>
+       </div>
+
+       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {clients.map(client => (
+            <div key={client.id} onClick={() => onSelectClient(client.id)} className="bg-[#0F0F11] border border-white/5 p-5 rounded-2xl hover:border-red-500/50 cursor-pointer group transition-all hover:bg-white/5">
+               <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-4">
+                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center font-bold text-lg text-gray-400 group-hover:text-red-500 group-hover:border-red-500/50 transition-all">
+                        {client.name[0]}
+                     </div>
+                     <div>
+                        <h4 className="font-bold text-white group-hover:text-red-400 transition-colors text-lg leading-tight">{client.name}</h4>
+                        <p className="text-xs text-gray-500 mt-0.5">{client.email}</p>
+                     </div>
+                  </div>
+                  <div className="p-2 bg-white/5 rounded-full group-hover:bg-red-600 group-hover:text-white transition-all">
+                    <ChevronRight size={16} />
+                  </div>
+               </div>
+               <div className="flex flex-wrap gap-2">
+                  <span className="text-[10px] font-bold bg-blue-900/20 text-blue-400 border border-blue-500/20 px-2 py-1 rounded-md">{client.goal}</span>
+                  <span className="text-[10px] font-bold bg-purple-900/20 text-purple-400 border border-purple-500/20 px-2 py-1 rounded-md">{client.level}</span>
+               </div>
+            </div>
+          ))}
+          {clients.length === 0 && (
+             <div className="col-span-full py-12 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl">
+                No hay atletas registrados.
+             </div>
+          )}
+       </div>
+
+       {showAddModal && (
+         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
+            <div className="bg-[#111] w-full max-w-md rounded-3xl p-8 border border-white/10 shadow-2xl">
+               <div className="flex justify-between items-center mb-6">
+                 <h3 className="font-bold text-xl text-white">Nuevo Atleta</h3>
+                 <button onClick={() => setShowAddModal(false)}><X size={20} className="text-gray-500 hover:text-white"/></button>
+               </div>
+               <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Nombre</label>
+                    <input className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none focus:border-red-500 text-white transition-colors" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} placeholder="Ej. Carlos Rodriguez" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Email</label>
+                    <input className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none focus:border-red-500 text-white transition-colors" value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} placeholder="Ej. carlos@email.com" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                     <div>
+                        <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Objetivo</label>
+                        <select className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none text-sm text-white" value={newClient.goal} onChange={(e: any) => setNewClient({...newClient, goal: e.target.value})}>
+                            {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                     </div>
+                     <div>
+                        <label className="text-xs text-gray-500 font-bold uppercase ml-1 mb-1 block">Nivel</label>
+                        <select className="w-full bg-black border border-white/10 rounded-xl p-3 outline-none text-sm text-white" value={newClient.level} onChange={(e: any) => setNewClient({...newClient, level: e.target.value})}>
+                            {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                     </div>
+                  </div>
+                  <button onClick={handleCreateClient} className="w-full bg-red-600 hover:bg-red-500 py-4 rounded-xl font-bold mt-4 text-white transition-colors shadow-lg shadow-red-900/20">
+                    CREAR PERFIL
+                  </button>
+               </div>
+            </div>
+         </div>
+       )}
+    </div>
+  );
+};
+
+// --- CLIENT DETAIL VIEW ---
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
-  const user = useMemo(() => DataEngine.getUserById(clientId), [clientId]);
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
+  const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [showManualBuilder, setShowManualBuilder] = useState(false);
 
-  const refreshPlan = useCallback(() => setPlan(DataEngine.getPlan(clientId)), [clientId]);
-
-  useEffect(() => { refreshPlan(); }, [refreshPlan]);
+  // Poll for updates if needed, currently manual
+  
+  if (!client) return <div className="p-8 text-center">Atleta no encontrado.</div>;
 
   const handleGenerateAI = async () => {
-    if (!user) return;
     setIsGenerating(true);
     try {
-      const newPlan = await generateSmartRoutine(user);
-      const fullPlan: Plan = {
-        ...newPlan,
+      const generatedPlan = await generateSmartRoutine(client);
+      const newPlan: Plan = {
         id: generateUUID(),
-        userId: user.id,
+        title: generatedPlan.title || "Plan IA",
+        userId: client.id,
+        workouts: generatedPlan.workouts || [],
         updatedAt: new Date().toISOString()
       };
-      await DataEngine.savePlan(fullPlan);
-      refreshPlan();
-    } catch (e) {
-      alert("Error generando rutina. Intenta de nuevo.");
+      await DataEngine.savePlan(newPlan);
+      setPlan(newPlan);
+    } catch (e: any) {
+      alert(e.message);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleManualSave = (updatedPlan: Plan) => {
-    DataEngine.savePlan({...updatedPlan, updatedAt: new Date().toISOString()});
-    refreshPlan();
-    setIsEditing(false);
+  const handleDeleteClient = () => {
+    if (confirm("¿Estás seguro de eliminar a este atleta? Esta acción no se puede deshacer.")) {
+      DataEngine.deleteUser(clientId);
+      onBack();
+    }
   };
 
-  const handleNewManualPlan = () => {
-    if (!user) return;
-    const newPlan: Plan = {
-      id: generateUUID(),
-      title: 'Nuevo Protocolo Manual',
-      userId: user.id,
-      workouts: [],
-      updatedAt: new Date().toISOString()
-    };
-    setPlan(newPlan);
-    setIsEditing(true);
-  };
-
-  if (!user) return <div>Usuario no encontrado</div>;
-
-  if (isEditing && plan) {
-    return <ManualPlanBuilder plan={plan} onSave={handleManualSave} onCancel={() => setIsEditing(false)} />;
+  if (showManualBuilder) {
+    return <ManualPlanBuilder 
+      plan={plan || { id: generateUUID(), title: `Plan ${client.name}`, userId: client.id, workouts: [], updatedAt: new Date().toISOString() }}
+      onSave={async (p) => { await DataEngine.savePlan(p); setPlan(p); setShowManualBuilder(false); }}
+      onCancel={() => setShowManualBuilder(false)}
+    />
   }
 
   return (
-    <div className="animate-fade-in pb-20">
-      <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 text-sm font-medium">
-        <ChevronLeft size={16} /> Volver
-      </button>
-
-      <div className="bg-[#0F0F11] border border-white/5 rounded-3xl p-6 mb-6 relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-2xl font-bold font-display italic shadow-lg shadow-red-900/50">
-              {user.name.charAt(0)}
+    <div className="space-y-6 animate-fade-in pb-10">
+       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-2">
+         <ChevronLeft size={20} /> <span className="font-bold text-sm">Volver a Atletas</span>
+       </button>
+       
+       <div className="bg-[#0F0F11] p-6 rounded-3xl border border-white/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"/>
+          <div className="relative z-10 flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+            <div className="flex items-start gap-5">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center text-3xl font-bold text-gray-500 shadow-xl">
+                    {client.name[0]}
+                </div>
+                <div>
+                    <h1 className="text-3xl font-bold font-display italic text-white leading-none mb-2">{client.name.toUpperCase()}</h1>
+                    <div className="flex flex-wrap gap-3">
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
+                            <Info size={14} className="text-blue-500"/> {client.goal}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
+                            <Zap size={14} className="text-yellow-500"/> {client.level}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
+                            <CalendarDays size={14} className="text-green-500"/> {client.daysPerWeek} Días/Sem
+                        </span>
+                    </div>
+                </div>
             </div>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold">{user.name}</h1>
-              <div className="flex gap-2 mt-1">
-                <span className="px-2 py-0.5 bg-white/10 rounded text-[10px] uppercase font-bold text-gray-300">{user.goal}</span>
-                <span className="px-2 py-0.5 bg-white/10 rounded text-[10px] uppercase font-bold text-gray-300">{user.level}</span>
-              </div>
+            
+            <div className="flex gap-3 self-end md:self-start">
+               <button onClick={() => setShowManualBuilder(true)} className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-gray-400 hover:text-white transition-colors border border-white/5" title="Editar Plan">
+                   <Edit3 size={20} />
+               </button>
+               <button onClick={handleDeleteClient} className="p-3 bg-red-500/10 rounded-xl hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/10" title="Eliminar">
+                   <Trash2 size={20} />
+               </button>
             </div>
           </div>
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={handleGenerateAI}
-              disabled={isGenerating}
-              className="bg-white/10 border border-white/20 text-white px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-white/20 transition-all disabled:opacity-50"
-            >
-              {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-              <span className="hidden md:inline">GENERAR IA</span>
-            </button>
-            <button 
-              onClick={() => plan ? setIsEditing(true) : handleNewManualPlan()}
-              className="bg-red-600 text-white px-5 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-red-500 transition-all shadow-lg shadow-red-900/30"
-            >
-              {plan ? <Edit3 size={18} /> : <Plus size={18} />}
-              {plan ? 'EDITAR' : 'CREAR MANUAL'}
-            </button>
-          </div>
-        </div>
-      </div>
+       </div>
 
-      {!plan ? (
-        <div className="text-center py-20 bg-[#0F0F11] rounded-3xl border border-white/5 border-dashed">
-          <BrainCircuit className="mx-auto text-gray-600 mb-4" size={48} />
-          <p className="text-gray-500 font-medium">Sin protocolo activo</p>
-          <div className="flex justify-center gap-4 mt-4">
-             <button onClick={handleGenerateAI} className="text-sm text-red-500 font-bold hover:underline">Generar con IA</button>
-             <span className="text-gray-700">|</span>
-             <button onClick={handleNewManualPlan} className="text-sm text-white font-bold hover:underline">Crear Manualmente</button>
-          </div>
-        </div>
-      ) : (
-         <PlanViewer plan={plan} />
-      )}
+       {plan ? (
+         <div className="space-y-4">
+            <div className="flex justify-between items-center px-2">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Trophy size={18} className="text-yellow-500"/> Plan Asignado</h3>
+              <button onClick={handleGenerateAI} disabled={isGenerating} className="text-xs font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 transition-all flex items-center gap-2">
+                 {isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} REGENERAR IA
+              </button>
+            </div>
+            <PlanViewer plan={plan} mode="coach" />
+         </div>
+       ) : (
+         <div className="py-16 border border-dashed border-white/10 rounded-3xl bg-[#0F0F11]/50 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                <BrainCircuit size={32} className="text-gray-500" />
+            </div>
+            <h3 className="text-xl font-bold mb-2 text-white">Sin Protocolo Activo</h3>
+            <p className="text-gray-500 mb-8 max-w-sm">Este atleta aún no tiene un plan de entrenamiento asignado.</p>
+            
+            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md px-4">
+               <button onClick={handleGenerateAI} disabled={isGenerating} className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all text-white">
+                  {isGenerating ? <Loader2 size={20} className="animate-spin"/> : <Sparkles size={20} />}
+                  GENERAR CON IA
+               </button>
+               <button onClick={() => setShowManualBuilder(true)} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-white">
+                  <Pencil size={20} />
+                  CREAR MANUAL
+               </button>
+            </div>
+         </div>
+       )}
     </div>
   );
 };
 
+// --- WORKOUTS VIEW ---
 const WorkoutsView = () => {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('Todos');
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newExercise, setNewExercise] = useState<Partial<Exercise>>({
-    name: '', muscleGroup: 'Pecho', videoUrl: '', technique: ''
-  });
+  const [showVideo, setShowVideo] = useState<string | null>(null);
 
-  useEffect(() => {
-    setExercises(DataEngine.getExercises());
-  }, []);
-
-  const handleAddExercise = () => {
-     if(!newExercise.name) return;
-     const ex: Exercise = {
-       id: generateUUID(),
-       name: newExercise.name,
-       muscleGroup: newExercise.muscleGroup || 'Pecho',
-       videoUrl: newExercise.videoUrl || '',
-       technique: newExercise.technique || '',
-       commonErrors: []
-     };
-     DataEngine.addExercise(ex);
-     setExercises(DataEngine.getExercises());
-     setIsAddOpen(false);
-     setNewExercise({ name: '', muscleGroup: 'Pecho', videoUrl: '', technique: '' });
-  };
-
-  const filtered = exercises.filter(e => 
-    (filter === 'Todos' || e.muscleGroup === filter) &&
-    e.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const categories = useMemo(() => {
-      const unique = Array.from(new Set(exercises.map(e => e.muscleGroup)));
-      return ['Todos', ...unique];
-  }, [exercises]);
+  const filtered = exercises.filter(e => e.name.toLowerCase().includes(search.toLowerCase()) || e.muscleGroup.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="animate-fade-in pb-20">
-      <div className="flex justify-between items-center mb-6">
-         <h2 className="text-2xl font-bold">Biblioteca de Ejercicios</h2>
-         <button onClick={() => setIsAddOpen(true)} className="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
-           <Plus size={16} /> <span className="hidden md:inline">NUEVO EJERCICIO</span>
-         </button>
-      </div>
+    <div className="space-y-6 animate-fade-in">
+       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+             <Dumbbell className="text-red-500"/> Biblioteca de Ejercicios
+          </h2>
+          <div className="bg-[#0F0F11] border border-white/10 rounded-xl flex items-center px-4 py-3 w-full md:w-80 shadow-sm focus-within:border-red-500/50 transition-colors">
+             <Search size={18} className="text-gray-500 shrink-0" />
+             <input className="bg-transparent border-none outline-none ml-3 text-sm w-full text-white placeholder-gray-600 font-medium" placeholder="Buscar ejercicio o músculo..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-         <div className="flex-1 bg-[#0F0F11] border border-white/5 rounded-xl flex items-center px-4 py-3">
-            <Search size={18} className="text-gray-500" />
-            <input 
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar por nombre..."
-              className="bg-transparent border-none outline-none text-sm ml-2 w-full placeholder-gray-600"
-            />
+       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(ex => (
+             <div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center hover:border-white/20 transition-colors group">
+                <div className="flex items-center gap-4">
+                   <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-gray-500 font-bold group-hover:text-white transition-colors">
+                      {ex.name[0]}
+                   </div>
+                   <div>
+                      <h4 className="font-bold text-sm text-gray-200 group-hover:text-white">{ex.name}</h4>
+                      <span className="text-[10px] uppercase text-gray-500 bg-white/5 px-2 py-0.5 rounded inline-block mt-1 border border-white/5">{ex.muscleGroup}</span>
+                   </div>
+                </div>
+                <button onClick={() => setShowVideo(ex.name)} className="p-2.5 bg-white/5 rounded-full hover:bg-red-600 text-gray-400 hover:text-white transition-all shadow-sm">
+                   <Play size={16} fill="currentColor" />
+                </button>
+             </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="col-span-full py-12 text-center text-gray-500">No se encontraron ejercicios.</div>
+          )}
+       </div>
+
+       {showVideo && (
+         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-md" onClick={() => setShowVideo(null)}>
+            <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+               <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]">
+                  <h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3>
+                  <button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button>
+               </div>
+               <div className="aspect-video bg-black flex items-center justify-center relative group">
+                  <div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" />
+                  <a 
+                    href={exercises.find(e => e.name === showVideo)?.videoUrl} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"
+                  >
+                    <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40">
+                       <Play size={32} fill="white" className="ml-1" />
+                    </div>
+                    <span className="text-xs font-bold tracking-widest uppercase">Ver en YouTube</span>
+                  </a>
+               </div>
+            </div>
          </div>
-         <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
-           {categories.map(cat => (
-             <button 
-               key={cat} onClick={() => setFilter(cat)}
-               className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${filter === cat ? 'bg-white text-black' : 'bg-[#0F0F11] text-gray-400 border border-white/5 hover:border-white/20'}`}
-             >
-               {cat}
-             </button>
-           ))}
-         </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-         {filtered.map(ex => (
-           <div key={ex.id} className="bg-[#0F0F11] border border-white/5 rounded-xl p-4 hover:border-red-500/30 transition-colors group flex justify-between items-start">
-              <div>
-                 <h3 className="font-bold text-sm text-white group-hover:text-red-400 transition-colors">{ex.name}</h3>
-                 <span className="text-[10px] text-gray-500 uppercase bg-white/5 px-2 py-1 rounded mt-2 inline-block font-bold">{ex.muscleGroup}</span>
-              </div>
-              {ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-gray-600 hover:text-red-500 p-2 bg-white/5 rounded-lg"><Play size={16} /></a>}
-           </div>
-         ))}
-      </div>
-
-      {isAddOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-           <div className="bg-[#111] border border-white/10 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-fade-in-up">
-              <div className="flex justify-between items-center mb-4">
-                 <h3 className="text-lg font-bold">Nuevo Ejercicio</h3>
-                 <button onClick={() => setIsAddOpen(false)}><X size={20} className="text-gray-400" /></button>
-              </div>
-              <div className="space-y-4">
-                 <div>
-                    <label className="text-[10px] uppercase text-gray-500 font-bold">Nombre</label>
-                    <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none transition-colors" placeholder="Ej: Press Banca" value={newExercise.name} onChange={e => setNewExercise({...newExercise, name: e.target.value})} />
-                 </div>
-                 <div>
-                    <label className="text-[10px] uppercase text-gray-500 font-bold">Grupo Muscular</label>
-                    <select className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm text-gray-300 outline-none" value={newExercise.muscleGroup} onChange={e => setNewExercise({...newExercise, muscleGroup: e.target.value})}>
-                        {categories.filter(c => c !== 'Todos').map(c => <option key={c} value={c}>{c}</option>)}
-                        <option value="Otro">Otro</option>
-                    </select>
-                 </div>
-                 <div>
-                    <label className="text-[10px] uppercase text-gray-500 font-bold">Video URL</label>
-                    <input className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm focus:border-red-500 outline-none transition-colors" placeholder="https://youtube.com..." value={newExercise.videoUrl} onChange={e => setNewExercise({...newExercise, videoUrl: e.target.value})} />
-                 </div>
-                 <button onClick={handleAddExercise} className="w-full py-3 rounded-xl bg-red-600 text-sm font-bold text-white hover:bg-red-500 transition-colors mt-2">GUARDAR EJERCICIO</button>
-              </div>
-           </div>
-        </div>
       )}
     </div>
   );

@@ -42,6 +42,7 @@ export interface WorkoutExercise {
   targetSets: number;
   targetReps: string;
   targetLoad?: string; // Peso sugerido por el coach
+  targetRest?: number; // Descanso sugerido en segundos
   coachCue?: string; // Notas del coach
 }
 
