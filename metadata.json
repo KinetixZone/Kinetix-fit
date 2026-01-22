@@ -8,14 +8,14 @@
   "theme_color": "#ef4444",
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/tu-logo.png",
+      "src": "https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/jpeg"
     },
     {
-      "src": "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/tu-logo.png",
+      "src": "https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/jpeg"
     }
   ],
   "requestFramePermissions": [

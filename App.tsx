@@ -50,7 +50,7 @@ const RESCUE_WORKOUT: WorkoutExercise[] = [
 
 const DEFAULT_CONFIG: SystemConfig = {
     appName: 'KINETIX',
-    logoUrl: '', 
+    logoUrl: 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg', 
     themeColor: '#ef4444',
     ai: {
         chatbot: { enabled: false } // Regla 5: False por defecto
