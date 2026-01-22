@@ -556,13 +556,15 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
      setShowTimer(true);
   }, []);
 
-  const handleFinishWorkout = (workout: Workout) => {
+  // CRITICAL FIX: ASYNC/AWAIT TO PREVENT UI FREEZE
+  const handleFinishWorkout = async (workout: Workout) => {
      if(confirm("¿Has completado tu sesión? Esto la guardará en el historial.")) {
          // SAFETY PROTOCOL: No keyboard should be open, but we force blur anyway.
          if (document.activeElement instanceof HTMLElement) { document.activeElement.blur(); }
 
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
-         const session = DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
+         // AWAITING the async operation to ensure we have the session object, not a Promise.
+         const session = await DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          
          // SCROLL RESET & DELAY
          window.scrollTo(0, 0);
@@ -653,10 +655,7 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
          <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}>
             <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
                <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]"><h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3><button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button></div>
-               <div className="aspect-video bg-black flex items-center justify-center relative group"><div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" /><a href={DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl || '#'} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40"><Play size={32} fill="white" className="ml-1" /></div><span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span></a></div>
-            </div>
-         </div>
-      )}
+               <div className="aspect-video bg-black flex items-center justify-center relative group"><div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" /><a href={DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl || '#'} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40"><Play size={32} fill="white" className="ml-1" /></div><span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span></a></div></div></div>)}
       {showTimer && mode === 'athlete' && (<RestTimer initialSeconds={currentRestTime} onClose={() => setShowTimer(false)} />)}
     </div>
   );
