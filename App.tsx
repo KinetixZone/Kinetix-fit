@@ -9,7 +9,8 @@ import {
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
-  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus
+  Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
+  Instagram, Facebook, Linkedin
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
@@ -40,6 +41,7 @@ const COACH_UUID = 'e9c12345-6789-4321-8888-999999999999';
 const ADMIN_UUID = 'a1b2c3d4-0000-0000-0000-admin0000001';
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_5'; 
 const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_5';
+const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
 
 const RESCUE_WORKOUT: WorkoutExercise[] = [
     { exerciseId: 'res1', name: 'Burpees', targetSets: 4, targetReps: '15', targetRest: 60, coachCue: 'Mantén ritmo constante.' },
@@ -50,7 +52,7 @@ const RESCUE_WORKOUT: WorkoutExercise[] = [
 
 const DEFAULT_CONFIG: SystemConfig = {
     appName: 'KINETIX',
-    logoUrl: 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg', 
+    logoUrl: OFFICIAL_LOGO_URL, 
     themeColor: '#ef4444',
     ai: {
         chatbot: { enabled: false } // Regla 5: False por defecto
@@ -75,10 +77,19 @@ const DataEngine = {
   getConfig: (): SystemConfig => {
       const s = DataEngine.getStore();
       const loaded = s.CONFIG ? JSON.parse(s.CONFIG) : {};
-      // Merge con lógica de fallback para el logo
-      const merged = { ...DEFAULT_CONFIG, ...loaded, ai: { ...DEFAULT_CONFIG.ai, ...loaded.ai } };
-      if (!merged.logoUrl) merged.logoUrl = DEFAULT_CONFIG.logoUrl;
-      return merged;
+      
+      // CRITICAL FIX: Ensure Logo fallback if empty string or missing
+      let logoUrl = loaded.logoUrl;
+      if (!logoUrl || logoUrl.trim() === '') {
+          logoUrl = OFFICIAL_LOGO_URL;
+      }
+
+      return { 
+          ...DEFAULT_CONFIG, 
+          ...loaded, 
+          logoUrl: logoUrl, // Force valid logo
+          ai: { ...DEFAULT_CONFIG.ai, ...loaded.ai } 
+      };
   },
 
   saveConfig: (config: SystemConfig) => {
@@ -395,28 +406,50 @@ const BrandingLogo = ({ className = "w-8 h-8", textSize = "text-xl", showText = 
         return () => window.removeEventListener('storage-update', update);
     }, []);
 
+    // Force default if config is broken
+    const displayUrl = (!config.logoUrl || config.logoUrl === '') ? OFFICIAL_LOGO_URL : config.logoUrl;
+
     return (
         <div className="flex items-center gap-2.5 select-none group">
-            {config.logoUrl && !imgError ? (
+            {!imgError ? (
                 <img 
-                    src={config.logoUrl} 
+                    src={displayUrl} 
                     alt="Logo" 
-                    className={`${className} object-contain rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`}
-                    onError={() => setImgError(true)}
+                    className={`${className} object-cover rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`}
+                    onError={() => {
+                        console.error("Error loading logo, reverting to default");
+                        setImgError(true);
+                    }}
                 />
             ) : (
-                <div className={`${className} relative overflow-hidden rounded-xl bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center shadow-lg shadow-red-900/40 border border-white/10`}>
-                    <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-20 transition-opacity" />
-                    <span className="font-display italic font-black text-white transform -skew-x-12 translate-x-px text-shadow-sm">
-                        {config.appName.charAt(0)}
-                    </span>
-                </div>
+                <img 
+                    src={OFFICIAL_LOGO_URL} 
+                    alt="Logo Backup" 
+                    className={`${className} object-cover rounded-xl shadow-lg shadow-red-900/20 bg-[#0F0F11] border border-white/5 transition-transform group-hover:scale-105`}
+                />
             )}
             {showText && (
                 <span className={`font-display font-black italic tracking-tighter ${textSize} text-white drop-shadow-md`}>
                     {config.appName.toUpperCase()}
                 </span>
             )}
+        </div>
+    );
+}
+
+// --- SOCIAL MEDIA BAR ---
+const SocialLinks = ({ className = "" }: { className?: string }) => {
+    return (
+        <div className={`flex gap-3 justify-center ${className}`}>
+            <a href="https://instagram.com" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-gradient-to-tr hover:from-purple-600 hover:to-pink-500 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
+                <Instagram size={18} />
+            </a>
+            <a href="https://youtube.com" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-red-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
+                <Youtube size={18} />
+            </a>
+            <a href="https://facebook.com" target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-blue-600 rounded-xl text-gray-400 hover:text-white transition-all transform hover:scale-110">
+                <Facebook size={18} />
+            </a>
         </div>
     );
 }
@@ -1444,29 +1477,45 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     }
 
     return (
-        <div className="min-h-screen bg-[#050507] flex items-center justify-center p-4">
-             <div className="w-full max-w-md space-y-8">
-                 <div className="text-center">
-                     <div className="w-16 h-16 bg-red-600 rounded-2xl mx-auto mb-4 flex items-center justify-center text-2xl font-bold font-display italic text-white shadow-lg shadow-red-900/50">K</div>
-                     <h1 className="text-3xl font-bold font-display italic text-white">KINETIX ZONE</h1>
-                     <p className="text-gray-400 mt-2">Elite Functional Training</p>
+        <div className="min-h-screen bg-[#050507] flex items-center justify-center p-4 relative overflow-hidden">
+             {/* Background Decoration */}
+             <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
+                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-600/10 rounded-full blur-[100px]" />
+                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[100px]" />
+             </div>
+
+             <div className="w-full max-w-md space-y-8 relative z-10">
+                 <div className="text-center flex flex-col items-center">
+                     <BrandingLogo className="w-24 h-24 mb-6 shadow-2xl" showText={false} />
+                     <h1 className="text-4xl font-bold font-display italic text-white tracking-tight">KINETIX ZONE</h1>
+                     <p className="text-gray-400 mt-2 text-sm tracking-widest uppercase font-bold">Elite Functional Training</p>
+                     
+                     <div className="mt-6">
+                        <SocialLinks />
+                     </div>
                  </div>
                  
-                 <form onSubmit={handleSubmit} className="bg-[#0F0F11] border border-white/10 p-8 rounded-3xl space-y-6">
+                 <form onSubmit={handleSubmit} className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-3xl space-y-6 shadow-2xl">
                      <div>
-                         <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Email de Acceso</label>
-                         <input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-colors" placeholder="atleta@kinetix.com" />
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-2 ml-1">Email de Acceso</label>
+                         <input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-colors placeholder-gray-700" placeholder="atleta@kinetix.com" />
                      </div>
                      {error && <div className="text-red-500 text-sm font-bold bg-red-500/10 p-3 rounded-lg flex items-center gap-2"><AlertTriangle size={16}/> {error}</div>}
-                     <button type="submit" className="w-full bg-red-600 text-white font-bold py-4 rounded-xl hover:bg-red-500 transition-all shadow-lg shadow-red-900/20">ENTRAR</button>
+                     <button type="submit" className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white font-bold py-4 rounded-xl hover:from-red-500 hover:to-red-600 transition-all shadow-lg shadow-red-900/30 transform active:scale-[0.98]">
+                         ENTRAR AL ZONE
+                     </button>
                  </form>
                  
-                 <div className="text-center">
-                     <p className="text-xs text-gray-600">Demo Accounts:</p>
-                     <div className="flex gap-2 justify-center mt-2">
-                         <button onClick={() => setEmail('atleta@kinetix.com')} className="text-xs bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white">Atleta</button>
-                         <button onClick={() => setEmail('coach@kinetix.com')} className="text-xs bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white">Coach</button>
-                         <button onClick={() => setEmail('admin@kinetix.com')} className="text-xs bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white">Admin</button>
+                 <div className="text-center space-y-4">
+                     <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Head Coach: Jorge Gonzalez</p>
+                     
+                     <div className="border-t border-white/5 pt-4">
+                         <p className="text-xs text-gray-600 mb-2">Accesos Demo:</p>
+                         <div className="flex gap-2 justify-center">
+                             <button onClick={() => setEmail('atleta@kinetix.com')} className="text-xs bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition-colors">Atleta</button>
+                             <button onClick={() => setEmail('coach@kinetix.com')} className="text-xs bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition-colors">Coach</button>
+                             <button onClick={() => setEmail('admin@kinetix.com')} className="text-xs bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition-colors">Admin</button>
+                         </div>
                      </div>
                  </div>
              </div>
@@ -1790,7 +1839,12 @@ function App() {
                 <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
             </nav>
 
-            <button onClick={logout} className="flex items-center gap-3 text-gray-500 hover:text-white transition-colors px-4"><LogOut size={20} /> <span className="font-bold text-sm">Salir</span></button>
+            <div className="mt-auto pb-6">
+                <p className="text-[10px] text-gray-600 uppercase font-bold text-center mb-2">Kinetix Community</p>
+                <SocialLinks className="justify-center" />
+            </div>
+
+            <button onClick={logout} className="flex items-center gap-3 text-gray-500 hover:text-white transition-colors px-4 mt-4"><LogOut size={20} /> <span className="font-bold text-sm">Salir</span></button>
         </aside>
 
         {/* Mobile Header */}
