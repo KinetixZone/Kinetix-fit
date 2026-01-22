@@ -380,7 +380,6 @@ interface ExerciseCardProps {
   history: any[];
 }
 
-// ... (ExerciseCard component remains unchanged) ...
 // --- EXERCISE CARD (GOLD MODE & PR LOGIC RESTORED) ---
 const ExerciseCard: React.FC<ExerciseCardProps> = ({ 
   exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history
