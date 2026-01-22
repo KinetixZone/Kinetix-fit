@@ -316,7 +316,7 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
         await DataEngine.saveUser(newUser);
         
         // 4. Feedback
-        alert(`Invitación enviada a ${email}. (Enlace simulado activado)`);
+        alert(`Usuario dado de alta: ${email}.\nYa puede acceder con este correo.`);
         onInviteSuccess();
         onClose();
     };
@@ -326,8 +326,8 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
             <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 relative" onClick={e => e.stopPropagation()}>
                 <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={20} /></button>
                 
-                <h3 className="text-xl font-bold text-white mb-1">Invitar Nuevo Usuario</h3>
-                <p className="text-xs text-gray-500 mb-6">Se enviará un correo de activación.</p>
+                <h3 className="text-xl font-bold text-white mb-1">Dar de Alta Usuario</h3>
+                <p className="text-xs text-gray-500 mb-6">Acceso inmediato mediante correo electrónico.</p>
 
                 <form onSubmit={handleInvite} className="space-y-4">
                     <div>
@@ -359,8 +359,8 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
 
                     <div className="pt-4">
                         <button type="submit" disabled={loading} className="w-full py-3 bg-white text-black rounded-xl font-bold text-sm hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
-                            {loading ? <Loader2 className="animate-spin" size={16} /> : <Mail size={16} />}
-                            ENVIAR INVITACIÓN
+                            {loading ? <Loader2 className="animate-spin" size={16} /> : <UserPlus size={16} />}
+                            DAR DE ALTA
                         </button>
                     </div>
                 </form>
@@ -1013,7 +1013,7 @@ const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user:
     const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
 
     return (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 animate-fade-in pb-20">
              <div className="flex justify-between items-center">
                 <h2 className="text-3xl font-bold font-display italic text-white">ATLETAS</h2>
                 {(user.role === 'coach' || user.role === 'admin') && (
@@ -1095,7 +1095,12 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
     } catch (e: any) { alert(e.message); } finally { setIsGenerating(false); }
   };
 
-  const handleDeleteClient = () => { if (confirm("¿Estás seguro?")) { DataEngine.deleteUser(clientId); onBack(); } };
+  const handleDeleteClient = () => { 
+      if (confirm("¿Estás seguro de eliminar a este atleta? Esta acción no se puede deshacer.")) { 
+          DataEngine.deleteUser(clientId); 
+          onBack(); 
+      } 
+  };
   
   const handleSavePlan = (updatedPlan: Plan) => {
       DataEngine.savePlan(updatedPlan);
@@ -1108,7 +1113,7 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-32">
        <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-2"><ChevronLeft size={20} /> <span className="font-bold text-sm">Volver a Atletas</span></button>
        
        <div className="bg-[#0F0F11] p-6 rounded-3xl border border-white/5 relative overflow-hidden">
@@ -1248,7 +1253,7 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: st
         const exercises = DataEngine.getExercises();
 
         return (
-            <div className="space-y-6 animate-fade-in">
+            <div className="space-y-6 animate-fade-in pb-20">
                 <div className="flex justify-between items-center">
                    <div>
                        <h2 className="text-3xl font-bold font-display italic text-white">PANEL DE CONTROL</h2>
@@ -1308,7 +1313,7 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: st
     const workoutsDone = history.length;
 
     return (
-        <div className="space-y-8 animate-fade-in pb-20">
+        <div className="space-y-8 animate-fade-in pb-32">
             <div className="flex justify-between items-center mb-2">
                <div>
                   <h2 className="text-3xl font-bold font-display italic text-white flex items-center gap-2">
@@ -1361,7 +1366,7 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
     }
 
     return (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 animate-fade-in pb-32">
             <div className="flex items-center gap-4 mb-8">
                 <div className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl shadow-red-900/40">{user.name[0]}</div>
                 <div>
@@ -1420,6 +1425,7 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
     );
 };
 
+// ... (AdminView and App export remain identical but updated within the file context)
 // --- ADMIN VIEW EXPANDED (Updated for User Invite) ---
 const AdminView = () => {
   const [config, setConfig] = useState(DataEngine.getConfig());
