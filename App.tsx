@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -10,7 +9,7 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, ChevronDown
+  Instagram, Facebook, Linkedin, Phone
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
@@ -545,7 +544,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   const [currentRestTime, setCurrentRestTime] = useState(60);
   const [finishScreen, setFinishScreen] = useState<any | null>(null);
   const [activeRescue, setActiveRescue] = useState<string | null>(null);
-  const [expandedWorkouts, setExpandedWorkouts] = useState<Record<string, boolean>>({});
   
   // FIX: Using state for history to force updates when workout finishes
   const [history, setHistory] = useState<any[]>(() => {
@@ -578,15 +576,10 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
          const logs = DataEngine.getWorkoutLog(plan.userId, workout.id);
          const session = await DataEngine.archiveWorkout(plan.userId, workout, logs, startTime.current);
          
-         // FORCE UPDATE HISTORY STATE DIRECTLY HERE
-         if (mode === 'athlete') {
-             const freshHistory = DataEngine.getClientHistory(plan.userId);
-             setHistory(freshHistory);
-         }
-
          window.scrollTo(0, 0);
          setTimeout(() => {
             setFinishScreen(session);
+            // TRIGGER UPDATE EVENT MANUALLY IF NEEDED (DataEngine already does this, but redundancy helps)
             window.dispatchEvent(new Event('storage-update'));
          }, 100);
      }
@@ -596,10 +589,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
       if (attended) {
           if(confirm("¿Confirmar asistencia a clase?")) {
               DataEngine.archiveWorkout(plan.userId, workout, { 0: [{ setNumber: 1, weight: '0', reps: '1', completed: true, timestamp: Date.now() }] }, Date.now());
-              
-              // Force update
-              if(mode === 'athlete') setHistory(DataEngine.getClientHistory(plan.userId));
-
               window.scrollTo(0,0);
               setTimeout(() => {
                 setFinishScreen({ summary: { exercisesCompleted: 1, totalVolume: 0, durationMinutes: 60, prCount: 0 }});
@@ -619,10 +608,6 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                hDate.getFullYear() === now.getFullYear();
     });
   };
-  
-  const toggleWorkout = (id: string) => {
-      setExpandedWorkouts(prev => ({...prev, [id]: !prev[id]}));
-  };
 
   if (finishScreen) {
       return (
@@ -634,10 +619,7 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                   <div className="bg-[#0F0F11] border border-white/10 p-5 rounded-2xl flex flex-col items-center"><div className="text-3xl font-bold text-white mb-1">{finishScreen.summary.totalVolume.toLocaleString()}</div><div className="text-[10px] uppercase text-gray-500 font-bold">Volumen Total (Kg)</div></div>
                   <div className="bg-[#0F0F11] border border-white/10 p-5 rounded-2xl flex flex-col items-center"><div className="text-3xl font-bold text-white mb-1">{finishScreen.summary.durationMinutes}m</div><div className="text-[10px] uppercase text-gray-500 font-bold">Duración</div></div>
               </div>
-              <button onClick={() => {
-                  setFinishScreen(null);
-                  if(mode === 'athlete') setHistory(DataEngine.getClientHistory(plan.userId)); // Force refresh again just in case
-              }} className="mt-8 bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-gray-200 transition-colors shadow-lg">VOLVER AL DASHBOARD</button>
+              <button onClick={() => setFinishScreen(null)} className="mt-8 bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-gray-200 transition-colors shadow-lg">VOLVER AL DASHBOARD</button>
           </div>
       )
   }
@@ -647,78 +629,47 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
       <div className="flex items-center justify-between sticky top-0 bg-[#050507]/90 backdrop-blur-xl z-30 py-4 border-b border-white/5"><h2 className="text-xl font-bold flex items-center gap-2 text-white"><CalendarDays size={20} className="text-red-500" />{plan.title}</h2>{mode === 'athlete' && (<div className="flex items-center gap-2"><span className="text-[10px] font-black tracking-widest text-green-400 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/20 flex items-center gap-1"><Flame size={12}/> ACTIVE</span></div>)}</div>
       <div className="grid md:grid-cols-2 gap-6">
         {plan.workouts.map((workout) => {
-          const isDoneToday = isWorkoutDoneToday(workout.id);
-          const lastLog = history?.find(h => h.workoutId === workout.id);
-          const isDoneEver = !!lastLog;
-          
-          // Logic: If done ever (today or past), default to collapsed (hidden) to save space.
-          // Unless manually toggled by user.
-          const isVisible = expandedWorkouts[workout.id] !== undefined 
-                            ? expandedWorkouts[workout.id] 
-                            : !isDoneEver;
-
+          const isDone = isWorkoutDoneToday(workout.id);
           return (
           <div key={workout.id}>
-             {/* Header with toggle functionality */}
-             <div className="flex items-center gap-2 mb-4 cursor-pointer group select-none" onClick={() => toggleWorkout(workout.id)}>
-                 <div className="h-px bg-white/10 flex-1"/>
-                 <span className="text-xs font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
-                     DÍA {workout.day} • {workout.name}
-                     {isDoneEver && <CheckCircle2 size={12} className="text-green-500" />}
-                     <ChevronRight size={14} className={`transform transition-transform text-gray-500 group-hover:text-white ${isVisible ? 'rotate-90' : ''}`} />
-                 </span>
-                 <div className="h-px bg-white/10 flex-1"/>
-             </div>
-
-             {isVisible && (
-                 <>
-                     {workout.isClass && !activeRescue && (
-                         <div className="bg-gradient-to-br from-[#1A1A1D] to-[#000] border border-red-500/30 rounded-2xl p-6 text-center relative overflow-hidden group">
-                             <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"/>
-                             <div className="relative z-10">
-                                 <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500 animate-pulse-subtle"><MapPin size={32} /></div>
-                                 <h3 className="text-2xl font-bold font-display italic text-white uppercase">{workout.classType || 'CLASE PRESENCIAL'}</h3>
-                                 <p className="text-gray-400 text-sm mt-2 mb-6">Asistencia requerida en Kinetix Zone.</p>
-                                 {mode === 'athlete' ? (
-                                     <div className="grid grid-cols-2 gap-3">
-                                         <button onClick={() => handleClassAttendance(workout, true)} className="py-3 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-black flex items-center justify-center gap-2 transition-all"><CheckCircle2 size={18}/> ASISTÍ</button>
-                                         <button onClick={() => handleClassAttendance(workout, false)} className="py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold text-gray-300 flex items-center justify-center gap-2 transition-all"><X size={18}/> NO PUDE IR</button>
-                                     </div>
-                                 ) : (
-                                     <div className="text-xs text-gray-500 font-bold uppercase border border-white/10 rounded-lg p-2">Vista de Coach: El atleta confirmará su asistencia.</div>
-                                 )}
+             <div className="flex items-center gap-2 mb-4"><div className="h-px bg-white/10 flex-1"/><span className="text-xs font-bold text-red-500 uppercase tracking-widest">DÍA {workout.day} • {workout.name}</span><div className="h-px bg-white/10 flex-1"/></div>
+             {workout.isClass && !activeRescue && (
+                 <div className="bg-gradient-to-br from-[#1A1A1D] to-[#000] border border-red-500/30 rounded-2xl p-6 text-center relative overflow-hidden group">
+                     <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"/>
+                     <div className="relative z-10">
+                         <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500 animate-pulse-subtle"><MapPin size={32} /></div>
+                         <h3 className="text-2xl font-bold font-display italic text-white uppercase">{workout.classType || 'CLASE PRESENCIAL'}</h3>
+                         <p className="text-gray-400 text-sm mt-2 mb-6">Asistencia requerida en Kinetix Zone.</p>
+                         {mode === 'athlete' ? (
+                             <div className="grid grid-cols-2 gap-3">
+                                 <button onClick={() => handleClassAttendance(workout, true)} className="py-3 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-black flex items-center justify-center gap-2 transition-all"><CheckCircle2 size={18}/> ASISTÍ</button>
+                                 <button onClick={() => handleClassAttendance(workout, false)} className="py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold text-gray-300 flex items-center justify-center gap-2 transition-all"><X size={18}/> NO PUDE IR</button>
                              </div>
-                         </div>
-                     )}
-                     {activeRescue === workout.id && (
-                         <div className="mb-4 bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl flex items-start gap-3"><ShieldAlert className="text-blue-400 shrink-0 mt-1" size={20} /><div><h4 className="font-bold text-blue-400 text-sm">ACTIVANDO PROTOCOLO DE RESCATE</h4><p className="text-xs text-gray-400 mt-1">No te preocupes por faltar a clase. Completa esta rutina metabólica en casa para mantener tu progreso.</p></div></div>
-                     )}
-                     {(!workout.isClass || activeRescue === workout.id) && (
-                         (activeRescue === workout.id ? RESCUE_WORKOUT : workout.exercises).map((ex, idx) => (
-                            <ExerciseCard 
-                               key={idx} 
-                               exercise={ex} 
-                               index={idx} 
-                               workoutId={workout.id} 
-                               userId={plan.userId} 
-                               onShowVideo={setShowVideo} 
-                               mode={mode}
-                               onSetComplete={handleSetComplete}
-                               history={history}
-                            />
-                         ))
-                     )}
-                     {/* Show Finish button only if visible and not done today (if done today, Banner shows below) */}
-                     {!isDoneToday && mode === 'athlete' && (!workout.isClass || activeRescue === workout.id) && (
-                         <button onClick={() => handleFinishWorkout(workout)} className="w-full mt-4 bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-900/20 transition-all active:scale-[0.98]"><CheckCircle2 size={20} /> FINALIZAR ENTRENAMIENTO</button>
-                     )}
-                 </>
+                         ) : (
+                             <div className="text-xs text-gray-500 font-bold uppercase border border-white/10 rounded-lg p-2">Vista de Coach: El atleta confirmará su asistencia.</div>
+                         )}
+                     </div>
+                 </div>
              )}
-
-             {/* Completed States (Collapsed or Banner) */}
-             
-             {/* If done TODAY, we always show the Big Success Banner (even if visible, to confirm success) */}
-             {isDoneToday && (
+             {activeRescue === workout.id && (
+                 <div className="mb-4 bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl flex items-start gap-3"><ShieldAlert className="text-blue-400 shrink-0 mt-1" size={20} /><div><h4 className="font-bold text-blue-400 text-sm">ACTIVANDO PROTOCOLO DE RESCATE</h4><p className="text-xs text-gray-400 mt-1">No te preocupes por faltar a clase. Completa esta rutina metabólica en casa para mantener tu progreso.</p></div></div>
+             )}
+             {(!workout.isClass || activeRescue === workout.id) && (
+                 (activeRescue === workout.id ? RESCUE_WORKOUT : workout.exercises).map((ex, idx) => (
+                    <ExerciseCard 
+                       key={idx} 
+                       exercise={ex} 
+                       index={idx} 
+                       workoutId={workout.id} 
+                       userId={plan.userId} 
+                       onShowVideo={setShowVideo} 
+                       mode={mode}
+                       onSetComplete={handleSetComplete}
+                       history={history}
+                    />
+                 ))
+             )}
+             {isDone ? (
                 <div className="p-6 bg-green-900/20 border border-green-500/30 rounded-xl flex items-center justify-center gap-3 mt-4 animate-fade-in">
                     <CheckCircle2 size={32} className="text-green-500" />
                     <div>
@@ -726,14 +677,10 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                         <p className="text-xs text-gray-400">Descansa y recupérate para mañana.</p>
                     </div>
                 </div>
-             )}
-
-             {/* If done in PAST and Collapsed, show compact summary bar to indicate it's done */}
-             {!isVisible && isDoneEver && !isDoneToday && (
-                 <div onClick={() => toggleWorkout(workout.id)} className="p-4 bg-white/5 border border-white/10 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/10 transition-colors group">
-                     <span className="text-gray-400 text-xs font-bold flex items-center gap-2"><CheckCircle2 size={16} className="text-green-500"/> Completado el {formatDate(lastLog.date)}</span>
-                     <span className="text-[10px] text-gray-500 uppercase font-bold group-hover:text-white transition-colors">Ver Detalles</span>
-                 </div>
+             ) : (
+                 mode === 'athlete' && (!workout.isClass || activeRescue === workout.id) && (
+                     <button onClick={() => handleFinishWorkout(workout)} className="w-full mt-4 bg-green-600 hover:bg-green-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-900/20 transition-all active:scale-[0.98]"><CheckCircle2 size={20} /> FINALIZAR ENTRENAMIENTO</button>
+                 )
              )}
           </div>
         )})}
@@ -748,206 +695,368 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   );
 };
 
-const LoginScreen = ({ onLogin }: { onLogin: (u: User) => void }) => {
+const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
+  const [editedPlan, setEditedPlan] = useState<Plan>(plan);
+  const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
+  const [showExerciseSelector, setShowExerciseSelector] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string>('Todos');
+
+  const allExercises = useMemo(() => DataEngine.getExercises(), []);
+  const categories = useMemo(() => ['Todos', ...Array.from(new Set(allExercises.map(e => e.muscleGroup)))], [allExercises]);
+
+  const handleAddWorkout = () => {
+    const newWorkout: Workout = { id: generateUUID(), name: `DÍA ${editedPlan.workouts.length + 1}`, day: editedPlan.workouts.length + 1, exercises: [] };
+    setEditedPlan({...editedPlan, workouts: [...editedPlan.workouts, newWorkout]});
+    setSelectedWorkoutIndex(editedPlan.workouts.length);
+  };
+
+  const handleAddExercise = (exercise: Exercise) => {
+    const newExercise: WorkoutExercise = { exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '' };
+    const updatedWorkouts = [...editedPlan.workouts];
+    updatedWorkouts[selectedWorkoutIndex].exercises.push(newExercise);
+    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
+    setShowExerciseSelector(false);
+  };
+
+  const toggleClassMode = (idx: number) => {
+      const updated = [...editedPlan.workouts];
+      updated[idx].isClass = !updated[idx].isClass;
+      if (updated[idx].isClass) { updated[idx].exercises = []; updated[idx].classType = 'Hyrox / Funcional'; }
+      setEditedPlan({...editedPlan, workouts: updated});
+  };
+
+  const updateExercise = (exerciseIndex: number, field: keyof WorkoutExercise, value: any) => {
+    const updatedWorkouts = [...editedPlan.workouts];
+    updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex] = { ...updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex], [field]: value };
+    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
+  };
+
+  const removeExercise = (exerciseIndex: number) => {
+    const updatedWorkouts = [...editedPlan.workouts];
+    updatedWorkouts[selectedWorkoutIndex].exercises.splice(exerciseIndex, 1);
+    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
+  };
+
+  const filteredExercises = useMemo(() => {
+    let filtered = allExercises;
+    if (activeCategory !== 'Todos') filtered = filtered.filter(ex => ex.muscleGroup === activeCategory);
+    if (searchQuery) filtered = filtered.filter(ex => ex.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    return filtered;
+  }, [searchQuery, activeCategory, allExercises]);
+
+  return (
+    <div className="bg-[#0A0A0C] min-h-screen fixed inset-0 z-50 overflow-y-auto pb-20 flex flex-col">
+      <div className="sticky top-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-40 shrink-0">
+        <div className="flex items-center gap-3"><button onClick={onCancel}><X size={24} className="text-gray-400" /></button><input value={editedPlan.title} onChange={(e) => setEditedPlan({...editedPlan, title: e.target.value})} className="bg-transparent text-xl font-bold outline-none placeholder-gray-600 w-full" placeholder="Nombre del Protocolo" /></div>
+        <button onClick={() => onSave(editedPlan)} className="bg-red-600 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"><Save size={16} /> <span className="hidden sm:inline">GUARDAR</span></button>
+      </div>
+      <div className="p-4 max-w-4xl mx-auto w-full flex-1">
+        <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-4">
+          {editedPlan.workouts.map((w, idx) => (<button key={w.id} onClick={() => setSelectedWorkoutIndex(idx)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${selectedWorkoutIndex === idx ? 'bg-white text-black' : 'bg-white/5 text-gray-400'}`}>DÍA {w.day}</button>))}
+          <button onClick={handleAddWorkout} className="px-4 py-2 rounded-full bg-red-600/20 text-red-500 border border-red-500/50 flex items-center gap-1 text-sm font-bold"><Plus size={14} /> DÍA</button>
+        </div>
+        {editedPlan.workouts[selectedWorkoutIndex] ? (
+          <div className="space-y-4 animate-fade-in">
+             <div className="flex items-center gap-4 mb-4">
+                 <input value={editedPlan.workouts[selectedWorkoutIndex].name} onChange={(e) => { const updated = [...editedPlan.workouts]; updated[selectedWorkoutIndex].name = e.target.value; setEditedPlan({...editedPlan, workouts: updated}); }} className="bg-transparent text-2xl font-bold uppercase text-red-500 outline-none w-full" placeholder="NOMBRE DEL DÍA (EJ: PIERNA)" />
+                 <button onClick={() => toggleClassMode(selectedWorkoutIndex)} className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors flex items-center gap-2 ${editedPlan.workouts[selectedWorkoutIndex].isClass ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/5 border-white/10 text-gray-400'}`}><MapPin size={14} /> {editedPlan.workouts[selectedWorkoutIndex].isClass ? 'Es Clase Presencial' : 'Es Rutina de Gym'}</button>
+             </div>
+             {editedPlan.workouts[selectedWorkoutIndex].isClass ? (
+                 <div className="bg-[#111] border border-blue-500/30 p-6 rounded-2xl text-center">
+                     <MapPin size={48} className="mx-auto text-blue-500 mb-4" /><h3 className="text-xl font-bold text-white mb-2">Configuración de Clase</h3><p className="text-sm text-gray-400 mb-4">El atleta deberá confirmar su asistencia. Si no asiste, se le asignará una rutina automática.</p>
+                     <input value={editedPlan.workouts[selectedWorkoutIndex].classType || ''} onChange={(e) => { const updated = [...editedPlan.workouts]; updated[selectedWorkoutIndex].classType = e.target.value; setEditedPlan({...editedPlan, workouts: updated}); }} placeholder="Nombre de la Clase (ej: Hyrox, BootCamp)" className="bg-black border border-white/20 rounded-xl p-3 w-full text-center text-white focus:border-blue-500 outline-none" />
+                 </div>
+             ) : (
+                 <>
+                     {editedPlan.workouts[selectedWorkoutIndex].exercises.map((ex, idx) => (
+                       <div key={idx} className="bg-[#111] border border-white/10 rounded-xl p-4 relative group">
+                          <div className="flex justify-between items-start mb-3"><span className="font-bold text-lg">{ex.name}</span><button onClick={() => removeExercise(idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={18} /></button></div>
+                          <div className="grid grid-cols-4 gap-3 mb-3">
+                            <div><label className="text-[10px] text-gray-500 uppercase font-bold">Series</label><input type="number" inputMode="numeric" value={ex.targetSets} onChange={(e) => updateExercise(idx, 'targetSets', parseInt(e.target.value))} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold" /></div>
+                            <div><label className="text-[10px] text-gray-500 uppercase font-bold">Reps</label><input type="text" value={ex.targetReps} onChange={(e) => updateExercise(idx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold" /></div>
+                            <div><label className="text-[10px] text-gray-500 uppercase font-bold text-yellow-500">Carga (Kg)</label><input type="text" inputMode="decimal" value={ex.targetLoad || ''} onChange={(e) => updateExercise(idx, 'targetLoad', e.target.value)} placeholder="Ej: 80" className="w-full bg-black border border-yellow-500/20 rounded-lg p-2 text-sm text-center font-bold text-yellow-400 placeholder-gray-700" /></div>
+                            <div><label className="text-[10px] text-gray-500 uppercase font-bold text-blue-500">Descanso(s)</label><input type="number" inputMode="numeric" value={ex.targetRest || ''} onChange={(e) => updateExercise(idx, 'targetRest', parseInt(e.target.value))} placeholder="60" className="w-full bg-black border border-blue-500/20 rounded-lg p-2 text-sm text-center font-bold text-blue-400 placeholder-gray-700" /></div>
+                          </div>
+                          <div><label className="text-[10px] text-gray-500 uppercase font-bold">Notas Técnicas</label><input type="text" value={ex.coachCue || ''} onChange={(e) => updateExercise(idx, 'coachCue', e.target.value)} placeholder="Instrucciones específicas..." className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-gray-300" /></div>
+                       </div>
+                     ))}
+                     <button onClick={() => setShowExerciseSelector(true)} className="w-full py-4 border-2 border-dashed border-white/10 rounded-xl text-gray-500 font-bold hover:border-red-500/50 hover:text-red-500 transition-colors flex items-center justify-center gap-2"><Plus size={20} /> AÑADIR EJERCICIO</button>
+                 </>
+             )}
+          </div>
+        ) : <div className="text-center text-gray-500 mt-10">Agrega un día de entrenamiento para comenzar.</div>}
+      </div>
+      {showExerciseSelector && (
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col animate-fade-in">
+          <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]"><button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24} /></button><div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={18} className="text-gray-400" /><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar ejercicio..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div></div>
+          <div className="flex gap-2 overflow-x-auto p-2 border-b border-white/5 no-scrollbar bg-[#0A0A0C]">{categories.map(cat => (<button key={cat} onClick={() => setActiveCategory(cat)} className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeCategory === cat ? 'bg-red-600 text-white' : 'bg-white/5 text-gray-400'}`}>{cat}</button>))}</div>
+          <div className="flex-1 overflow-y-auto p-4 grid gap-2 pb-20">
+            {filteredExercises.map(ex => (<button key={ex.id} onClick={() => handleAddExercise(ex)} className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm">{ex.name}</div><div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div></div><Plus size={18} className="text-gray-600" /></button>))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const WorkoutsView = ({ user }: { user: User }) => {
+    const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
+    const [filter, setFilter] = useState('');
+    const [showVideo, setShowVideo] = useState<string | null>(null);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const filtered = exercises.filter(e => e.name.toLowerCase().includes(filter.toLowerCase()) || e.muscleGroup.toLowerCase().includes(filter.toLowerCase()));
+    const handleAddExercise = (e: React.FormEvent) => {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        const formData = new FormData(form);
+        const newEx: Exercise = { id: generateUUID(), name: formData.get('name') as string, muscleGroup: formData.get('muscle') as string, videoUrl: formData.get('video') as string, technique: '', commonErrors: [] };
+        DataEngine.addExercise(newEx);
+        setExercises(DataEngine.getExercises());
+        setShowAddModal(false);
+    };
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="flex items-center justify-between"><h2 className="text-3xl font-bold font-display italic text-white">BIBLIOTECA</h2>{(user.role === 'coach' || user.role === 'admin') && (<button onClick={() => setShowAddModal(true)} className="text-xs font-bold bg-white text-black px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-200"><Plus size={16}/> Nuevo</button>)}</div>
+             <div className="relative"><Search className="absolute left-4 top-3.5 text-gray-500" size={18} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar ejercicio o músculo..." className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none" /></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{filtered.map(ex => (<div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/20 transition-colors"><div><h4 className="font-bold text-white">{ex.name}</h4><span className="text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block">{ex.muscleGroup}</span></div><button onClick={() => setShowVideo(ex.name)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-white/10 transition-colors"><Play size={16} /></button></div>))}</div>
+             {showVideo && (<div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}><div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]"><h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3><button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button></div><div className="aspect-video bg-black flex items-center justify-center relative group"><div className="absolute inset-0 bg-red-600/5 group-hover:bg-transparent transition-colors pointer-events-none" /><a href={exercises.find(e => e.name === showVideo)?.videoUrl || '#'} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40"><Play size={32} fill="white" className="ml-1" /></div><span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span></a></div></div></div>)}
+             {showAddModal && (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddModal(false)}>
+                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold text-white mb-4">Agregar Ejercicio</h3>
+                        <form onSubmit={handleAddExercise} className="space-y-4">
+                            <input name="name" required placeholder="Nombre del Ejercicio" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                            <select name="muscle" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none"><option value="Pecho">Pecho</option><option value="Espalda">Espalda</option><option value="Pierna">Pierna</option><option value="Hombro">Hombro</option><option value="Brazo">Brazo</option><option value="Funcional">Funcional</option></select>
+                            <input name="video" placeholder="URL Video (YouTube)" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                            <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button><button type="submit" className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500">Guardar</button></div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
+    const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
+    const [search, setSearch] = useState('');
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    useEffect(() => { setUsers(DataEngine.getUsers().filter(u => u.role === 'client')); }, [showInviteModal]);
+    const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="flex justify-between items-center"><h2 className="text-3xl font-bold font-display italic text-white">ATLETAS</h2>{(user.role === 'coach' || user.role === 'admin') && (<button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors"><UserPlus size={16} /> Agregar Atleta</button>)}</div>
+             <div className="relative"><Search className="absolute left-3 top-2.5 text-gray-500" size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-full md:w-64" /></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                 {filtered.map(client => {
+                     const plan = DataEngine.getPlan(client.id);
+                     return (
+                         <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 cursor-pointer transition-all group relative overflow-hidden">
+                             <div className="flex items-center gap-4 relative z-10">
+                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center font-bold text-white shadow-lg border border-white/5 group-hover:scale-110 transition-transform">{client.name[0]}</div>
+                                 <div><h4 className="font-bold text-white group-hover:text-red-500 transition-colors">{client.name}</h4><p className="text-xs text-gray-500">{client.email}</p><div className="flex gap-2 mt-2"><span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/5">{client.goal}</span>{plan && <span className="text-[10px] bg-green-900/20 text-green-500 px-2 py-0.5 rounded border border-green-500/20 flex items-center gap-1"><CheckCircle2 size={10}/> Plan Activo</span>}</div></div>
+                             </div>
+                         </div>
+                     );
+                 })}
+                 {filtered.length === 0 && (<div className="col-span-full text-center py-10 text-gray-500">No se encontraron atletas.</div>)}
+             </div>
+             {showInviteModal && (<UserInviteModal currentUser={user} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers().filter(u => u.role === 'client'))} />)}
+        </div>
+    );
+};
+
+const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
+  const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
+  const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
+  const [history, setHistory] = useState<any[]>(DataEngine.getClientHistory(clientId));
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showManualBuilder, setShowManualBuilder] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'plan' | 'history'>('plan');
+
+  if (!client) return <div className="p-8 text-center">Atleta no encontrado.</div>;
+
+  const handleGenerateAI = async () => {
+    setIsGenerating(true);
+    try {
+      const generatedPlan = await generateSmartRoutine(client, history);
+      const newPlan: Plan = { id: generateUUID(), title: generatedPlan.title || "Plan IA", userId: client.id, workouts: generatedPlan.workouts || [], updatedAt: new Date().toISOString() };
+      await DataEngine.savePlan(newPlan);
+      setPlan(newPlan);
+    } catch (e: any) { alert(e.message); } finally { setIsGenerating(false); }
+  };
+
+  const handleDeleteClient = () => { if (confirm("¿Estás seguro de eliminar a este atleta? Esta acción no se puede deshacer.")) { DataEngine.deleteUser(clientId); onBack(); } };
+  const handleSavePlan = (updatedPlan: Plan) => { DataEngine.savePlan(updatedPlan); setPlan(updatedPlan); setShowManualBuilder(false); };
+
+  if (showManualBuilder && plan) { return <ManualPlanBuilder plan={plan} onSave={handleSavePlan} onCancel={() => setShowManualBuilder(false)} />; }
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-32">
+       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-2"><ChevronLeft size={20} /> <span className="font-bold text-sm">Volver a Atletas</span></button>
+       <div className="bg-[#0F0F11] p-6 rounded-3xl border border-white/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"/>
+          <div className="relative z-10 flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+            <div className="flex items-start gap-5">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center text-3xl font-bold text-gray-500 shadow-xl">{client.name[0]}</div>
+                <div><h1 className="text-3xl font-bold font-display italic text-white leading-none mb-2">{client.name.toUpperCase()}</h1><div className="flex flex-wrap gap-3"><div className="relative group"><select value={client.goal} onChange={(e) => { const val = e.target.value as Goal; const updated = { ...client, goal: val }; DataEngine.saveUser(updated); setClient(updated); }} className="appearance-none bg-white/5 border border-white/5 text-xs font-bold text-gray-400 rounded-lg pl-8 pr-6 py-1.5 outline-none focus:border-blue-500 cursor-pointer hover:bg-white/10 transition-colors">{Object.values(Goal).map(g => <option key={g} value={g} className="bg-[#1A1A1D] text-white">{g}</option>)}</select><Info size={14} className="text-blue-500 absolute left-2.5 top-1.5 pointer-events-none"/><Edit3 size={10} className="text-gray-600 absolute right-2 top-2 pointer-events-none group-hover:text-white"/></div><span className="flex items-center gap-1.5 text-xs font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5"><Zap size={14} className="text-yellow-500"/> {client.level}</span></div></div>
+            </div>
+            <button onClick={handleDeleteClient} className="text-xs text-red-500 hover:text-red-400 border border-red-900/30 px-3 py-1.5 rounded-lg bg-red-900/10 transition-colors flex items-center gap-1"><Trash2 size={12}/> Eliminar</button>
+          </div>
+       </div>
+       <div className="flex border-b border-white/10 gap-6"><button onClick={() => setActiveSubTab('plan')} className={`pb-3 text-sm font-bold transition-colors ${activeSubTab === 'plan' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Protocolo Activo</button><button onClick={() => setActiveSubTab('history')} className={`pb-3 text-sm font-bold transition-colors ${activeSubTab === 'history' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Historial ({history.length})</button></div>
+       {activeSubTab === 'plan' && (
+           plan ? (
+             <div className="space-y-4 animate-fade-in">
+                <div className="flex justify-between items-center px-2"><h3 className="text-lg font-bold flex items-center gap-2 text-white"><Trophy size={18} className="text-yellow-500"/> Plan Asignado</h3><div className="flex gap-2"><button onClick={() => setShowManualBuilder(true)} className="text-xs font-bold bg-white/10 text-white border border-white/20 px-4 py-2 rounded-full hover:bg-white/20 transition-all flex items-center gap-2"><Edit3 size={12}/> EDITAR MANUAL</button><button onClick={handleGenerateAI} disabled={isGenerating} className="text-xs font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 transition-all flex items-center gap-2">{isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} REGENERAR IA</button></div></div>
+                <PlanViewer plan={plan} mode="coach" />
+             </div>
+           ) : (
+             <div className="py-16 text-center text-gray-500 flex flex-col items-center"><p className="mb-4">Sin plan activo.</p><div className="flex gap-2"><button onClick={() => { const newP = { id: generateUUID(), title: 'Nuevo Plan', userId: client.id, workouts: [], updatedAt: new Date().toISOString() }; setPlan(newP); setShowManualBuilder(true); }} className="text-sm font-bold bg-white text-black px-6 py-3 rounded-xl hover:bg-gray-200 transition-all flex items-center gap-2"><Plus size={16}/> CREAR MANUAL</button><button onClick={handleGenerateAI} disabled={isGenerating} className="text-sm font-bold bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-500 transition-all flex items-center gap-2">{isGenerating ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16} />} CREAR CON IA</button></div></div>
+           )
+       )}
+       {activeSubTab === 'history' && (
+           <div className="space-y-4 animate-fade-in">
+               {history.length === 0 ? <div className="text-center py-10 text-gray-500">No hay sesiones.</div> : history.map((s, i) => (
+                   <div key={i} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl">
+                       <div className="flex justify-between items-center mb-2"><div><div className="font-bold text-white">{s.workoutName}</div><div className="text-xs text-gray-500">{formatDate(s.date)}</div></div><div className="text-right"><div className="font-bold text-white">{(s.summary.totalVolume/1000).toFixed(1)}k <span className="text-xs text-gray-500">VOL</span></div>{s.summary.prCount > 0 && <div className="text-[10px] text-yellow-500 font-bold">{s.summary.prCount} PRs</div>}</div></div>
+                       <div className="mt-2 pt-2 border-t border-white/5 grid grid-cols-2 gap-2"><div className="text-xs text-gray-500">Duración: <span className="text-white">{s.summary.durationMinutes}m</span></div><div className="text-xs text-gray-500">Ejercicios: <span className="text-white">{s.summary.exercisesCompleted}</span></div></div>
+                   </div>
+               ))}
+           </div>
+       )}
+    </div>
+  );
+};
+
+const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     const [email, setEmail] = useState('');
     const [error, setError] = useState('');
-    const [users, setUsers] = useState<User[]>([]);
-
-    useEffect(() => {
-        setUsers(DataEngine.getUsers());
-    }, []);
-
-    const handleLogin = (e: React.FormEvent) => {
-        e.preventDefault();
-        const u = users.find(user => user.email.toLowerCase() === email.toLowerCase().trim());
-        if(u) onLogin(u);
-        else setError('Usuario no encontrado.');
-    };
-
+    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); const u = DataEngine.getUserByNameOrEmail(email); if(u) { if(u.isActive === false) { setError('Usuario desactivado'); return; } onLogin(u); } else setError('Usuario no encontrado'); }
     return (
-        <div className="min-h-screen bg-[#050507] flex flex-col items-center justify-center p-6 relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-red-900/20 to-transparent pointer-events-none" />
-             <div className="z-10 w-full max-w-md space-y-8">
-                 <div className="flex flex-col items-center animate-fade-in-down">
-                     <BrandingLogo className="w-20 h-20" textSize="text-4xl" />
-                     <p className="text-gray-400 mt-4 text-center text-sm">Entrenamiento Inteligente & Alto Rendimiento</p>
-                 </div>
-                 <div className="bg-[#1A1A1D] border border-white/5 p-6 rounded-3xl shadow-2xl animate-fade-in-up">
-                     <form onSubmit={handleLogin} className="space-y-4">
-                         <div>
-                             <label className="text-xs font-bold text-gray-500 uppercase ml-1">Correo de Acceso</label>
-                             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tucorreo@kinetix.com" className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 px-4 text-white focus:border-red-500 outline-none transition-all mt-1" />
-                         </div>
-                         {error && <div className="text-red-500 text-xs font-bold flex items-center gap-2"><AlertTriangle size={12}/> {error}</div>}
-                         <button type="submit" className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 group"><span>INGRESAR</span><ArrowRight size={18} className="group-hover:translate-x-1 transition-transform"/></button>
-                     </form>
-                     <div className="mt-6 pt-6 border-t border-white/5">
-                        <p className="text-[10px] text-center text-gray-500 uppercase font-bold mb-3">Accesos Directos (Demo)</p>
-                        <div className="flex gap-2 justify-center flex-wrap">
-                            {users.slice(0,3).map(u => (
-                                <button key={u.id} onClick={() => onLogin(u)} className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] text-gray-300 border border-white/5 transition-colors">{u.role === 'coach' ? 'Coach' : u.role === 'admin' ? 'Admin' : 'Atleta'}</button>
-                            ))}
-                        </div>
-                     </div>
-                 </div>
-                 <SocialLinks />
+        <div className="min-h-screen bg-[#050507] flex items-center justify-center p-4 relative overflow-hidden">
+             <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden"><div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-600/10 rounded-full blur-[100px]" /><div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[100px]" /></div>
+             <div className="w-full max-w-md space-y-8 relative z-10">
+                 <div className="text-center flex flex-col items-center"><BrandingLogo className="w-48 h-48 mb-6 shadow-2xl" showText={false} /><h1 className="text-4xl font-bold font-display italic text-white tracking-tight">KINETIX ZONE</h1><p className="text-gray-400 mt-2 text-sm tracking-widest uppercase font-bold">Elite Functional Training</p><div className="mt-6"><SocialLinks /></div></div>
+                 <form onSubmit={handleSubmit} className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-3xl space-y-6 shadow-2xl"><div><label className="block text-xs font-bold text-gray-500 uppercase mb-2 ml-1">Email de Acceso</label><input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-colors placeholder-gray-700" placeholder="atleta@kinetix.com" /></div>{error && <div className="text-red-500 text-sm font-bold bg-red-500/10 p-3 rounded-lg flex items-center gap-2"><AlertTriangle size={16}/> {error}</div>}<button type="submit" className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white font-bold py-4 rounded-xl hover:from-red-500 hover:to-red-600 transition-all shadow-lg shadow-red-900/30 transform active:scale-[0.98]">ENTRAR AL ZONE</button></form>
+                 <div className="text-center space-y-4"><p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Head Coach: Jorge Gonzalez</p><div className="border-t border-white/5 pt-4"><p className="text-xs text-gray-600 mb-2">Accesos Demo:</p><div className="flex gap-2 justify-center"><button onClick={() => setEmail('atleta@kinetix.com')} className="text-xs bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition-colors">Atleta</button><button onClick={() => setEmail('coach@kinetix.com')} className="text-xs bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition-colors">Coach</button><button onClick={() => setEmail('admin@kinetix.com')} className="text-xs bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white transition-colors">Admin</button></div></div></div>
              </div>
-             <div className="absolute bottom-6 text-[10px] text-gray-600 font-mono">v12.6.0 PRO | SAFE MODE</div>
         </div>
     );
 };
 
-const App = () => {
-    const [user, setUser] = useState<User | null>(null);
-    const [view, setView] = useState<'dashboard' | 'plan' | 'users' | 'profile'>('dashboard');
-    const [loading, setLoading] = useState(true);
-    const [showChatbot, setShowChatbot] = useState(false);
-    const config = DataEngine.getConfig();
-
-    // Check auth
-    useEffect(() => {
-        const init = async () => {
-            await DataEngine.init();
-            const stored = localStorage.getItem(SESSION_KEY);
-            if(stored) {
-                 const u = DataEngine.getUserById(stored);
-                 if(u) setUser(u);
-            }
-            setLoading(false);
-        };
-        init();
-    }, []);
-
-    const handleLogin = (u: User) => {
-        setUser(u);
-        localStorage.setItem(SESSION_KEY, u.id);
-        setView('dashboard');
-    };
-
-    const handleLogout = () => {
-        setUser(null);
-        localStorage.removeItem(SESSION_KEY);
-    };
-    
-    // Quick Plan Generator Wrapper
-    const handleGeneratePlan = async () => {
-        if (!user) return;
-        if (!confirm("¿Generar rutina con IA? Esto puede tardar unos segundos.")) return;
-        try {
-            const history = DataEngine.getClientHistory(user.id);
-            const routineData = await generateSmartRoutine(user, history);
-            const newPlan: Plan = {
-                id: generateUUID(),
-                title: routineData.title || 'Plan Kinetix AI',
-                userId: user.id,
-                workouts: routineData.workouts || [],
-                updatedAt: new Date().toISOString()
-            };
-            await DataEngine.savePlan(newPlan);
-            window.location.reload(); // Simple reload to refresh
-        } catch (e) {
-            alert("Error generando rutina. Verifica tu API Key.");
-        }
-    };
-
-    if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin text-red-500" size={32}/></div>;
-    if (!user) return <LoginScreen onLogin={handleLogin} />;
-
-    const renderContent = () => {
-        if (view === 'plan') {
-            const plan = DataEngine.getPlan(user.id);
-            if (plan) return <PlanViewer plan={plan} mode={user.role === 'coach' ? 'coach' : 'athlete'} />;
-            return (
-                <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-6">
-                    <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4"><Dumbbell size={32} className="text-gray-500"/></div>
-                    <h3 className="text-xl font-bold text-white mb-2">Sin Plan Asignado</h3>
-                    <p className="text-gray-400 text-sm max-w-xs mb-6">No tienes una rutina activa actualmente.</p>
-                    <button onClick={handleGeneratePlan} className="bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2"><Sparkles size={18}/> GENERAR CON IA</button>
-                </div>
-            );
-        }
-        if (view === 'users') {
-             return (
-                 <div className="p-4 space-y-4">
-                     <h2 className="text-xl font-bold text-white mb-4">Usuarios Registrados</h2>
-                     <div className="grid gap-4">
-                         {DataEngine.getUsers().map(u => (
-                             <div key={u.id} className="bg-[#1A1A1D] p-4 rounded-xl border border-white/5 flex justify-between items-center">
-                                 <div>
-                                     <div className="font-bold text-white">{u.name}</div>
-                                     <div className="text-xs text-gray-500">{u.email}</div>
-                                 </div>
-                                 <span className="text-xs font-bold uppercase px-2 py-1 bg-white/5 rounded text-gray-300">{u.role}</span>
-                             </div>
-                         ))}
-                     </div>
-                 </div>
-             );
-        }
-        if (view === 'profile') {
-             return (
-                 <div className="p-4 flex flex-col items-center">
-                      <div className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center text-3xl font-bold text-white mb-4">{user.name.charAt(0)}</div>
-                      <h2 className="text-2xl font-bold text-white">{user.name}</h2>
-                      <p className="text-gray-500 mb-8">{user.email}</p>
-                      <button onClick={handleLogout} className="bg-white/10 hover:bg-white/20 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2"><LogOut size={18}/> CERRAR SESIÓN</button>
-                 </div>
-             );
-        }
-        // Dashboard
+const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: string) => void }) => {
+    if (user.role === 'coach' || user.role === 'admin') {
+        const allUsers = DataEngine.getUsers();
+        const clients = allUsers.filter(u => u.role === 'client');
+        const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
+        const exercises = DataEngine.getExercises();
         return (
-            <div className="p-4 space-y-6 animate-fade-in">
-                 <div className="flex items-center justify-between">
-                     <div>
-                         <h1 className="text-2xl font-display font-bold italic text-white">HOLA, {user.name.split(' ')[0]}</h1>
-                         <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">{user.role === 'coach' ? 'HEAD COACH' : 'ATLETA KINETIX'}</p>
-                     </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-3">
-                     <StatCard label="Racha" value={`${user.streak} Días`} icon={<Flame size={16} className="text-orange-500"/>} />
-                     <StatCard label="Nivel" value={user.level} icon={<TrendingUp size={16} className="text-blue-500"/>} />
-                 </div>
-                 {user.role === 'client' && (
-                    <button onClick={() => setView('plan')} className="w-full bg-red-600 hover:bg-red-500 text-white p-4 rounded-2xl font-bold flex items-center justify-between group transition-all">
-                        <span className="flex items-center gap-3"><Dumbbell size={24}/> IR A ENTRENAMIENTO</span>
-                        <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
-                    </button>
-                 )}
+            <div className="space-y-6 animate-fade-in pb-20">
+                <div className="flex justify-between items-center"><div><h2 className="text-3xl font-bold font-display italic text-white">PANEL DE CONTROL</h2><p className="text-gray-500 text-sm">Gestión de alto rendimiento</p></div><div className="text-right hidden md:block"><p className="text-xs text-gray-500 font-bold uppercase">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div></div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><StatCard label="Atletas Totales" value={clients.length} icon={<Users className="text-blue-500" size={20} />} /><StatCard label="Planes Activos" value={activePlans} icon={<Activity className="text-green-500" size={20} />} /><StatCard label="Ejercicios" value={exercises.length} icon={<Dumbbell className="text-orange-500" size={20} />} /><StatCard label="Alertas" value="0" icon={<ShieldAlert className="text-red-500" size={20} />} /></div>
+                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white">Acciones Rápidas</h3></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <button onClick={() => onNavigate('clients')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group"><div className="bg-red-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-red-500 mb-3 group-hover:scale-110 transition-transform"><UserPlus size={20}/></div><h4 className="font-bold text-white">Gestionar Atletas</h4><p className="text-xs text-gray-500 mt-1">Ver lista, crear planes, asignar rutinas.</p></button>
+                         <button onClick={() => onNavigate('workouts')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group"><div className="bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-blue-500 mb-3 group-hover:scale-110 transition-transform"><Dumbbell size={20}/></div><h4 className="font-bold text-white">Biblioteca</h4><p className="text-xs text-gray-500 mt-1">Gestionar ejercicios y videos.</p></button>
+                         {user.role === 'admin' && (<button onClick={() => onNavigate('admin')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group"><div className="bg-yellow-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-yellow-500 mb-3 group-hover:scale-110 transition-transform"><Briefcase size={20}/></div><h4 className="font-bold text-white">Administración</h4><p className="text-xs text-gray-500 mt-1">Configuración del sistema.</p></button>)}
+                    </div></div>
             </div>
         );
-    };
-
+    }
+    const plan = DataEngine.getPlan(user.id);
+    const history = DataEngine.getClientHistory(user.id);
+    const totalVol = history.reduce((acc, curr) => acc + curr.summary.totalVolume, 0);
+    const workoutsDone = history.length;
     return (
-        <div className="min-h-screen bg-[#050507] text-white pb-20 md:pb-0">
-            {/* Desktop Nav */}
-            <div className="hidden md:flex fixed left-0 top-0 h-screen w-64 bg-[#0F0F11] border-r border-white/5 p-6 flex-col">
-                <BrandingLogo className="w-10 h-10 mb-8" />
-                <div className="space-y-2 flex-1">
-                    <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
-                    {user.role === 'client' && <NavButton active={view === 'plan'} onClick={() => setView('plan')} icon={<Dumbbell size={20}/>} label="Mi Plan" />}
-                    {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'users'} onClick={() => setView('users')} icon={<Users size={20}/>} label="Usuarios" />}
-                    <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20}/>} label="Perfil" />
-                </div>
-            </div>
-
-            {/* Content */}
-            <div className="md:ml-64 min-h-screen">
-                 {renderContent()}
-            </div>
-
-            {/* Mobile Nav */}
-            <div className="md:hidden fixed bottom-0 left-0 w-full bg-[#0F0F11]/90 backdrop-blur-xl border-t border-white/5 p-2 grid grid-cols-5 gap-1 z-40">
-                <MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20}/>} label="Inicio" />
-                {user.role === 'client' && <MobileNavButton active={view === 'plan'} onClick={() => setView('plan')} icon={<Dumbbell size={20}/>} label="Rutina" />}
-                {(user.role === 'coach' || user.role === 'admin') && <MobileNavButton active={view === 'users'} onClick={() => setView('users')} icon={<Users size={20}/>} label="Atletas" />}
-                <MobileNavButton active={false} onClick={() => setShowChatbot(!showChatbot)} icon={<MessageSquare size={20}/>} label="Chat AI" />
-                <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20}/>} label="Perfil" />
-            </div>
-
-            {config.ai.chatbot.enabled && showChatbot && <TechnicalChatbot onClose={() => setShowChatbot(false)} />}
-            <ConnectionStatus />
+        <div className="space-y-8 animate-fade-in pb-32">
+            <div className="flex justify-between items-center mb-2"><div><h2 className="text-3xl font-bold font-display italic text-white flex items-center gap-2">HOLA, {user.name.split(' ')[0]} <span className="text-2xl">👋</span></h2><p className="text-gray-500 text-sm">Tu evolución comienza hoy.</p></div></div>
+            <div className="grid grid-cols-2 gap-4"><StatCard label="Total Kg" value={(totalVol/1000).toFixed(1) + 'k'} icon={<Dumbbell size={16} className="text-blue-500"/>} /><StatCard label="Sesiones" value={workoutsDone} icon={<Activity size={16} className="text-green-500"/>} /></div>
+            {plan ? (<div><h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Flame size={18} className="text-red-500"/> PROTOCOLO ACTIVO</h3><PlanViewer plan={plan} mode="athlete" /></div>) : (<div className="text-center py-10 bg-[#0F0F11] rounded-2xl border border-white/5"><p className="text-gray-500 mb-2">No tienes un plan asignado.</p><p className="text-xs text-gray-600">Contacta a tu coach.</p></div>)}
         </div>
     );
 };
+
+const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+    const history = DataEngine.getClientHistory(user.id);
+    const [analyzing, setAnalyzing] = useState(false);
+    const chartData = history.slice(0, 10).reverse().map(h => ({ date: new Date(h.date).toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}), vol: h.summary.totalVolume }));
+    const handleAnalyze = async () => { setAnalyzing(true); try { const advice = await analyzeProgress(user, history); alert(advice); } catch(e) { alert("No se pudo analizar el progreso."); } finally { setAnalyzing(false); } }
+    return (
+        <div className="space-y-6 animate-fade-in pb-32">
+            <div className="flex items-center gap-4 mb-8"><div className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl shadow-red-900/40">{user.name[0]}</div><div><h2 className="text-2xl font-bold text-white">{user.name}</h2><p className="text-gray-400">{user.email}</p><span className="inline-block mt-2 px-3 py-1 bg-white/5 rounded-lg text-xs font-bold text-red-500 uppercase">{user.role}</span></div></div>
+            {user.role === 'client' && (
+                <><button onClick={handleAnalyze} disabled={analyzing} className="w-full py-4 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3 shadow-lg mb-2 relative overflow-hidden group"><div className="absolute inset-0 bg-blue-600/20 group-hover:bg-blue-600/30 transition-colors" />{analyzing ? <Loader2 className="animate-spin text-blue-200" /> : <BrainCircuit size={24} className="text-blue-300" />}<span className="font-bold text-blue-100 z-10">ANALIZAR MI PROGRESO CON IA</span><Sparkles className="absolute right-4 text-blue-300 opacity-50" size={20} /></button>
+                    <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6"><h3 className="font-bold text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-green-500"/> Progreso de Volumen</h3><div className="h-48 w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} /><XAxis dataKey="date" tick={{fontSize: 10, fill: '#666'}} axisLine={false} tickLine={false} /><Tooltip contentStyle={{backgroundColor: '#000', border: '1px solid #333', borderRadius: '8px'}} /><Area type="monotone" dataKey="vol" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={2} /></AreaChart></ResponsiveContainer></div></div>
+                </>
+            )}
+            <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-4 space-y-4"><div className="flex justify-between items-center py-2 border-b border-white/5"><span className="text-gray-500">Meta</span><span className="text-white font-bold">{user.goal}</span></div><div className="flex justify-between items-center py-2 border-b border-white/5"><span className="text-gray-500">Nivel</span><span className="text-white font-bold">{user.level}</span></div><div className="flex justify-between items-center py-2"><span className="text-gray-500">Días/Semana</span><span className="text-white font-bold">{user.daysPerWeek}</span></div></div>
+            <button onClick={onLogout} className="w-full py-4 bg-white/5 text-red-500 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-red-500/10 transition-colors"><LogOut size={20}/> Cerrar Sesión</button>
+        </div>
+    );
+};
+
+const AdminView = () => {
+  const [config, setConfig] = useState(DataEngine.getConfig());
+  const [activeTab, setActiveTab] = useState<'branding' | 'users'>('branding');
+  const [users, setUsers] = useState<User[]>(DataEngine.getUsers());
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const adminUserMock: User = { ...MOCK_USER, role: 'admin', id: ADMIN_UUID };
+  const handleSaveConfig = () => { DataEngine.saveConfig(config); alert("Configuración guardada."); }
+  const toggleUserStatus = (u: User) => { const updated = { ...u, isActive: !u.isActive }; DataEngine.saveUser(updated); setUsers(DataEngine.getUsers()); }
+  const resetPassword = (u: User) => { alert(`Enlace de recuperación enviado a ${u.email}`); }
+  return (
+      <div className="space-y-6 animate-fade-in pb-20">
+          <div className="flex justify-between items-center mb-6"><h2 className="text-3xl font-bold font-display italic text-white">COMMAND CENTER</h2><div className="flex gap-2 bg-white/5 p-1 rounded-lg"><button onClick={() => setActiveTab('branding')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === 'branding' ? 'bg-white text-black' : 'text-gray-400'}`}>MARCA</button><button onClick={() => setActiveTab('users')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === 'users' ? 'bg-white text-black' : 'text-gray-400'}`}>USUARIOS</button></div></div>
+          {activeTab === 'branding' && (<div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl space-y-4"><h3 className="font-bold text-white mb-4">Personalización de Marca</h3><div><label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre de la App</label><input value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" /></div><div><label className="block text-xs font-bold text-gray-500 uppercase mb-2">URL del Logo</label><input value={config.logoUrl} onChange={e => setConfig({...config, logoUrl: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" placeholder="https://..." /></div><button onClick={handleSaveConfig} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold text-sm">Guardar Cambios</button></div>)}
+          {activeTab === 'users' && (<div className="space-y-4"><div className="flex justify-end"><button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors"><UserPlus size={16}/> INVITAR USUARIO</button></div>{users.map(u => (<div key={u.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"><div className="flex items-center gap-4 w-full"><div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${u.isActive !== false ? 'bg-green-600' : 'bg-red-600'}`}>{u.name[0]}</div><div><div className="font-bold text-white">{u.name} <span className="text-xs text-gray-500 bg-white/10 px-2 rounded ml-2">{u.role}</span></div><div className="text-xs text-gray-500">{u.email}</div></div></div><div className="flex gap-2 w-full md:w-auto"><button onClick={() => resetPassword(u)} className="flex-1 md:flex-none px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-gray-300 flex items-center justify-center gap-2" title="Reset Password"><KeyRound size={14}/> RESET</button><button onClick={() => toggleUserStatus(u)} className={`flex-1 md:flex-none px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 ${u.isActive !== false ? 'bg-red-900/20 text-red-500 hover:bg-red-900/30' : 'bg-green-900/20 text-green-500 hover:bg-green-900/30'}`}>{u.isActive !== false ? <><UserX size={14}/> DESACTIVAR</> : <><UserCheck size={14}/> ACTIVAR</>}</button></div></div>))}</div>)}
+          {showInviteModal && (<UserInviteModal currentUser={adminUserMock} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers())} />)}
+      </div>
+  );
+};
+
+function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [view, setView] = useState('dashboard');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [chatbotOpen, setChatbotOpen] = useState(false);
+
+  useEffect(() => {
+     DataEngine.init();
+     const session = localStorage.getItem(SESSION_KEY);
+     if(session) { const u = DataEngine.getUserById(session); if(u) setUser(u); }
+  }, []);
+
+  useEffect(() => { window.scrollTo(0, 0); }, [view]);
+
+  const login = (u: User) => { localStorage.setItem(SESSION_KEY, u.id); setUser(u); setView('dashboard'); };
+  const logout = () => { localStorage.removeItem(SESSION_KEY); setUser(null); };
+
+  if (!user) return <LoginPage onLogin={login} />;
+
+  return (
+    <div className="min-h-[100dvh] bg-[#050507] text-gray-200 font-sans selection:bg-red-500/30">
+        <aside className="fixed left-0 top-0 h-full w-64 bg-[#0F0F11] border-r border-white/5 p-6 hidden md:flex flex-col z-40">
+            <BrandingLogo /><nav className="flex-1 space-y-2 mt-10">{user.role === 'client' && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Dashboard" />}{user.role === 'coach' && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}{(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}{user.role === 'admin' && <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={<Shield size={20} />} label="Admin" />}{(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}<NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" /></nav><div className="mt-auto pb-6"><p className="text-[10px] text-gray-600 uppercase font-bold text-center mb-2">Kinetix Community</p><SocialLinks className="justify-center" /></div><button onClick={logout} className="flex items-center gap-3 text-gray-500 hover:text-white transition-colors px-4 mt-4"><LogOut size={20} /> <span className="font-bold text-sm">Salir</span></button>
+        </aside>
+        <div className="md:hidden fixed top-0 left-0 right-0 bg-[#050507]/90 backdrop-blur-xl border-b border-white/5 p-4 z-40 flex justify-between items-center"><BrandingLogo textSize="text-lg" /><div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold text-xs">{user.name[0]}</div></div>
+        <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
+            {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
+            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
+            {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
+            {view === 'workouts' && <WorkoutsView user={user} />}
+            {view === 'profile' && <ProfileView user={user} onLogout={logout} />}
+            {view === 'admin' && <AdminView />}
+        </main>
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F11] border-t border-white/5 px-6 py-2 flex justify-between items-center z-40 pb-safe">
+            {user.role === 'client' && <MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
+            {(user.role === 'coach' || user.role === 'admin') && (<><MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" /><MobileNavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" /><MobileNavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblio" /></>)}
+            <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
+        </div>
+        {user.role === 'client' && (<><button onClick={() => setChatbotOpen(!chatbotOpen)} className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform hover:scale-110"><MessageCircle size={24} /></button>{chatbotOpen && <TechnicalChatbot onClose={() => setChatbotOpen(false)} />}</>)}
+        <ConnectionStatus />
+    </div>
+  );
+}
 
 export default App;
