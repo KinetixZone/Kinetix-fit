@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -7,7 +8,8 @@ import {
   Timer as TimerIcon, Download, Upload, Filter, Clock, Database, FileJson, Cloud, CloudOff,
   Wifi, WifiOff, AlertTriangle, Smartphone, Signal, Globe, Loader2, BrainCircuit,
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
-  MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin
+  MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
+  Briefcase, BarChart4, AlertOctagon
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
@@ -376,6 +378,10 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
              
              // Gold Mode Logic
              const isPR = lastSessionData && log?.weight && parseFloat(log.weight) > parseFloat(lastSessionData.weight);
+             // Ego Lifting Check (Alert if weight > 20% of target)
+             const targetWeight = exercise.targetLoad ? parseFloat(exercise.targetLoad) : 0;
+             const currentWeight = log?.weight ? parseFloat(log.weight) : 0;
+             const isEgoLifting = targetWeight > 0 && currentWeight > targetWeight * 1.2;
 
              return (
                <div key={setNum} className={`grid grid-cols-12 gap-2 items-center transition-all min-w-[300px] ${isDone ? 'opacity-50' : 'opacity-100'}`}>
@@ -391,6 +397,7 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
                       onBlur={(e) => handleLogSet(setNum, e.target.value, log?.reps || exercise.targetReps, log?.rpe?.toString() || '', !!isDone)}
                       className={`w-full bg-[#1A1A1D] border rounded-md py-1.5 px-1 text-center text-xs font-bold focus:border-yellow-500 outline-none placeholder-gray-700 transition-all ${isPR ? 'border-yellow-500 text-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-white/10 text-white'}`}
                     />
+                    {isEgoLifting && <AlertTriangle size={12} className="text-red-500 absolute -right-3 top-2 animate-pulse" title="Cuidado: Peso excesivo" />}
                     <button onClick={() => setShowPlateCalc(parseFloat(log?.weight || exercise.targetLoad || '0'))} className="p-1 bg-white/5 rounded hover:bg-white/10 text-gray-500 hover:text-white">
                         <Disc size={12} />
                     </button>
@@ -935,9 +942,17 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
        {activeSubTab === 'history' && (
            <div className="space-y-4 animate-fade-in">
                {history.length === 0 ? <div className="text-center py-10 text-gray-500">No hay sesiones.</div> : history.map((s, i) => (
-                   <div key={i} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center">
-                       <div><div className="font-bold text-white">{s.workoutName}</div><div className="text-xs text-gray-500">{formatDate(s.date)}</div></div>
-                       <div className="text-right"><div className="font-bold text-white">{(s.summary.totalVolume/1000).toFixed(1)}k <span className="text-xs text-gray-500">VOL</span></div>{s.summary.prCount > 0 && <div className="text-[10px] text-yellow-500 font-bold">{s.summary.prCount} PRs</div>}</div>
+                   <div key={i} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl">
+                       <div className="flex justify-between items-center mb-2">
+                           <div><div className="font-bold text-white">{s.workoutName}</div><div className="text-xs text-gray-500">{formatDate(s.date)}</div></div>
+                           <div className="text-right"><div className="font-bold text-white">{(s.summary.totalVolume/1000).toFixed(1)}k <span className="text-xs text-gray-500">VOL</span></div>{s.summary.prCount > 0 && <div className="text-[10px] text-yellow-500 font-bold">{s.summary.prCount} PRs</div>}</div>
+                       </div>
+                       
+                       {/* Expanded Detail for Coach */}
+                       <div className="mt-2 pt-2 border-t border-white/5 grid grid-cols-2 gap-2">
+                          <div className="text-xs text-gray-500">Duración: <span className="text-white">{s.summary.durationMinutes}m</span></div>
+                          <div className="text-xs text-gray-500">Ejercicios: <span className="text-white">{s.summary.exercisesCompleted}</span></div>
+                       </div>
                    </div>
                ))}
            </div>
@@ -987,7 +1002,66 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     );
 };
 
-const DashboardView = ({ user }: { user: User }) => {
+const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: string) => void }) => {
+    // --- COACH VIEW ---
+    if (user.role === 'coach' || user.role === 'admin') {
+        const allUsers = DataEngine.getUsers();
+        const clients = allUsers.filter(u => u.role === 'client');
+        const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
+        const exercises = DataEngine.getExercises();
+
+        return (
+            <div className="space-y-6 animate-fade-in">
+                <div className="flex justify-between items-center">
+                   <div>
+                       <h2 className="text-3xl font-bold font-display italic text-white">PANEL DE CONTROL</h2>
+                       <p className="text-gray-500 text-sm">Gestión de alto rendimiento</p>
+                   </div>
+                   <div className="text-right hidden md:block">
+                       <p className="text-xs text-gray-500 font-bold uppercase">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <StatCard label="Atletas Totales" value={clients.length} icon={<Users className="text-blue-500" size={20} />} />
+                    <StatCard label="Planes Activos" value={activePlans} icon={<Activity className="text-green-500" size={20} />} />
+                    <StatCard label="Ejercicios" value={exercises.length} icon={<Dumbbell className="text-orange-500" size={20} />} />
+                    <StatCard label="Alertas" value="0" icon={<ShieldAlert className="text-red-500" size={20} />} />
+                </div>
+
+                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-lg text-white">Acciones Rápidas</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <button onClick={() => onNavigate('clients')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group">
+                             <div className="bg-red-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-red-500 mb-3 group-hover:scale-110 transition-transform">
+                                 <UserPlus size={20}/>
+                             </div>
+                             <h4 className="font-bold text-white">Gestionar Atletas</h4>
+                             <p className="text-xs text-gray-500 mt-1">Ver lista, crear planes, asignar rutinas.</p>
+                         </button>
+                         <button onClick={() => onNavigate('workouts')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group">
+                             <div className="bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-blue-500 mb-3 group-hover:scale-110 transition-transform">
+                                 <Dumbbell size={20}/>
+                             </div>
+                             <h4 className="font-bold text-white">Biblioteca</h4>
+                             <p className="text-xs text-gray-500 mt-1">Gestionar ejercicios y videos.</p>
+                         </button>
+                         <button onClick={() => onNavigate('admin')} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group">
+                             <div className="bg-yellow-500/10 w-10 h-10 rounded-lg flex items-center justify-center text-yellow-500 mb-3 group-hover:scale-110 transition-transform">
+                                 <Briefcase size={20}/>
+                             </div>
+                             <h4 className="font-bold text-white">Administración</h4>
+                             <p className="text-xs text-gray-500 mt-1">Configuración del sistema.</p>
+                         </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- ATHLETE VIEW ---
     const plan = DataEngine.getPlan(user.id);
     const history = DataEngine.getClientHistory(user.id);
     // Stats
@@ -996,6 +1070,15 @@ const DashboardView = ({ user }: { user: User }) => {
 
     return (
         <div className="space-y-8 animate-fade-in pb-20">
+            <div className="flex justify-between items-center mb-2">
+               <div>
+                  <h2 className="text-3xl font-bold font-display italic text-white flex items-center gap-2">
+                      HOLA, {user.name.split(' ')[0]} <span className="text-2xl">👋</span>
+                  </h2>
+                  <p className="text-gray-500 text-sm">Tu evolución comienza hoy.</p>
+               </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
                  <StatCard label="Total Kg" value={(totalVol/1000).toFixed(1) + 'k'} icon={<Dumbbell size={16} className="text-blue-500"/>} />
                  <StatCard label="Sesiones" value={workoutsDone} icon={<Activity size={16} className="text-green-500"/>} />
@@ -1035,6 +1118,12 @@ const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
 }
 
 const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+    const history = DataEngine.getClientHistory(user.id);
+    const chartData = history.slice(0, 10).reverse().map(h => ({
+        date: new Date(h.date).toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}),
+        vol: h.summary.totalVolume
+    }));
+
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex items-center gap-4 mb-8">
@@ -1046,6 +1135,26 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
                 </div>
             </div>
             
+            <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-6">
+                 <h3 className="font-bold text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-green-500"/> Progreso de Volumen</h3>
+                 <div className="h-48 w-full">
+                     <ResponsiveContainer width="100%" height="100%">
+                         <AreaChart data={chartData}>
+                             <defs>
+                                 <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
+                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                                     <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                 </linearGradient>
+                             </defs>
+                             <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                             <XAxis dataKey="date" tick={{fontSize: 10, fill: '#666'}} axisLine={false} tickLine={false} />
+                             <Tooltip contentStyle={{backgroundColor: '#000', border: '1px solid #333', borderRadius: '8px'}} />
+                             <Area type="monotone" dataKey="vol" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={2} />
+                         </AreaChart>
+                     </ResponsiveContainer>
+                 </div>
+            </div>
+
             <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-4 space-y-4">
                  <div className="flex justify-between items-center py-2 border-b border-white/5">
                      <span className="text-gray-500">Meta</span>
@@ -1067,7 +1176,28 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
 };
 
 const AdminView = () => {
-  return <div className="p-4 text-center text-gray-500">Admin Panel (Placeholder)</div>;
+  const [config, setConfig] = useState(DataEngine.getConfig());
+  const handleSave = () => {
+      DataEngine.saveConfig(config);
+      alert("Configuración guardada.");
+  }
+  return (
+      <div className="space-y-6 animate-fade-in">
+          <h2 className="text-3xl font-bold font-display italic text-white mb-6">COMMAND CENTER</h2>
+          <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-2xl space-y-4">
+               <h3 className="font-bold text-white mb-4">Personalización de Marca</h3>
+               <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre de la App</label>
+                   <input value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" />
+               </div>
+               <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-2">URL del Logo</label>
+                   <input value={config.logoUrl} onChange={e => setConfig({...config, logoUrl: e.target.value})} className="w-full bg-black border border-white/10 rounded-lg p-3 text-white focus:border-red-500 outline-none" placeholder="https://..." />
+               </div>
+               <button onClick={handleSave} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold text-sm">Guardar Cambios</button>
+          </div>
+      </div>
+  );
 };
 
 function App() {
@@ -1108,6 +1238,8 @@ function App() {
                 {user.role === 'coach' && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
                 {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}
                 {user.role === 'admin' && <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={<Shield size={20} />} label="Admin" />}
+                {/* Coach Dashboard is mapped to 'dashboard' too, but renders different content */}
+                {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
                 <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
             </nav>
 
@@ -1122,7 +1254,7 @@ function App() {
 
         {/* Main Content */}
         <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
-            {view === 'dashboard' && <DashboardView user={user} />}
+            {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
             {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} />}
             {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
             {view === 'workouts' && <WorkoutsView />}
@@ -1133,8 +1265,15 @@ function App() {
         {/* Mobile Navigation */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F11] border-t border-white/5 px-6 py-2 flex justify-between items-center z-40 pb-safe">
             {user.role === 'client' && <MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
-            {user.role === 'coach' && <MobileNavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
-            {(user.role === 'coach' || user.role === 'admin') && <MobileNavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblio" />}
+            
+            {(user.role === 'coach' || user.role === 'admin') && (
+               <>
+                 <MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />
+                 <MobileNavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />
+                 <MobileNavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblio" />
+               </>
+            )}
+            
             <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
         </div>
         
