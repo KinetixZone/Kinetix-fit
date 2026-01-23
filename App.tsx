@@ -345,41 +345,80 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
             
             {/* Visualización Específica TABATA / EMOM */}
             {method === 'tabata' && exercise.tabataConfig && (
-                <div className="mt-2 space-y-2">
-                    <p className="text-cyan-400 text-xs font-bold uppercase tracking-wide">
-                        {exercise.tabataConfig.sets} SETS • {exercise.tabataConfig.workTimeSec}" ON / {exercise.tabataConfig.restTimeSec}" OFF • {exercise.tabataConfig.rounds} Rounds
-                    </p>
+                <div className="mt-3 space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                         <span className="text-[10px] font-bold bg-cyan-500/10 text-cyan-500 px-2 py-1 rounded border border-cyan-500/20 flex items-center gap-1"><Repeat size={10}/> {exercise.tabataConfig.sets} CICLOS</span>
+                         <span className="text-[10px] font-bold bg-white/5 text-gray-300 px-2 py-1 rounded border border-white/5">{exercise.tabataConfig.workTimeSec}s ON / {exercise.tabataConfig.restTimeSec}s OFF</span>
+                         <span className="text-[10px] font-bold bg-white/5 text-gray-300 px-2 py-1 rounded border border-white/5">{exercise.tabataConfig.rounds} Rounds</span>
+                    </div>
                     {exercise.tabataConfig.structure !== 'simple' && (
-                        <div className="text-[10px] text-gray-400">
-                            Estructura: <span className="text-white font-bold uppercase">{exercise.tabataConfig.structure}</span> con:
-                            <ul className="list-disc list-inside mt-1 ml-1">
+                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                            <p className="text-[9px] text-gray-500 uppercase font-bold mb-2 tracking-widest">Ejercicios del Tabata ({exercise.tabataConfig.structure}):</p>
+                            <div className="space-y-2">
                                 {exercise.tabataConfig.exercises.map((ex:any, i:number) => (
-                                    <li key={i}>{ex.name}</li>
+                                    <div key={i} className="flex justify-between items-center text-xs text-gray-300">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-cyan-500 font-bold">{i+1}.</span>
+                                            <span>{ex.name}</span>
+                                        </div>
+                                        {ex.videoUrl && <button onClick={() => onShowVideo(ex.name)} className="text-cyan-500 hover:text-white"><Play size={12}/></button>}
+                                    </div>
                                 ))}
-                            </ul>
+                            </div>
                         </div>
                     )}
                 </div>
             )}
 
             {method === 'emom' && exercise.emomConfig && (
-                <div className="mt-2 space-y-2">
-                    <p className="text-yellow-400 text-xs font-bold uppercase tracking-wide">
-                        EMOM {exercise.emomConfig.durationMin}' • {exercise.emomConfig.type}
-                    </p>
+                <div className="mt-3 space-y-3">
+                     <div className="flex flex-wrap gap-2">
+                         <span className="text-[10px] font-bold bg-yellow-500/10 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 flex items-center gap-1"><Clock size={10}/> {exercise.emomConfig.durationMin} MINUTOS</span>
+                         <span className="text-[10px] font-bold bg-white/5 text-gray-300 px-2 py-1 rounded border border-white/5 uppercase">{exercise.emomConfig.type}</span>
+                    </div>
+
+                    {/* Simple */}
                     {exercise.emomConfig.type === 'simple' && exercise.emomConfig.simpleConfig && (
-                        <p className="text-[10px] text-gray-400">Cada minuto: {exercise.emomConfig.simpleConfig.reps ? `${exercise.emomConfig.simpleConfig.reps} reps` : `${exercise.emomConfig.simpleConfig.durationSec}"`} de {exercise.emomConfig.simpleConfig.exercise}</p>
+                         <div className="bg-white/5 p-3 rounded-xl border border-white/5 flex justify-between items-center">
+                             <div>
+                                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">CADA MINUTO</p>
+                                <p className="text-sm font-bold text-white mt-1">{exercise.emomConfig.simpleConfig.exercise}</p>
+                                <p className="text-xs text-yellow-500 font-bold">{exercise.emomConfig.simpleConfig.reps ? `${exercise.emomConfig.simpleConfig.reps} Reps` : `${exercise.emomConfig.simpleConfig.durationSec}s Trabajo`}</p>
+                             </div>
+                             <button onClick={() => onShowVideo(exercise.emomConfig.simpleConfig.exercise)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-yellow-500 transition-colors"><Play size={14}/></button>
+                         </div>
                     )}
+
+                    {/* Alternado */}
                     {exercise.emomConfig.type === 'alternado' && (
-                        <div className="text-[10px] text-gray-400 grid grid-cols-2 gap-2 mt-1">
-                            <div className="bg-white/5 p-2 rounded">Min Impar: <br/><span className="text-white font-bold">{exercise.emomConfig.minuteOdd?.exercise}</span></div>
-                            <div className="bg-white/5 p-2 rounded">Min Par: <br/><span className="text-white font-bold">{exercise.emomConfig.minuteEven?.exercise}</span></div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                                <div className="flex justify-between mb-1"><span className="text-[9px] font-bold text-blue-400">MIN IMPAR</span><button onClick={() => onShowVideo(exercise.emomConfig.minuteOdd?.exercise)}><Play size={10} className="text-gray-500 hover:text-white"/></button></div>
+                                <p className="text-xs font-bold text-white leading-tight">{exercise.emomConfig.minuteOdd?.exercise}</p>
+                                <p className="text-[10px] text-gray-400 mt-1">{exercise.emomConfig.minuteOdd?.reps || exercise.emomConfig.minuteOdd?.durationSec + 's'}</p>
+                            </div>
+                            <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                                <div className="flex justify-between mb-1"><span className="text-[9px] font-bold text-green-400">MIN PAR</span><button onClick={() => onShowVideo(exercise.emomConfig.minuteEven?.exercise)}><Play size={10} className="text-gray-500 hover:text-white"/></button></div>
+                                <p className="text-xs font-bold text-white leading-tight">{exercise.emomConfig.minuteEven?.exercise}</p>
+                                <p className="text-[10px] text-gray-400 mt-1">{exercise.emomConfig.minuteEven?.reps || exercise.emomConfig.minuteEven?.durationSec + 's'}</p>
+                            </div>
                         </div>
                     )}
+
+                    {/* Complejo */}
                     {exercise.emomConfig.type === 'complejo' && exercise.emomConfig.blocks && (
-                        <div className="text-[10px] text-gray-400 mt-1">
+                        <div className="space-y-1">
                             {exercise.emomConfig.blocks.map((block: any, i: number) => (
-                                <div key={i} className="mb-1">• Min {block.minutes.join(',')}: <span className="text-white">{block.exercise}</span> ({block.reps || block.durationSec + '"'})</div>
+                                <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5">
+                                     <div className="flex-1">
+                                        <p className="text-[9px] text-gray-500 font-bold">MIN {block.minutes.join(', ')}</p>
+                                        <p className="text-xs font-bold text-white">{block.exercise}</p>
+                                     </div>
+                                     <div className="text-right mr-3">
+                                         <p className="text-xs font-bold text-yellow-500">{block.reps || block.durationSec + 's'}</p>
+                                     </div>
+                                     <button onClick={() => onShowVideo(block.exercise)} className="text-gray-500 hover:text-white"><Play size={14}/></button>
+                                </div>
                             ))}
                         </div>
                     )}
@@ -455,11 +494,11 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
             } else if (method === 'biserie') {
                  setSubLabel = "Completa A + B sin descanso";
             } else if (method === 'tabata') {
-                 setLabel = `TABATA SET ${setNum}`;
-                 setSubLabel = "Completar todos los rounds";
+                 setLabel = `TABATA BLOCK ${setNum}`;
+                 setSubLabel = `${exercise.tabataConfig?.rounds || 8} Rounds Completos`;
             } else if (method === 'emom') {
-                 setLabel = `EMOM BLOQUE ${setNum}`;
-                 setSubLabel = "Completar tiempo total";
+                 setLabel = `EMOM BLOCK ${setNum}`;
+                 setSubLabel = `Duración Total: ${exercise.emomConfig?.durationMin || 10} min`;
             }
 
             return (
@@ -497,13 +536,22 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
     const dbExercise = DataEngine.getExercises().find(e => e.name === showVideo);
     if (dbExercise?.videoUrl) return dbExercise.videoUrl;
     
-    // Búsqueda profunda en workouts para encontrar videos custom (ej: Biserie pairs, Tabata list)
+    // Búsqueda profunda en workouts para encontrar videos custom (ej: Biserie pairs, Tabata list, Emom simple/odd/even/blocks)
     for (const w of plan.workouts) {
         for (const ex of w.exercises) {
             if (ex.pair?.name === showVideo && ex.pair.videoUrl) return ex.pair.videoUrl;
             if (ex.tabataConfig?.exercises) {
                 const tabataEx = ex.tabataConfig.exercises.find((te:any) => te.name === showVideo);
                 if (tabataEx?.videoUrl) return tabataEx.videoUrl;
+            }
+            if (ex.emomConfig) {
+                if (ex.emomConfig.simpleConfig?.exercise === showVideo && dbExercise) return dbExercise.videoUrl;
+                if (ex.emomConfig.minuteOdd?.exercise === showVideo && dbExercise) return dbExercise.videoUrl;
+                if (ex.emomConfig.minuteEven?.exercise === showVideo && dbExercise) return dbExercise.videoUrl;
+                if (ex.emomConfig.blocks) {
+                    const blockEx = ex.emomConfig.blocks.find((b: any) => b.exercise === showVideo);
+                    if (blockEx && dbExercise) return dbExercise.videoUrl;
+                }
             }
         }
     }
@@ -653,7 +701,8 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
   const [activeDropSetTab, setActiveDropSetTab] = useState<number>(0); 
   
-  const [exerciseSelectorContext, setExerciseSelectorContext] = useState<{ mode: 'add' } | { mode: 'pair', exerciseIndex: number } | { mode: 'tabata-list', exerciseIndex: number }>({ mode: 'add' });
+  // Modos de selector de ejercicio expandidos
+  const [exerciseSelectorContext, setExerciseSelectorContext] = useState<{ mode: 'add' } | { mode: 'pair', exerciseIndex: number } | { mode: 'tabata-list', exerciseIndex: number } | { mode: 'emom-simple', exerciseIndex: number } | { mode: 'emom-odd', exerciseIndex: number } | { mode: 'emom-even', exerciseIndex: number }>({ mode: 'add' });
   const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null);
 
   const allExercises = useMemo(() => DataEngine.getExercises(), []);
@@ -672,14 +721,15 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
 
   const handleExerciseSelected = (exercise: Exercise) => {
     const updatedWorkouts = [...editedPlan.workouts];
+    const currentWorkout = updatedWorkouts[selectedWorkoutIndex];
     
     if (exerciseSelectorContext.mode === 'add') {
         const newExercise: WorkoutExercise = { exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '', method: 'standard' };
-        updatedWorkouts[selectedWorkoutIndex].exercises.push(newExercise);
+        currentWorkout.exercises.push(newExercise);
     } else if (exerciseSelectorContext.mode === 'pair') {
         const idx = exerciseSelectorContext.exerciseIndex;
-        const currentExercise = updatedWorkouts[selectedWorkoutIndex].exercises[idx];
-        updatedWorkouts[selectedWorkoutIndex].exercises[idx] = {
+        const currentExercise = currentWorkout.exercises[idx];
+        currentWorkout.exercises[idx] = {
             ...currentExercise,
             pair: {
                 exerciseId: exercise.id,
@@ -691,17 +741,43 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
         };
     } else if (exerciseSelectorContext.mode === 'tabata-list') {
         const idx = exerciseSelectorContext.exerciseIndex;
-        const currentExercise = updatedWorkouts[selectedWorkoutIndex].exercises[idx];
+        const currentExercise = currentWorkout.exercises[idx];
         const currentTabata = currentExercise.tabataConfig || { workTimeSec: 20, restTimeSec: 10, rounds: 8, sets: 1, restBetweenSetsSec: 60, structure: 'simple', exercises: [] };
         
-        updatedWorkouts[selectedWorkoutIndex].exercises[idx] = {
+        currentWorkout.exercises[idx] = {
             ...currentExercise,
             tabataConfig: {
                 ...currentTabata,
                 exercises: [...currentTabata.exercises, { id: exercise.id, name: exercise.name, videoUrl: exercise.videoUrl }]
             }
         };
+        // Si es estructura 'simple', reemplazamos toda la lista por este único ejercicio
+        if (currentTabata.structure === 'simple') {
+             currentWorkout.exercises[idx].tabataConfig!.exercises = [{ id: exercise.id, name: exercise.name, videoUrl: exercise.videoUrl }];
+        }
         setConfigMethodIdx(idx);
+
+    } else if (exerciseSelectorContext.mode === 'emom-simple') {
+        const idx = exerciseSelectorContext.exerciseIndex;
+        const currentExercise = currentWorkout.exercises[idx];
+        currentWorkout.exercises[idx] = {
+            ...currentExercise,
+            emomConfig: { ...currentExercise.emomConfig!, simpleConfig: { ...currentExercise.emomConfig?.simpleConfig, exercise: exercise.name } }
+        };
+    } else if (exerciseSelectorContext.mode === 'emom-odd') {
+        const idx = exerciseSelectorContext.exerciseIndex;
+        const currentExercise = currentWorkout.exercises[idx];
+        currentWorkout.exercises[idx] = {
+            ...currentExercise,
+            emomConfig: { ...currentExercise.emomConfig!, minuteOdd: { ...currentExercise.emomConfig?.minuteOdd, exercise: exercise.name } }
+        };
+    } else if (exerciseSelectorContext.mode === 'emom-even') {
+        const idx = exerciseSelectorContext.exerciseIndex;
+        const currentExercise = currentWorkout.exercises[idx];
+        currentWorkout.exercises[idx] = {
+            ...currentExercise,
+            emomConfig: { ...currentExercise.emomConfig!, minuteEven: { ...currentExercise.emomConfig?.minuteEven, exercise: exercise.name } }
+        };
     }
 
     setEditedPlan({...editedPlan, workouts: updatedWorkouts});
@@ -718,9 +794,11 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const updateExercise = (exerciseIndex: number, field: keyof WorkoutExercise, value: any) => {
     const updatedWorkouts = [...editedPlan.workouts];
     if (field === 'method') {
+        // Inicializar config por defecto si cambia el método
         if (value === 'tabata' && !updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].tabataConfig) {
             updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].tabataConfig = {
-                workTimeSec: 20, restTimeSec: 10, rounds: 8, sets: 1, restBetweenSetsSec: 60, structure: 'simple', exercises: [{id: updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].exerciseId, name: updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].name}]
+                workTimeSec: 20, restTimeSec: 10, rounds: 8, sets: 1, restBetweenSetsSec: 60, structure: 'simple', 
+                exercises: [{id: updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].exerciseId, name: updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].name}]
             };
         }
         if (value === 'emom' && !updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex].emomConfig) {
@@ -832,10 +910,16 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                               <div><label className="text-[9px] uppercase font-bold text-cyan-500">Trabajo (seg)</label><input type="number" className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.workTimeSec} onChange={(e) => updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, workTimeSec: parseInt(e.target.value)})} /></div>
                               <div><label className="text-[9px] uppercase font-bold text-gray-500">Descanso (seg)</label><input type="number" className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.restTimeSec} onChange={(e) => updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, restTimeSec: parseInt(e.target.value)})} /></div>
                           </div>
+                          {/* Validaciones Visuales Tabata */}
+                          {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.workTimeSec < 15 || editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.workTimeSec > 60) && <div className="text-[10px] text-yellow-500 flex items-center gap-1"><AlertTriangle size={10}/> Intervalo inusual</div>}
+                          {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.restTimeSec > editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.workTimeSec) && <div className="text-[10px] text-yellow-500 flex items-center gap-1"><AlertTriangle size={10}/> Descanso mayor que trabajo</div>}
+
                           <div className="grid grid-cols-2 gap-4">
                               <div><label className="text-[9px] uppercase font-bold text-gray-500">Rounds</label><input type="number" className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.rounds} onChange={(e) => updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, rounds: parseInt(e.target.value)})} /></div>
                               <div><label className="text-[9px] uppercase font-bold text-gray-500">Sets (Bloques)</label><input type="number" className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.sets} onChange={(e) => { const s = parseInt(e.target.value); updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, sets: s}); updateExercise(configMethodIdx, 'targetSets', s); }} /></div>
                           </div>
+                           {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.rounds > 12) && <div className="text-[10px] text-yellow-500 flex items-center gap-1"><AlertTriangle size={10}/> Rondas elevadas</div>}
+                          
                           <div><label className="text-[9px] uppercase font-bold text-gray-500">Estructura</label><select className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure} onChange={(e) => updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, structure: e.target.value})}><option value="simple">Simple (1 Ejercicio)</option><option value="alternado">Alternado (A/B/A/B...)</option><option value="lista">Lista (A/B/C...)</option></select></div>
                           
                           <div className="space-y-2 mt-4">
@@ -843,15 +927,22 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                               {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.exercises.map((ex, i) => (
                                   <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded">
                                       <span className="text-xs">{ex.name}</span>
-                                      {i > 0 && <button onClick={() => {
-                                          const newExs = [...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!.exercises];
-                                          newExs.splice(i, 1);
-                                          updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, exercises: newExs});
-                                      }}><Trash2 size={14} className="text-red-500"/></button>}
+                                      {/* En modo simple solo hay 1, se puede cambiar pero no borrar para dejar vacio */}
+                                      {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!.structure !== 'simple' || editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!.exercises.length > 1) && (
+                                         <button onClick={() => {
+                                             const newExs = [...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!.exercises];
+                                             newExs.splice(i, 1);
+                                             updateExercise(configMethodIdx, 'tabataConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig!, exercises: newExs});
+                                         }}><Trash2 size={14} className="text-red-500"/></button>
+                                      )}
                                   </div>
                               ))}
-                              {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure !== 'simple' || editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.exercises.length === 0) && (
-                                  <button onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'tabata-list', exerciseIndex: configMethodIdx }); }} className="w-full py-2 border border-dashed border-white/20 rounded text-xs flex items-center justify-center gap-2"><Plus size={14}/> Agregar Ejercicio</button>
+                              {/* Botón de agregar depende de la estructura */}
+                              {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure === 'simple' && editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.exercises.length === 0) && (
+                                   <button onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'tabata-list', exerciseIndex: configMethodIdx }); }} className="w-full py-2 border border-dashed border-white/20 rounded text-xs flex items-center justify-center gap-2"><Plus size={14}/> Seleccionar Ejercicio</button>
+                              )}
+                              {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure !== 'simple') && (
+                                  <button onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'tabata-list', exerciseIndex: configMethodIdx }); }} className="w-full py-2 border border-dashed border-white/20 rounded text-xs flex items-center justify-center gap-2"><Plus size={14}/> Agregar Ejercicio a Lista</button>
                               )}
                           </div>
                       </div>
@@ -863,25 +954,52 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                           <div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración Total (min)</label><input type="number" className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.durationMin} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, durationMin: parseInt(e.target.value)})} /></div>
                           <div><label className="text-[9px] uppercase font-bold text-gray-500">Tipo de EMOM</label><select className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, type: e.target.value})}><option value="simple">Simple (Mismo cada min)</option><option value="alternado">Alternado (Impar/Par)</option></select></div>
                           
+                          {/* Config Simple */}
                           {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type === 'simple' && (
                               <div className="bg-white/5 p-3 rounded-xl border border-white/5">
                                   <p className="text-xs font-bold mb-2">Configuración Minuto a Minuto</p>
-                                  <input className="w-full bg-black mb-2 p-2 rounded text-xs" placeholder="Ejercicio" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.exercise || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, simpleConfig: {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!.simpleConfig, exercise: e.target.value}})} />
-                                  <input className="w-full bg-black p-2 rounded text-xs" placeholder="Reps (ej: 15) o Tiempo (ej: 40s)" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, simpleConfig: {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!.simpleConfig, reps: e.target.value}})} />
+                                  <button 
+                                      onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-simple', exerciseIndex: configMethodIdx }); }}
+                                      className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                  >
+                                      {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.exercise || "Seleccionar Ejercicio"}
+                                  </button>
+                                  <div className="flex gap-2">
+                                      <input className="w-1/2 bg-black p-2 rounded text-xs text-white border border-white/10" placeholder="Reps (ej: 15)" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, simpleConfig: {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!.simpleConfig, reps: e.target.value, durationSec: undefined}})} />
+                                      <input type="number" className="w-1/2 bg-black p-2 rounded text-xs text-white border border-white/10" placeholder="Segundos (ej: 40)" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.durationSec || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, simpleConfig: {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!.simpleConfig, durationSec: parseInt(e.target.value), reps: undefined}})} />
+                                  </div>
+                                  {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.durationSec && editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig.durationSec > 50) && <div className="text-[9px] text-yellow-500 mt-1 flex items-center gap-1"><AlertTriangle size={10}/> Poco descanso restante</div>}
                               </div>
                           )}
 
+                          {/* Config Alternado */}
                           {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type === 'alternado' && (
                               <div className="space-y-2">
                                   <div className="bg-white/5 p-3 rounded-xl border border-white/5">
                                       <p className="text-xs font-bold mb-2 text-blue-400">Minutos Impares (1, 3, 5...)</p>
-                                      <input className="w-full bg-black mb-2 p-2 rounded text-xs" placeholder="Ejercicio" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.exercise || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteOdd: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteOdd, exercise: e.target.value }})} />
-                                      <input className="w-full bg-black p-2 rounded text-xs" placeholder="Reps" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteOdd: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteOdd, reps: e.target.value }})} />
+                                      <button 
+                                          onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-odd', exerciseIndex: configMethodIdx }); }}
+                                          className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                      >
+                                          {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.exercise || "Seleccionar Ejercicio A"}
+                                      </button>
+                                      <div className="flex gap-2">
+                                         <input className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Reps" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteOdd: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteOdd, reps: e.target.value, durationSec: undefined }})} />
+                                         <input type="number" className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Segundos" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.durationSec || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteOdd: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteOdd, durationSec: parseInt(e.target.value), reps: undefined }})} />
+                                      </div>
                                   </div>
                                   <div className="bg-white/5 p-3 rounded-xl border border-white/5">
                                       <p className="text-xs font-bold mb-2 text-green-400">Minutos Pares (2, 4, 6...)</p>
-                                      <input className="w-full bg-black mb-2 p-2 rounded text-xs" placeholder="Ejercicio" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.exercise || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteEven: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteEven, exercise: e.target.value }})} />
-                                      <input className="w-full bg-black p-2 rounded text-xs" placeholder="Reps" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteEven: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteEven, reps: e.target.value }})} />
+                                      <button 
+                                          onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-even', exerciseIndex: configMethodIdx }); }}
+                                          className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                      >
+                                          {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.exercise || "Seleccionar Ejercicio B"}
+                                      </button>
+                                      <div className="flex gap-2">
+                                         <input className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Reps" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteEven: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteEven, reps: e.target.value, durationSec: undefined }})} />
+                                         <input type="number" className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Segundos" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.durationSec || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteEven: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteEven, durationSec: parseInt(e.target.value), reps: undefined }})} />
+                                      </div>
                                   </div>
                               </div>
                           )}
