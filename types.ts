@@ -13,17 +13,6 @@ export enum UserLevel {
 
 export type UserRole = 'coach' | 'client' | 'admin';
 
-export interface SystemConfig {
-  appName: string;
-  logoUrl: string;
-  themeColor: string;
-  ai: {
-      chatbot: {
-          enabled: boolean;
-      }
-  }
-}
-
 export interface User {
   id: string;
   name: string;
@@ -37,7 +26,6 @@ export interface User {
   streak: number;
   createdAt: string;
   isActive?: boolean;
-  accessUntil?: string; // Fecha de vencimiento (YYYY-MM-DD)
   coachId?: string;
 }
 
@@ -48,7 +36,6 @@ export interface Exercise {
   videoUrl: string;
   technique: string;
   commonErrors: string[];
-  imageUrl?: string; // Soporte para imágenes externas
 }
 
 export interface WorkoutExercise {
@@ -56,41 +43,31 @@ export interface WorkoutExercise {
   name: string;
   targetSets: number;
   targetReps: string;
-  targetLoad?: string; // Puede ser "50" o "50,60,70" para series ascendentes
+  targetLoad?: string;
   targetRest?: number;
   coachCue?: string;
-  supersetId?: string; // Para agrupar ejercicios
 }
 
 export interface Workout {
   id: string;
   name: string;
   day: number;
-  date?: string; // Fecha específica (YYYY-MM-DD)
-  isClass?: boolean;
-  classType?: string;
   exercises: WorkoutExercise[];
   isCompleted?: boolean;
+  isClass?: boolean;
+  classType?: string;
 }
 
 export interface SetEntry {
   setNumber: number;
   weight: string;
   reps: string;
-  rpe?: number;
   completed: boolean;
   timestamp: number;
 }
 
 export interface WorkoutProgress {
   [exerciseIndex: number]: SetEntry[];
-}
-
-export interface SessionSummary {
-  exercisesCompleted: number;
-  totalVolume: number;
-  durationMinutes: number;
-  prCount: number;
 }
 
 export interface Plan {
@@ -106,11 +83,4 @@ export interface ChatMessage {
     role: 'user' | 'ai';
     text: string;
     timestamp: number;
-}
-
-export interface RoutineTemplate {
-  id: string;
-  title: string;
-  workouts: Workout[];
-  createdBy: string;
 }
