@@ -58,13 +58,20 @@ export interface WorkoutExercise {
     name: string;
     targetReps: string;
     targetLoad?: string;
+    videoUrl?: string; // URL del video del ejercicio B
   };
 
   // Para AHAP: Lista de pesos específicos por serie (ej: ["10", "12", "15", "20"])
   targetWeights?: string[];
 
-  // Para DROP SET: Configuración de drops (ej: "10kg x 10 -> 5kg x 10")
-  drops?: { weight: string; reps: string }[];
+  // Para DROP SET: Configuración de drops
+  dropsetPatternMode?: 'FIXED' | 'PER_SERIES'; // Modo de patrón
+  
+  // Si es FIXED, se usa este array para todas las series
+  drops?: { weight: string; reps: string }[]; 
+  
+  // Si es PER_SERIES, se usa este mapa: indice de serie (0-based) -> lista de drops
+  dropsetSeriesPatterns?: { [setIndex: number]: { weight: string; reps: string }[] };
 }
 
 export interface Workout {

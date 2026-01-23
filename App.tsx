@@ -326,16 +326,20 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
             
             {/* Si es BISERIE, mostrar el Ejercicio B aquí mismo */}
             {method === 'biserie' && exercise.pair && (
-                <div className="mt-3 bg-white/5 p-3 rounded-xl border border-white/5 flex items-center gap-3">
-                    <div className="w-1 h-8 bg-orange-500 rounded-full"></div>
-                    <div>
-                        <div className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">SEGUNDO EJERCICIO (B)</div>
-                        <h4 className="font-bold text-sm text-white">{exercise.pair.name}</h4>
-                        <div className="flex gap-2 mt-1">
-                            <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300 font-bold">{exercise.pair.targetReps} Reps</span>
-                            {exercise.pair.targetLoad && <span className="text-[9px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded font-bold border border-yellow-500/10">{exercise.pair.targetLoad}kg</span>}
+                <div className="mt-3 bg-white/5 p-3 rounded-xl border border-white/5 flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                        <div className="w-1 h-8 bg-orange-500 rounded-full mt-1"></div>
+                        <div>
+                            <div className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">SEGUNDO EJERCICIO (B)</div>
+                            <h4 className="font-bold text-sm text-white">{exercise.pair.name}</h4>
+                            <div className="flex gap-2 mt-1">
+                                <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300 font-bold">{exercise.pair.targetReps} Reps</span>
+                                {exercise.pair.targetLoad && <span className="text-[9px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded font-bold border border-yellow-500/10">{exercise.pair.targetLoad}kg</span>}
+                            </div>
                         </div>
                     </div>
+                    {/* Botón de Video para Ejercicio B */}
+                    <button onClick={() => onShowVideo(exercise.pair.name)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-orange-500 transition-colors shrink-0"><Play size={14} /></button>
                 </div>
             )}
             
@@ -363,8 +367,14 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
                 const targetWeightForSet = exercise.targetWeights?.[setNum - 1] || exercise.targetLoad || '?';
                 setSubLabel = `CARGA: ${targetWeightForSet}KG x ${exercise.targetReps}`;
             } else if (method === 'dropset') {
-                 // Mostrar información de drops si existe
-                 setSubLabel = exercise.drops ? `DROPS: ${exercise.drops.map((d:any) => `${d.weight}kg`).join(' → ')}` : 'Fallo mecánico + Bajada';
+                 // Lógica para mostrar drops (FIXED vs PER_SERIES)
+                 let dropsToDisplay = exercise.drops; // Por defecto FIXED
+                 if (exercise.dropsetPatternMode === 'PER_SERIES' && exercise.dropsetSeriesPatterns && exercise.dropsetSeriesPatterns[setNum - 1]) {
+                     dropsToDisplay = exercise.dropsetSeriesPatterns[setNum - 1];
+                 }
+                 setSubLabel = dropsToDisplay && dropsToDisplay.length > 0
+                    ? `DROPS: ${dropsToDisplay.map((d:any) => `${d.weight}kg`).join(' → ')}`
+                    : 'Fallo mecánico + Bajada';
             } else if (method === 'biserie') {
                  setSubLabel = "Completa A + B sin descanso";
             }
@@ -522,6 +532,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
+  const [activeDropSetTab, setActiveDropSetTab] = useState<number>(0); // Para controlar la tab en modo PER_SERIES
   
   // Estado para controlar qué se está seleccionando: un nuevo ejercicio o el par de una biserie
   const [exerciseSelectorContext, setExerciseSelectorContext] = useState<{ mode: 'add' } | { mode: 'pair', exerciseIndex: number }>({ mode: 'add' });
@@ -558,7 +569,8 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                 exerciseId: exercise.id,
                 name: exercise.name,
                 targetReps: currentExercise.targetReps, // Heredar reps por defecto
-                targetLoad: ''
+                targetLoad: '',
+                videoUrl: exercise.videoUrl // COPIAR VIDEO URL DEL CATÁLOGO
             }
         };
     }
@@ -642,7 +654,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                               {/* Resumen de configuración activa */}
                               {ex.method === 'biserie' && ex.pair && <div className="mt-2 text-[10px] text-orange-400 font-bold bg-orange-900/10 p-2 rounded border border-orange-500/20">Linked: {ex.pair.name}</div>}
                               {ex.method === 'ahap' && ex.targetWeights && <div className="mt-2 text-[10px] text-purple-400 font-bold bg-purple-900/10 p-2 rounded border border-purple-500/20">Cargas: {ex.targetWeights.join(' - ')}</div>}
-                              {ex.method === 'dropset' && ex.drops && <div className="mt-2 text-[10px] text-red-400 font-bold bg-red-900/10 p-2 rounded border border-red-500/20">Drops: {ex.drops.length} niveles</div>}
+                              {ex.method === 'dropset' && <div className="mt-2 text-[10px] text-red-400 font-bold bg-red-900/10 p-2 rounded border border-red-500/20">Modo: {ex.dropsetPatternMode === 'PER_SERIES' ? 'Por Serie' : 'Patrón Fijo'}</div>}
                           </div>
 
                           <div className="grid grid-cols-4 gap-3 mb-3">
@@ -744,61 +756,155 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
 
                   {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'dropset' && (
                         <div className="space-y-4">
-                            <p className="text-xs text-gray-400">Agrega múltiples cargas (drops) dentro de una misma serie. Mínimo 2 drops.</p>
+                            <p className="text-xs text-gray-400 mb-4">Agrega múltiples cargas (drops) dentro de una misma serie. Mínimo 2 drops.</p>
                             
-                            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                                {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || []).map((drop, idx) => (
-                                    <div key={idx} className="flex gap-2 items-end">
-                                        <div className="flex-1">
-                                            <label className="text-[9px] uppercase font-bold text-gray-500">Peso {idx + 1}</label>
-                                            <input 
-                                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
-                                                placeholder="Kg"
-                                                value={drop.weight}
-                                                onChange={(e) => {
-                                                    const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
-                                                    newDrops[idx] = { ...newDrops[idx], weight: e.target.value };
-                                                    updateExercise(configMethodIdx, 'drops', newDrops);
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="text-[9px] uppercase font-bold text-gray-500">Reps</label>
-                                            <input 
-                                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
-                                                placeholder="Reps"
-                                                value={drop.reps}
-                                                onChange={(e) => {
-                                                    const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
-                                                    newDrops[idx] = { ...newDrops[idx], reps: e.target.value };
-                                                    updateExercise(configMethodIdx, 'drops', newDrops);
-                                                }}
-                                            />
-                                        </div>
-                                        <button 
-                                            onClick={() => {
-                                                const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
-                                                newDrops.splice(idx, 1);
-                                                updateExercise(configMethodIdx, 'drops', newDrops);
-                                            }}
-                                            className="p-2.5 bg-red-900/20 text-red-500 rounded-lg hover:bg-red-900/40 mb-[1px]"
-                                        >
-                                            <Trash2 size={16}/>
-                                        </button>
-                                    </div>
-                                ))}
+                            {/* Selector de Modo de Patrón */}
+                            <div className="flex bg-black/50 p-1 rounded-lg mb-4 border border-white/10">
+                                <button 
+                                    onClick={() => updateExercise(configMethodIdx, 'dropsetPatternMode', 'FIXED')}
+                                    className={`flex-1 py-1.5 rounded text-[10px] font-bold uppercase transition-all ${(!editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetPatternMode || editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetPatternMode === 'FIXED') ? 'bg-red-600 text-white' : 'text-gray-500 hover:text-white'}`}
+                                >
+                                    Patrón Fijo
+                                </button>
+                                <button 
+                                    onClick={() => updateExercise(configMethodIdx, 'dropsetPatternMode', 'PER_SERIES')}
+                                    className={`flex-1 py-1.5 rounded text-[10px] font-bold uppercase transition-all ${editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetPatternMode === 'PER_SERIES' ? 'bg-red-600 text-white' : 'text-gray-500 hover:text-white'}`}
+                                >
+                                    Por Serie
+                                </button>
                             </div>
 
-                            <button 
-                                onClick={() => {
-                                    const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
-                                    newDrops.push({ weight: '', reps: '' });
-                                    updateExercise(configMethodIdx, 'drops', newDrops);
-                                }}
-                                className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs font-bold text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-2"
-                            >
-                                <Plus size={14}/> Agregar Drop
-                            </button>
+                            {/* Lógica de Renderizado según Modo */}
+                            {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetPatternMode === 'PER_SERIES' ? (
+                                <div>
+                                    {/* Tabs de Series */}
+                                    <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar">
+                                        {Array.from({length: editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].targetSets}).map((_, idx) => (
+                                            <button 
+                                                key={idx}
+                                                onClick={() => setActiveDropSetTab(idx)}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all whitespace-nowrap ${activeDropSetTab === idx ? 'bg-white text-black border-white' : 'bg-white/5 text-gray-500 border-white/5'}`}
+                                            >
+                                                Serie {idx + 1}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    
+                                    {/* Editor de Drops para la serie activa */}
+                                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                                        {((editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetSeriesPatterns?.[activeDropSetTab]) || []).map((drop, dropIdx) => (
+                                            <div key={dropIdx} className="flex gap-2 items-end">
+                                                <div className="flex-1">
+                                                    <label className="text-[9px] uppercase font-bold text-gray-500">Peso {dropIdx + 1}</label>
+                                                    <input 
+                                                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                                        placeholder="Kg"
+                                                        value={drop.weight}
+                                                        onChange={(e) => {
+                                                            const currentPatterns = { ...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetSeriesPatterns || {}) };
+                                                            if (!currentPatterns[activeDropSetTab]) currentPatterns[activeDropSetTab] = [];
+                                                            currentPatterns[activeDropSetTab][dropIdx] = { ...currentPatterns[activeDropSetTab][dropIdx], weight: e.target.value };
+                                                            updateExercise(configMethodIdx, 'dropsetSeriesPatterns', currentPatterns);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="text-[9px] uppercase font-bold text-gray-500">Reps</label>
+                                                    <input 
+                                                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                                        placeholder="Reps"
+                                                        value={drop.reps}
+                                                        onChange={(e) => {
+                                                            const currentPatterns = { ...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetSeriesPatterns || {}) };
+                                                            if (!currentPatterns[activeDropSetTab]) currentPatterns[activeDropSetTab] = [];
+                                                            currentPatterns[activeDropSetTab][dropIdx] = { ...currentPatterns[activeDropSetTab][dropIdx], reps: e.target.value };
+                                                            updateExercise(configMethodIdx, 'dropsetSeriesPatterns', currentPatterns);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        const currentPatterns = { ...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetSeriesPatterns || {}) };
+                                                        currentPatterns[activeDropSetTab].splice(dropIdx, 1);
+                                                        updateExercise(configMethodIdx, 'dropsetSeriesPatterns', currentPatterns);
+                                                    }}
+                                                    className="p-2.5 bg-red-900/20 text-red-500 rounded-lg hover:bg-red-900/40 mb-[1px]"
+                                                >
+                                                    <Trash2 size={16}/>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            const currentPatterns = { ...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].dropsetSeriesPatterns || {}) };
+                                            if (!currentPatterns[activeDropSetTab]) currentPatterns[activeDropSetTab] = [];
+                                            currentPatterns[activeDropSetTab].push({ weight: '', reps: '' });
+                                            updateExercise(configMethodIdx, 'dropsetSeriesPatterns', currentPatterns);
+                                        }}
+                                        className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs font-bold text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-2 mt-2"
+                                    >
+                                        <Plus size={14}/> Agregar Drop a Serie {activeDropSetTab + 1}
+                                    </button>
+                                </div>
+                            ) : (
+                                // MODO FIXED (Lógica Anterior)
+                                <>
+                                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                                        {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || []).map((drop, idx) => (
+                                            <div key={idx} className="flex gap-2 items-end">
+                                                <div className="flex-1">
+                                                    <label className="text-[9px] uppercase font-bold text-gray-500">Peso {idx + 1}</label>
+                                                    <input 
+                                                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                                        placeholder="Kg"
+                                                        value={drop.weight}
+                                                        onChange={(e) => {
+                                                            const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                                            newDrops[idx] = { ...newDrops[idx], weight: e.target.value };
+                                                            updateExercise(configMethodIdx, 'drops', newDrops);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="text-[9px] uppercase font-bold text-gray-500">Reps</label>
+                                                    <input 
+                                                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                                        placeholder="Reps"
+                                                        value={drop.reps}
+                                                        onChange={(e) => {
+                                                            const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                                            newDrops[idx] = { ...newDrops[idx], reps: e.target.value };
+                                                            updateExercise(configMethodIdx, 'drops', newDrops);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                                        newDrops.splice(idx, 1);
+                                                        updateExercise(configMethodIdx, 'drops', newDrops);
+                                                    }}
+                                                    className="p-2.5 bg-red-900/20 text-red-500 rounded-lg hover:bg-red-900/40 mb-[1px]"
+                                                >
+                                                    <Trash2 size={16}/>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <button 
+                                        onClick={() => {
+                                            const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                            newDrops.push({ weight: '', reps: '' });
+                                            updateExercise(configMethodIdx, 'drops', newDrops);
+                                        }}
+                                        className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs font-bold text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-2"
+                                    >
+                                        <Plus size={14}/> Agregar Drop (Todas las Series)
+                                    </button>
+                                </>
+                            )}
                         </div>
                   )}
 
@@ -820,7 +926,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
       )}
     </div>
   );
-};
+}
 
 const WorkoutsView = ({ user }: { user: User }) => {
     const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
@@ -980,7 +1086,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                      </div>
                      <div>
                         <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p>
-                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.1 PRO | RESTORED</p>
+                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.2 PRO | RECOVERY</p>
                      </div>
                  </div>
              </div>
