@@ -7,7 +7,7 @@ import {
   User as UserIcon, Timer as TimerIcon, AlertTriangle, Loader2, BrainCircuit,
   Trophy, Youtube, Circle, MoreVertical, Flame, ClipboardList, MessageSquare, Send, TrendingUp, Shield, MapPin,
   Briefcase, MessageCircle, UserX, UserCheck, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown,
-  Clock, Instagram, Facebook
+  Clock, Instagram, Facebook, BarChart4
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
@@ -16,8 +16,8 @@ import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './ser
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
 // --- CONFIGURACIÓN DE VERSIÓN ESTABLE 8644345 ---
-const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_6_SAFE';
-const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_6_SAFE';
+const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_7_FIX';
+const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_7_FIX';
 const ADMIN_UUID = '00000000-0000-0000-0000-000000000000';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
 
@@ -175,7 +175,7 @@ const DataEngine = {
   getClientHistory: (userId: string) => JSON.parse(DataEngine.getStore()[`HISTORY_${userId}`] || '[]')
 };
 
-// --- COMPONENTES UI ---
+// --- COMPONENTES UI BÁSICOS ---
 
 const BrandingLogo = ({ className = "w-10 h-10", textSize = "text-2xl", showText = true }: any) => {
   const cfg = DataEngine.getConfig();
@@ -220,7 +220,33 @@ const ConnectionStatus = () => (
     </div>
 );
 
-// --- COMPONENTES LÓGICOS ---
+const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUser: User, onClose: () => void, onInviteSuccess: () => void }) => {
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [role, setRole] = useState<UserRole>('client');
+    const handleInvite = () => {
+        if (!name || !email) return;
+        const newUser: User = { id: generateUUID(), name, email, role, goal: Goal.PERFORMANCE, level: UserLevel.BEGINNER, daysPerWeek: 4, equipment: [], streak: 0, createdAt: new Date().toISOString(), isActive: true, coachId: currentUser.id };
+        DataEngine.saveUser(newUser);
+        onInviteSuccess();
+        onClose();
+    };
+    return (
+        <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <h3 className="text-xl font-bold text-white mb-6">Agregar Usuario</h3>
+                <div className="space-y-4">
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold ml-1">Nombre Completo</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Juan Perez" className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none" /></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold ml-1">Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="atleta@correo.com" className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none" /></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold ml-1">Rol en el Sistema</label><select value={role} onChange={e => setRole(e.target.value as UserRole)} className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white focus:border-red-500 outline-none"><option value="client">Atleta</option><option value="coach">Coach</option><option value="admin">Administrador</option></select></div>
+                </div>
+                <div className="flex gap-3 pt-8"><button onClick={onClose} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button><button onClick={handleInvite} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500 shadow-lg shadow-red-900/20 transition-all">Guardar</button></div>
+            </div>
+        </div>
+    );
+};
+
+// --- LOGICA DE ENTRENAMIENTO ---
 
 const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history }: any) => {
   const [logs, setLogs] = useState<WorkoutProgress>(() => mode === 'athlete' ? DataEngine.getWorkoutLog(userId, workoutId) : {});
@@ -293,8 +319,6 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
   );
 };
 
-// ... PlanViewer, ManualPlanBuilder, Views ... (Simplificado para caber, usando lógica existente)
-
 const PlanViewer = ({ plan, mode }: { plan: Plan, mode: 'coach' | 'athlete' }) => {
     const [showVideo, setShowVideo] = useState<string | null>(null);
     const embedSrc = getEmbedUrl(DataEngine.getExercises().find(e => e.name === showVideo)?.videoUrl);
@@ -310,6 +334,173 @@ const PlanViewer = ({ plan, mode }: { plan: Plan, mode: 'coach' | 'athlete' }) =
         </div>
     )
 }
+
+const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
+  const [editedPlan, setEditedPlan] = useState<Plan>(plan);
+  const [selectedWorkoutIndex, setSelectedWorkoutIndex] = useState<number>(0);
+  const [showExerciseSelector, setShowExerciseSelector] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const handleAddWorkout = () => {
+    const newWorkout: Workout = { id: generateUUID(), name: `DÍA ${editedPlan.workouts.length + 1}`, day: editedPlan.workouts.length + 1, exercises: [] };
+    setEditedPlan({...editedPlan, workouts: [...editedPlan.workouts, newWorkout]});
+    setSelectedWorkoutIndex(editedPlan.workouts.length);
+  };
+
+  const handleExerciseSelected = (exercise: Exercise) => {
+    const updatedWorkouts = [...editedPlan.workouts];
+    updatedWorkouts[selectedWorkoutIndex].exercises.push({ exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '', method: 'standard' });
+    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
+    setShowExerciseSelector(false);
+  };
+
+  const updateExercise = (exerciseIndex: number, field: keyof WorkoutExercise, value: any) => {
+    const updatedWorkouts = [...editedPlan.workouts];
+    updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex] = { ...updatedWorkouts[selectedWorkoutIndex].exercises[exerciseIndex], [field]: value };
+    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
+  };
+
+  const removeExercise = (exerciseIndex: number) => {
+    const updatedWorkouts = [...editedPlan.workouts];
+    updatedWorkouts[selectedWorkoutIndex].exercises.splice(exerciseIndex, 1);
+    setEditedPlan({...editedPlan, workouts: updatedWorkouts});
+  };
+
+  const filteredExercises = DataEngine.getExercises().filter(ex => ex.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  return (
+    <div className="bg-[#0A0A0C] min-h-screen fixed inset-0 z-50 overflow-y-auto pb-20 flex flex-col">
+      <div className="sticky top-0 bg-[#0A0A0C]/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-40 shrink-0">
+        <div className="flex items-center gap-3"><button onClick={onCancel}><X size={24} className="text-gray-400" /></button><input value={editedPlan.title} onChange={(e) => setEditedPlan({...editedPlan, title: e.target.value})} className="bg-transparent text-xl font-bold outline-none placeholder-gray-600 w-full" placeholder="Nombre del Protocolo" /></div>
+        <button onClick={() => onSave(editedPlan)} className="bg-red-600 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95"><Save size={16} /> <span className="hidden sm:inline">GUARDAR</span></button>
+      </div>
+      <div className="p-4 max-w-4xl mx-auto w-full flex-1">
+        <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-4">
+          {editedPlan.workouts.map((w, idx) => (<button key={w.id} onClick={() => setSelectedWorkoutIndex(idx)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${selectedWorkoutIndex === idx ? 'bg-white text-black' : 'bg-white/5 text-gray-400'}`}>DÍA {w.day}</button>))}
+          <button onClick={handleAddWorkout} className="px-4 py-2 rounded-full bg-red-600/20 text-red-500 border border-red-500/50 flex items-center gap-1 text-sm font-bold"><Plus size={14} /> DÍA</button>
+        </div>
+        {editedPlan.workouts[selectedWorkoutIndex] ? (
+          <div className="space-y-4 animate-fade-in">
+             <div className="flex items-center gap-4 mb-4">
+                 <input value={editedPlan.workouts[selectedWorkoutIndex].name} onChange={(e) => { const updated = [...editedPlan.workouts]; updated[selectedWorkoutIndex].name = e.target.value; setEditedPlan({...editedPlan, workouts: updated}); }} className="bg-transparent text-2xl font-bold uppercase text-red-500 outline-none w-full" placeholder="NOMBRE DEL DÍA" />
+             </div>
+             {editedPlan.workouts[selectedWorkoutIndex].exercises.map((ex, idx) => (
+               <div key={idx} className="bg-[#111] border border-white/10 rounded-xl p-4 relative group">
+                  <div className="flex justify-between items-start mb-3"><span className="font-bold text-lg">{ex.name}</span><button onClick={() => removeExercise(idx)} className="text-gray-600 hover:text-red-500 transition-colors"><Trash2 size={18} /></button></div>
+                  <div className="mb-3">
+                      <label className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Método</label>
+                      <select value={ex.method || 'standard'} onChange={(e) => updateExercise(idx, 'method', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white font-bold outline-none focus:border-red-500">
+                          <option value="standard">Standard</option><option value="biserie">Bi-serie</option><option value="tabata">TABATA</option><option value="emom">EMOM</option>
+                      </select>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 mb-3">
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold">Series</label><input type="number" value={ex.targetSets} onChange={(e) => updateExercise(idx, 'targetSets', parseInt(e.target.value))} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold" /></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold">Reps</label><input type="text" value={ex.targetReps} onChange={(e) => updateExercise(idx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold" /></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold text-yellow-500">Carga</label><input type="text" value={ex.targetLoad || ''} onChange={(e) => updateExercise(idx, 'targetLoad', e.target.value)} placeholder="Ej: 80" className="w-full bg-black border border-yellow-500/20 rounded-lg p-2 text-sm text-center font-bold text-yellow-400" /></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold text-blue-500">Descanso</label><input type="number" value={ex.targetRest || ''} onChange={(e) => updateExercise(idx, 'targetRest', parseInt(e.target.value))} className="w-full bg-black border border-blue-500/20 rounded-lg p-2 text-sm text-center font-bold text-blue-400" /></div>
+                  </div>
+               </div>
+             ))}
+             <button onClick={() => setShowExerciseSelector(true)} className="w-full py-4 border-2 border-dashed border-white/10 rounded-xl text-gray-500 font-bold hover:border-red-500/50 hover:text-red-500 transition-colors flex items-center justify-center gap-2"><Plus size={20} /> AÑADIR EJERCICIO</button>
+          </div>
+        ) : <div className="text-center text-gray-500 mt-10">Agrega un día de entrenamiento.</div>}
+      </div>
+      {showExerciseSelector && (
+        <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col animate-fade-in">
+          <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]"><button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24} /></button><div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={18} className="text-gray-400" /><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar ejercicio..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div></div>
+          <div className="flex-1 overflow-y-auto p-4 grid gap-2 pb-20">
+            {filteredExercises.map(ex => (<button key={ex.id} onClick={() => handleExerciseSelected(ex)} className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm">{ex.name}</div><div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div></div><Plus size={18} className="text-gray-600" /></button>))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- VISTAS DE GESTIÓN (RESTAURADAS) ---
+
+const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
+    const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
+    const [search, setSearch] = useState('');
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    useEffect(() => { setUsers(DataEngine.getUsers().filter(u => u.role === 'client')); }, [showInviteModal]);
+    const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="flex justify-between items-center"><h2 className="text-3xl font-display font-black italic text-white uppercase">ATLETAS</h2>{(user.role === 'coach' || user.role === 'admin') && (<button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors"><UserPlus size={16} /> Alta</button>)}</div>
+             <div className="relative"><Search className="absolute left-3 top-2.5 text-gray-500" size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-full md:w-64" /></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-32">
+                 {filtered.map(client => {
+                     const plan = DataEngine.getPlan(client.id);
+                     return (
+                         <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 cursor-pointer transition-all group relative overflow-hidden shadow-xl">
+                             <div className="flex items-center gap-4 relative z-10">
+                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center font-bold text-white shadow-lg border border-white/5 group-hover:scale-110 transition-transform">{client.name[0]}</div>
+                                 <div><h4 className="font-bold text-white group-hover:text-red-500 transition-colors uppercase text-sm">{client.name}</h4><p className="text-xs text-gray-500">{client.email}</p><div className="flex gap-2 mt-2"><span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/5 uppercase font-bold">{client.goal}</span>{plan && <span className="text-[9px] bg-green-900/20 text-green-500 px-2 py-0.5 rounded border border-green-500/20 flex items-center gap-1 font-bold uppercase"><CheckCircle2 size={10}/> Plan</span>}</div></div>
+                             </div>
+                         </div>
+                     );
+                 })}
+                 {filtered.length === 0 && (<div className="col-span-full text-center py-10 text-gray-500">No se encontraron atletas.</div>)}
+             </div>
+             {showInviteModal && (<UserInviteModal currentUser={user} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers().filter(u => u.role === 'client'))} />)}
+        </div>
+    );
+};
+
+const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
+  const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
+  const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
+  const [showManualBuilder, setShowManualBuilder] = useState(false);
+
+  if (!client) return <div className="p-8 text-center text-gray-500">Atleta no encontrado.</div>;
+
+  const handleSavePlan = (updatedPlan: Plan) => { DataEngine.savePlan(updatedPlan); setPlan(updatedPlan); setShowManualBuilder(false); };
+
+  if (showManualBuilder && plan) { return <ManualPlanBuilder plan={plan} onSave={handleSavePlan} onCancel={() => setShowManualBuilder(false)} />; }
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-32">
+       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-2"><ChevronLeft size={20} /> <span className="font-bold text-xs uppercase">Volver</span></button>
+       <div className="bg-[#0F0F11] p-6 rounded-3xl border border-white/5 relative overflow-hidden shadow-2xl">
+          <div className="relative z-10 flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+            <div className="flex items-start gap-5">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center text-3xl font-bold text-gray-500 shadow-xl">{client.name[0]}</div>
+                <div><h1 className="text-3xl font-display font-black italic text-white uppercase tracking-tighter">{client.name}</h1><div className="flex flex-wrap gap-3 mt-2"><span className="text-[10px] font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 uppercase">{client.goal}</span><span className="text-[10px] font-bold text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/5 uppercase">{client.level}</span></div></div>
+            </div>
+          </div>
+       </div>
+       
+       {plan ? (
+         <div className="space-y-4 animate-fade-in">
+            <div className="flex justify-between items-center px-2 mb-4"><h3 className="text-lg font-bold flex items-center gap-2 text-white uppercase italic font-display">Plan Asignado</h3><button onClick={() => setShowManualBuilder(true)} className="text-[10px] font-bold bg-white/10 text-white border border-white/20 px-4 py-2 rounded-full hover:bg-white/20 flex items-center gap-2 uppercase tracking-widest"><Edit3 size={12}/> Editar</button></div>
+            <PlanViewer plan={plan} mode="coach" />
+         </div>
+       ) : (
+         <div className="py-24 text-center text-gray-500 flex flex-col items-center border-2 border-dashed border-white/5 rounded-3xl"><p className="mb-6 font-bold uppercase tracking-widest text-[10px]">Sin plan activo.</p><button onClick={() => { const newP = { id: generateUUID(), title: 'Nuevo Plan', userId: client.id, workouts: [], updatedAt: new Date().toISOString() }; setPlan(newP); setShowManualBuilder(true); }} className="text-[10px] font-bold bg-white text-black px-6 py-3 rounded-xl hover:bg-gray-200 uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"><Plus size={16}/> CREAR MANUAL</button></div>
+       )}
+    </div>
+  );
+};
+
+const WorkoutsView = ({ user }: { user: User }) => {
+    const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
+    const [filter, setFilter] = useState('');
+    const filtered = exercises.filter(e => e.name.toLowerCase().includes(filter.toLowerCase()));
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="flex items-center justify-between"><h2 className="text-3xl font-display font-black italic text-white uppercase">BIBLIOTECA</h2></div>
+             <div className="relative"><Search className="absolute left-4 top-3.5 text-gray-500" size={18} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar ejercicio..." className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none" /></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">{filtered.map(ex => (<div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center"><div><h4 className="font-bold text-white uppercase text-sm">{ex.name}</h4><span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block uppercase font-bold">{ex.muscleGroup}</span></div></div>))}</div>
+        </div>
+    );
+};
+
+const AdminView = () => {
+  return <div className="p-8 text-center text-gray-500">Panel de Administración (Placeholder)</div>;
+};
+
+// --- LOGIN Y DASHBOARD ---
 
 const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     const [email, setEmail] = useState('');
@@ -340,7 +531,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                      </div>
                      <div>
                         <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p>
-                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.6 SAFE | RECOVERY</p>
+                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7 COMPLETE</p>
                      </div>
                  </div>
              </div>
@@ -378,6 +569,7 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: st
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState('dashboard');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   useEffect(() => {
      DataEngine.init();
@@ -396,7 +588,8 @@ export default function App() {
             <BrandingLogo />
             <nav className="flex-1 space-y-2 mt-10">
                 <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />
-                {user.role === 'coach' && <NavButton active={view === 'clients'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
+                {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
+                {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}
                 <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
             </nav>
             <div className="mt-auto pb-6 border-t border-white/5 pt-6">
@@ -409,7 +602,11 @@ export default function App() {
         
         <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
             {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
+            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
+            {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
+            {view === 'workouts' && <WorkoutsView user={user} />}
             {view === 'profile' && <div className="p-8 text-center"><h2 className="text-2xl font-bold mb-4">Perfil de {user.name}</h2><button onClick={logout} className="bg-red-600 px-6 py-2 rounded-xl text-white font-bold">Cerrar Sesión</button></div>}
+            {view === 'admin' && <AdminView />}
         </main>
 
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F11]/95 backdrop-blur-xl border-t border-white/5 px-6 py-2 flex justify-between items-center z-40 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
