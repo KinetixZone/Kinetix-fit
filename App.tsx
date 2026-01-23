@@ -522,7 +522,10 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
-  const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null); // Index del ejercicio a configurar método
+  
+  // Estado para controlar qué se está seleccionando: un nuevo ejercicio o el par de una biserie
+  const [exerciseSelectorContext, setExerciseSelectorContext] = useState<{ mode: 'add' } | { mode: 'pair', exerciseIndex: number }>({ mode: 'add' });
+  const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null);
 
   const allExercises = useMemo(() => DataEngine.getExercises(), []);
   const categories = useMemo(() => ['Todos', ...Array.from(new Set(allExercises.map(e => e.muscleGroup)))], [allExercises]);
@@ -533,11 +536,33 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     setSelectedWorkoutIndex(editedPlan.workouts.length);
   };
 
-  const handleAddExercise = (exercise: Exercise) => {
-    // Default method: standard
-    const newExercise: WorkoutExercise = { exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '', method: 'standard' };
+  const openExerciseSelector = (context: { mode: 'add' } | { mode: 'pair', exerciseIndex: number } = { mode: 'add' }) => {
+      setExerciseSelectorContext(context);
+      setShowExerciseSelector(true);
+  };
+
+  const handleExerciseSelected = (exercise: Exercise) => {
     const updatedWorkouts = [...editedPlan.workouts];
-    updatedWorkouts[selectedWorkoutIndex].exercises.push(newExercise);
+    
+    if (exerciseSelectorContext.mode === 'add') {
+        // Modo Standard: Agregar nuevo ejercicio al final
+        const newExercise: WorkoutExercise = { exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '', method: 'standard' };
+        updatedWorkouts[selectedWorkoutIndex].exercises.push(newExercise);
+    } else if (exerciseSelectorContext.mode === 'pair') {
+        // Modo Biserie: Asignar ejercicio seleccionado como "Pair" del ejercicio actual
+        const idx = exerciseSelectorContext.exerciseIndex;
+        const currentExercise = updatedWorkouts[selectedWorkoutIndex].exercises[idx];
+        updatedWorkouts[selectedWorkoutIndex].exercises[idx] = {
+            ...currentExercise,
+            pair: {
+                exerciseId: exercise.id,
+                name: exercise.name,
+                targetReps: currentExercise.targetReps, // Heredar reps por defecto
+                targetLoad: ''
+            }
+        };
+    }
+
     setEditedPlan({...editedPlan, workouts: updatedWorkouts});
     setShowExerciseSelector(false);
   };
@@ -629,7 +654,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                           <div><label className="text-[10px] text-gray-500 uppercase font-bold">Notas Técnicas</label><input type="text" value={ex.coachCue || ''} onChange={(e) => updateExercise(idx, 'coachCue', e.target.value)} placeholder="Instrucciones específicas..." className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-gray-300 outline-none focus:border-red-500" /></div>
                        </div>
                      ))}
-                     <button onClick={() => setShowExerciseSelector(true)} className="w-full py-4 border-2 border-dashed border-white/10 rounded-xl text-gray-500 font-bold hover:border-red-500/50 hover:text-red-500 transition-colors flex items-center justify-center gap-2"><Plus size={20} /> AÑADIR EJERCICIO</button>
+                     <button onClick={() => openExerciseSelector({ mode: 'add' })} className="w-full py-4 border-2 border-dashed border-white/10 rounded-xl text-gray-500 font-bold hover:border-red-500/50 hover:text-red-500 transition-colors flex items-center justify-center gap-2"><Plus size={20} /> AÑADIR EJERCICIO</button>
                  </>
              )}
           </div>
@@ -640,29 +665,57 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
       {configMethodIdx !== null && (
           <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4">
               <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 shadow-2xl">
-                  <h3 className="text-lg font-bold text-white mb-4 uppercase">Configurar {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method}</h3>
+                  <h3 className="text-lg font-bold text-white mb-4 uppercase flex justify-between items-center">
+                      Configurar {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method}
+                      <button onClick={() => setConfigMethodIdx(null)}><X size={20} className="text-gray-400"/></button>
+                  </h3>
                   
                   {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'biserie' && (
                       <div className="space-y-4">
                           <p className="text-xs text-gray-400">Selecciona el segundo ejercicio del par. Se ejecutará inmediatamente después del primero.</p>
-                          <input 
-                            className="w-full bg-black border border-white/10 rounded-lg p-3 text-sm text-white" 
-                            placeholder="Nombre Ejercicio B" 
-                            value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.name || ''}
-                            onChange={(e) => {
-                                const currentEx = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
-                                updateExercise(configMethodIdx, 'pair', { ...currentEx.pair, name: e.target.value, targetReps: currentEx.targetReps });
+                          
+                          {/* Selector de Ejercicio B (desde catálogo) */}
+                          <button 
+                            onClick={() => {
+                                setConfigMethodIdx(null); // Cerrar este modal temporalmente
+                                openExerciseSelector({ mode: 'pair', exerciseIndex: configMethodIdx });
                             }}
-                          />
-                           <input 
-                            className="w-full bg-black border border-white/10 rounded-lg p-3 text-sm text-white" 
-                            placeholder="Reps Ejercicio B" 
-                            value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.targetReps || ''}
-                            onChange={(e) => {
-                                const currentEx = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
-                                updateExercise(configMethodIdx, 'pair', { ...currentEx.pair, targetReps: e.target.value });
-                            }}
-                          />
+                            className="w-full bg-white/5 border border-white/10 rounded-lg p-4 text-left flex justify-between items-center hover:bg-white/10 transition-colors"
+                          >
+                              <span className={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.name ? "text-white font-bold" : "text-gray-500"}>
+                                  {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.name || "Seleccionar Ejercicio B"}
+                              </span>
+                              <Search size={16} className="text-gray-400"/>
+                          </button>
+
+                          {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair && (
+                              <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                      <label className="text-[10px] text-gray-500 uppercase font-bold">Reps (Ej. B)</label>
+                                      <input 
+                                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white" 
+                                        placeholder="Reps" 
+                                        value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.targetReps || ''}
+                                        onChange={(e) => {
+                                            const currentEx = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
+                                            updateExercise(configMethodIdx, 'pair', { ...currentEx.pair, targetReps: e.target.value });
+                                        }}
+                                      />
+                                  </div>
+                                  <div>
+                                      <label className="text-[10px] text-gray-500 uppercase font-bold">Carga (Ej. B)</label>
+                                      <input 
+                                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white" 
+                                        placeholder="Kg (Opcional)" 
+                                        value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.targetLoad || ''}
+                                        onChange={(e) => {
+                                            const currentEx = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
+                                            updateExercise(configMethodIdx, 'pair', { ...currentEx.pair, targetLoad: e.target.value });
+                                        }}
+                                      />
+                                  </div>
+                              </div>
+                          )}
                       </div>
                   )}
 
@@ -689,6 +742,66 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                        </div>
                   )}
 
+                  {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'dropset' && (
+                        <div className="space-y-4">
+                            <p className="text-xs text-gray-400">Agrega múltiples cargas (drops) dentro de una misma serie. Mínimo 2 drops.</p>
+                            
+                            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                                {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || []).map((drop, idx) => (
+                                    <div key={idx} className="flex gap-2 items-end">
+                                        <div className="flex-1">
+                                            <label className="text-[9px] uppercase font-bold text-gray-500">Peso {idx + 1}</label>
+                                            <input 
+                                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                                placeholder="Kg"
+                                                value={drop.weight}
+                                                onChange={(e) => {
+                                                    const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                                    newDrops[idx] = { ...newDrops[idx], weight: e.target.value };
+                                                    updateExercise(configMethodIdx, 'drops', newDrops);
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="text-[9px] uppercase font-bold text-gray-500">Reps</label>
+                                            <input 
+                                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                                placeholder="Reps"
+                                                value={drop.reps}
+                                                onChange={(e) => {
+                                                    const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                                    newDrops[idx] = { ...newDrops[idx], reps: e.target.value };
+                                                    updateExercise(configMethodIdx, 'drops', newDrops);
+                                                }}
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => {
+                                                const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                                newDrops.splice(idx, 1);
+                                                updateExercise(configMethodIdx, 'drops', newDrops);
+                                            }}
+                                            className="p-2.5 bg-red-900/20 text-red-500 rounded-lg hover:bg-red-900/40 mb-[1px]"
+                                        >
+                                            <Trash2 size={16}/>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button 
+                                onClick={() => {
+                                    const newDrops = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].drops || [])];
+                                    newDrops.push({ weight: '', reps: '' });
+                                    updateExercise(configMethodIdx, 'drops', newDrops);
+                                }}
+                                className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs font-bold text-gray-400 hover:text-white hover:border-white/40 flex items-center justify-center gap-2"
+                            >
+                                <Plus size={14}/> Agregar Drop
+                            </button>
+                        </div>
+                  )}
+
                   <div className="flex gap-3 mt-6">
                       <button onClick={() => setConfigMethodIdx(null)} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white">Listo</button>
                   </div>
@@ -701,7 +814,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
           <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]"><button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24} /></button><div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={18} className="text-gray-400" /><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar ejercicio..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div></div>
           <div className="flex gap-2 overflow-x-auto p-2 border-b border-white/5 no-scrollbar bg-[#0A0A0C]">{categories.map(cat => (<button key={cat} onClick={() => setActiveCategory(cat)} className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeCategory === cat ? 'bg-red-600 text-white' : 'bg-white/5 text-gray-400'}`}>{cat}</button>))}</div>
           <div className="flex-1 overflow-y-auto p-4 grid gap-2 pb-20">
-            {filteredExercises.map(ex => (<button key={ex.id} onClick={() => handleAddExercise(ex)} className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm">{ex.name}</div><div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div></div><Plus size={18} className="text-gray-600" /></button>))}
+            {filteredExercises.map(ex => (<button key={ex.id} onClick={() => handleExerciseSelected(ex)} className="bg-[#111] border border-white/5 p-4 rounded-xl text-left hover:border-red-500 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm">{ex.name}</div><div className="text-[10px] text-gray-500 uppercase bg-white/5 inline-block px-1.5 rounded mt-1">{ex.muscleGroup}</div></div><Plus size={18} className="text-gray-600" /></button>))}
           </div>
         </div>
       )}

@@ -54,7 +54,7 @@ export interface WorkoutExercise {
   
   // Para BISERIE: El segundo ejercicio se guarda aquí
   pair?: {
-    exerciseId: string;
+    exerciseId: string; // ID del catálogo
     name: string;
     targetReps: string;
     targetLoad?: string;
