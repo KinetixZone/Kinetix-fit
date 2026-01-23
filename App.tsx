@@ -766,7 +766,21 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                     {error && <div className="text-red-500 text-[10px] font-bold bg-red-500/10 p-3 rounded-xl flex items-center gap-2 uppercase"><AlertTriangle size={14}/> {error}</div>}
                     <button type="submit" className="w-full bg-red-600 text-white font-bold py-5 rounded-2xl hover:bg-red-500 transition-all shadow-lg shadow-red-900/30 uppercase tracking-widest text-xs">Ingresar al Sistema</button>
                  </form>
-                 <div className="mt-8 space-y-1"><p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p><p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.0 PRO | TRAINING METHODS</p></div>
+                 
+                 <div className="mt-8 space-y-4 w-full">
+                     <div className="border-t border-white/5 pt-4 w-full">
+                         <p className="text-[10px] text-gray-600 uppercase font-bold mb-3">Accesos Directos (Demo)</p>
+                         <div className="flex gap-2 justify-center">
+                             <button onClick={() => setEmail('atleta@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Atleta</button>
+                             <button onClick={() => setEmail('coach@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Coach</button>
+                             <button onClick={() => setEmail('admin@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Admin</button>
+                         </div>
+                     </div>
+                     <div>
+                        <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p>
+                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.1 PRO | RESTORED</p>
+                     </div>
+                 </div>
              </div>
         </div>
     );
