@@ -8,7 +8,7 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown
+  Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown, Link as LinkIcon
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
@@ -286,12 +286,8 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
     
     // LOGICA DE DESCANSO POR MÉTODO
     if(!isDone) {
-        // En Bi-serie, el primer ejercicio no tiene descanso. El descanso va después del segundo.
-        // Como simplificación solicitada: si es bi-serie, asumimos que este ejercicio es parte de un bloque continuo.
-        // Si el coach pone descanso 0 manual, se respeta. Si no, forzamos 0 si es bi-serie.
+        // En Bi-serie, el primer ejercicio no tiene descanso (0). 
         const restTime = method === 'biserie' ? 0 : (exercise.targetRest || 60);
-        
-        // Solo lanzamos el timer si hay tiempo de descanso
         if (restTime > 0) {
             onSetComplete(restTime);
         }
@@ -306,37 +302,52 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
     <div className={`bg-[#0F0F11] border rounded-2xl p-5 mb-4 shadow-sm hover:border-white/10 transition-all relative overflow-hidden ${method === 'biserie' ? 'border-orange-500/30' : 'border-white/5'}`}>
       
       {/* Badges de Método */}
-      {method === 'biserie' && <div className="absolute top-0 right-0 bg-orange-600/20 text-orange-500 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-orange-500/20 flex items-center gap-1 uppercase tracking-widest"><Layers size={10} /> Bi-Serie (Sin descanso)</div>}
-      {method === 'ahap' && <div className="absolute top-0 right-0 bg-purple-600/20 text-purple-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-purple-500/20 flex items-center gap-1 uppercase tracking-widest"><ArrowUpCircle size={10} /> AHAP (Sube Peso)</div>}
+      {method === 'biserie' && <div className="absolute top-0 right-0 bg-orange-600/20 text-orange-500 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-orange-500/20 flex items-center gap-1 uppercase tracking-widest"><Layers size={10} /> Bi-Serie</div>}
+      {method === 'ahap' && <div className="absolute top-0 right-0 bg-purple-600/20 text-purple-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-purple-500/20 flex items-center gap-1 uppercase tracking-widest"><ArrowUpCircle size={10} /> AHAP</div>}
       {method === 'dropset' && <div className="absolute top-0 right-0 bg-red-600/20 text-red-500 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-red-500/20 flex items-center gap-1 uppercase tracking-widest"><CornerRightDown size={10} /> Drop Set</div>}
 
+      {/* CABECERA (Ejercicio A) */}
       <div className="flex justify-between items-start mb-4 mt-2">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 w-full">
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-bold text-gray-500 text-sm">{index + 1}</div>
-          <div>
+          <div className="flex-1">
             <h3 className="font-bold text-lg text-white leading-tight">{exercise.name}</h3>
             <div className="flex flex-wrap gap-2 mt-2 items-center">
               {exercise.targetLoad && (
                 <div className="inline-flex items-center gap-1.5 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
                   <ShieldAlert size={10} className="text-yellow-500" />
-                  <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">META: {exercise.targetLoad}KG</span>
+                  <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">
+                      {method === 'ahap' ? 'CARGA INCREMENTAL' : `META: ${exercise.targetLoad}KG`}
+                  </span>
                 </div>
-              )}
-              {lastSessionData && (
-                <div className="text-[10px] font-bold text-gray-500 bg-white/5 px-2 py-0.5 rounded border border-white/5 uppercase">PREV: {lastSessionData.weight}KG</div>
               )}
               <div className="text-[10px] font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">{exercise.targetSets}X{exercise.targetReps}</div>
             </div>
-            {/* Coach Cue & Method Note */}
+            
+            {/* Si es BISERIE, mostrar el Ejercicio B aquí mismo */}
+            {method === 'biserie' && exercise.pair && (
+                <div className="mt-3 bg-white/5 p-3 rounded-xl border border-white/5 flex items-center gap-3">
+                    <div className="w-1 h-8 bg-orange-500 rounded-full"></div>
+                    <div>
+                        <div className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">SEGUNDO EJERCICIO (B)</div>
+                        <h4 className="font-bold text-sm text-white">{exercise.pair.name}</h4>
+                        <div className="flex gap-2 mt-1">
+                            <span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300 font-bold">{exercise.pair.targetReps} Reps</span>
+                            {exercise.pair.targetLoad && <span className="text-[9px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded font-bold border border-yellow-500/10">{exercise.pair.targetLoad}kg</span>}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {(exercise.coachCue || method === 'dropset') && (
                 <p className="text-xs text-gray-400 mt-2 italic">
-                    {method === 'dropset' && <span className="text-red-400 font-bold mr-1">Fallo + Bajada de peso. </span>}
+                    {method === 'dropset' && <span className="text-red-400 font-bold mr-1">Fallo + Bajada. </span>}
                     {exercise.coachCue}
                 </p>
             )}
           </div>
         </div>
-        <button onClick={() => onShowVideo(exercise.name)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-red-500 transition-colors"><Play size={18} /></button>
+        <button onClick={() => onShowVideo(exercise.name)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-red-500 transition-colors shrink-0"><Play size={18} /></button>
       </div>
 
       {mode === 'athlete' && (
@@ -348,7 +359,14 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
 
             if (method === 'ahap') {
                 setLabel += " (↑)";
-                setSubLabel = "Sube peso respecto al anterior";
+                // Mostrar el peso específico para este set si existe
+                const targetWeightForSet = exercise.targetWeights?.[setNum - 1] || exercise.targetLoad || '?';
+                setSubLabel = `CARGA: ${targetWeightForSet}KG x ${exercise.targetReps}`;
+            } else if (method === 'dropset') {
+                 // Mostrar información de drops si existe
+                 setSubLabel = exercise.drops ? `DROPS: ${exercise.drops.map((d:any) => `${d.weight}kg`).join(' → ')}` : 'Fallo mecánico + Bajada';
+            } else if (method === 'biserie') {
+                 setSubLabel = "Completa A + B sin descanso";
             }
 
             return (
@@ -504,6 +522,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
+  const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null); // Index del ejercicio a configurar método
 
   const allExercises = useMemo(() => DataEngine.getExercises(), []);
   const categories = useMemo(() => ['Todos', ...Array.from(new Set(allExercises.map(e => e.muscleGroup)))], [allExercises]);
@@ -580,16 +599,25 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                           {/* Selector de Método */}
                           <div className="mb-3">
                               <label className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Método de Entrenamiento</label>
-                              <select 
-                                value={ex.method || 'standard'} 
-                                onChange={(e) => updateExercise(idx, 'method', e.target.value)}
-                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white font-bold outline-none focus:border-red-500"
-                              >
-                                  <option value="standard">Standard (Series Planas)</option>
-                                  <option value="biserie">Bi-serie (Sin descanso)</option>
-                                  <option value="ahap">AHAP (Subir peso cada set)</option>
-                                  <option value="dropset">Drop Set (Fallo + Bajada)</option>
-                              </select>
+                              <div className="flex gap-2">
+                                <select 
+                                    value={ex.method || 'standard'} 
+                                    onChange={(e) => updateExercise(idx, 'method', e.target.value)}
+                                    className="flex-1 bg-black border border-white/10 rounded-lg p-2 text-sm text-white font-bold outline-none focus:border-red-500"
+                                >
+                                    <option value="standard">Standard (Series Planas)</option>
+                                    <option value="biserie">Bi-serie (Sin descanso)</option>
+                                    <option value="ahap">AHAP (Subir peso cada set)</option>
+                                    <option value="dropset">Drop Set (Fallo + Bajada)</option>
+                                </select>
+                                {(ex.method === 'biserie' || ex.method === 'ahap' || ex.method === 'dropset') && (
+                                    <button onClick={() => setConfigMethodIdx(idx)} className="bg-white/10 px-3 rounded-lg text-white hover:bg-white/20 font-bold text-xs flex items-center gap-1 border border-white/10"><Edit3 size={14}/> Config</button>
+                                )}
+                              </div>
+                              {/* Resumen de configuración activa */}
+                              {ex.method === 'biserie' && ex.pair && <div className="mt-2 text-[10px] text-orange-400 font-bold bg-orange-900/10 p-2 rounded border border-orange-500/20">Linked: {ex.pair.name}</div>}
+                              {ex.method === 'ahap' && ex.targetWeights && <div className="mt-2 text-[10px] text-purple-400 font-bold bg-purple-900/10 p-2 rounded border border-purple-500/20">Cargas: {ex.targetWeights.join(' - ')}</div>}
+                              {ex.method === 'dropset' && ex.drops && <div className="mt-2 text-[10px] text-red-400 font-bold bg-red-900/10 p-2 rounded border border-red-500/20">Drops: {ex.drops.length} niveles</div>}
                           </div>
 
                           <div className="grid grid-cols-4 gap-3 mb-3">
@@ -607,6 +635,67 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
           </div>
         ) : <div className="text-center text-gray-500 mt-10">Agrega un día de entrenamiento para comenzar.</div>}
       </div>
+
+      {/* MODAL CONFIGURACIÓN MÉTODO (SAFE MODE) */}
+      {configMethodIdx !== null && (
+          <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4">
+              <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 shadow-2xl">
+                  <h3 className="text-lg font-bold text-white mb-4 uppercase">Configurar {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method}</h3>
+                  
+                  {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'biserie' && (
+                      <div className="space-y-4">
+                          <p className="text-xs text-gray-400">Selecciona el segundo ejercicio del par. Se ejecutará inmediatamente después del primero.</p>
+                          <input 
+                            className="w-full bg-black border border-white/10 rounded-lg p-3 text-sm text-white" 
+                            placeholder="Nombre Ejercicio B" 
+                            value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.name || ''}
+                            onChange={(e) => {
+                                const currentEx = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
+                                updateExercise(configMethodIdx, 'pair', { ...currentEx.pair, name: e.target.value, targetReps: currentEx.targetReps });
+                            }}
+                          />
+                           <input 
+                            className="w-full bg-black border border-white/10 rounded-lg p-3 text-sm text-white" 
+                            placeholder="Reps Ejercicio B" 
+                            value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].pair?.targetReps || ''}
+                            onChange={(e) => {
+                                const currentEx = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
+                                updateExercise(configMethodIdx, 'pair', { ...currentEx.pair, targetReps: e.target.value });
+                            }}
+                          />
+                      </div>
+                  )}
+
+                  {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'ahap' && (
+                       <div className="space-y-4">
+                           <p className="text-xs text-gray-400">Define los pesos para cada una de las {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].targetSets} series.</p>
+                           <div className="grid grid-cols-2 gap-2">
+                               {Array.from({length: editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].targetSets}).map((_, i) => (
+                                   <div key={i}>
+                                       <label className="text-[10px] uppercase font-bold text-gray-500">Serie {i+1}</label>
+                                       <input 
+                                          className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white text-center"
+                                          placeholder="Kg"
+                                          value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].targetWeights?.[i] || ''}
+                                          onChange={(e) => {
+                                              const currentWeights = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].targetWeights || [])];
+                                              currentWeights[i] = e.target.value;
+                                              updateExercise(configMethodIdx, 'targetWeights', currentWeights);
+                                          }}
+                                       />
+                                   </div>
+                               ))}
+                           </div>
+                       </div>
+                  )}
+
+                  <div className="flex gap-3 mt-6">
+                      <button onClick={() => setConfigMethodIdx(null)} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white">Listo</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {showExerciseSelector && (
         <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col animate-fade-in">
           <div className="p-4 border-b border-white/10 flex items-center gap-3 bg-[#0A0A0C]"><button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24} /></button><div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={18} className="text-gray-400" /><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar ejercicio..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div></div>

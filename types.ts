@@ -48,7 +48,23 @@ export interface WorkoutExercise {
   targetLoad?: string;
   targetRest?: number;
   coachCue?: string;
-  method?: TrainingMethod; // Nuevo campo opcional
+  method?: TrainingMethod;
+  
+  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
+  
+  // Para BISERIE: El segundo ejercicio se guarda aquí
+  pair?: {
+    exerciseId: string;
+    name: string;
+    targetReps: string;
+    targetLoad?: string;
+  };
+
+  // Para AHAP: Lista de pesos específicos por serie (ej: ["10", "12", "15", "20"])
+  targetWeights?: string[];
+
+  // Para DROP SET: Configuración de drops (ej: "10kg x 10 -> 5kg x 10")
+  drops?: { weight: string; reps: string }[];
 }
 
 export interface Workout {
