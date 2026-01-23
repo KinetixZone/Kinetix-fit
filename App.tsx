@@ -35,15 +35,34 @@ const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// --- UTILIDAD VIDEO (SOLO AGREGADO ESTO) ---
+// --- UTILIDAD VIDEO (MEJORADA PARA SOPORTE TOTAL) ---
 const getEmbedUrl = (url: string | undefined) => {
     if (!url) return null;
     let id = '';
     try {
+        // Método robusto usando URL API
+        const urlObj = new URL(url);
+        if (urlObj.hostname.includes('youtube.com')) {
+            if (urlObj.pathname.startsWith('/shorts/')) {
+                id = urlObj.pathname.split('/shorts/')[1];
+            } else if (urlObj.searchParams.has('v')) {
+                id = urlObj.searchParams.get('v') || '';
+            }
+        } else if (urlObj.hostname.includes('youtu.be')) {
+            id = urlObj.pathname.slice(1);
+        }
+        
+        // Limpieza final de ID (por si quedan parámetros pegados)
+        if (id.includes('?')) id = id.split('?')[0];
+        if (id.includes('&')) id = id.split('&')[0];
+
+    } catch (e) {
+        // Fallback manual si falla el parser
         if (url.includes('shorts/')) id = url.split('shorts/')[1].split('?')[0];
         else if (url.includes('youtu.be/')) id = url.split('youtu.be/')[1].split('?')[0];
         else if (url.includes('watch?v=')) id = url.split('watch?v=')[1].split('&')[0];
-    } catch (e) { return null; }
+    }
+    
     return id ? `https://www.youtube.com/embed/${id}?autoplay=1&rel=0` : null;
 };
 
