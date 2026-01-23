@@ -15,11 +15,11 @@ export type UserRole = 'coach' | 'client' | 'admin';
 
 export interface SystemConfig {
   appName: string;
-  logoUrl: string; // URL de la imagen
+  logoUrl: string;
   themeColor: string;
   ai: {
       chatbot: {
-          enabled: boolean; // Por defecto FALSE según reglas
+          enabled: boolean;
       }
   }
 }
@@ -36,8 +36,9 @@ export interface User {
   injuries?: string;
   streak: number;
   createdAt: string;
-  isActive?: boolean; // Control de acceso
-  coachId?: string; // ID del coach asignado
+  isActive?: boolean;
+  accessUntil?: string; // Fecha de vencimiento (YYYY-MM-DD)
+  coachId?: string;
 }
 
 export interface Exercise {
@@ -47,6 +48,7 @@ export interface Exercise {
   videoUrl: string;
   technique: string;
   commonErrors: string[];
+  imageUrl?: string; // Soporte para imágenes externas
 }
 
 export interface WorkoutExercise {
@@ -54,25 +56,28 @@ export interface WorkoutExercise {
   name: string;
   targetSets: number;
   targetReps: string;
-  targetLoad?: string; // Peso sugerido por el coach
-  targetRest?: number; // Descanso sugerido en segundos
-  coachCue?: string; // Notas del coach
+  targetLoad?: string; // Puede ser "50" o "50,60,70" para series ascendentes
+  targetRest?: number;
+  coachCue?: string;
+  supersetId?: string; // Para agrupar ejercicios
 }
 
 export interface Workout {
   id: string;
   name: string;
   day: number;
-  isClass?: boolean; // Identifica si es clase presencial (Hyrox, etc)
-  classType?: string; // Nombre de la clase
+  date?: string; // Fecha específica (YYYY-MM-DD)
+  isClass?: boolean;
+  classType?: string;
   exercises: WorkoutExercise[];
+  isCompleted?: boolean;
 }
 
 export interface SetEntry {
   setNumber: number;
-  weight: string; // Peso real levantado
-  reps: string;   // Reps reales
-  rpe?: number;   // Rate of Perceived Exertion (1-10)
+  weight: string;
+  reps: string;
+  rpe?: number;
   completed: boolean;
   timestamp: number;
 }
@@ -85,7 +90,7 @@ export interface SessionSummary {
   exercisesCompleted: number;
   totalVolume: number;
   durationMinutes: number;
-  prCount: number; // Récords personales rotos
+  prCount: number;
 }
 
 export interface Plan {
@@ -101,4 +106,11 @@ export interface ChatMessage {
     role: 'user' | 'ai';
     text: string;
     timestamp: number;
+}
+
+export interface RoutineTemplate {
+  id: string;
+  title: string;
+  workouts: Workout[];
+  createdBy: string;
 }

@@ -2,7 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { User, Exercise } from "../types";
 
-const getApiKey = () => process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
+// Always use process.env.API_KEY directly as per guidelines
+const getApiKey = () => process.env.API_KEY;
 
 /**
  * Helper: Extraer contexto de fuerza del historial
@@ -15,14 +16,16 @@ const getStrengthContext = (history: any[]) => {
   let contextStr = "HISTORIAL RECIENTE DE FUERZA:\n";
   
   recentSessions.forEach(session => {
-    // Buscamos el peso máximo levantado en esa sesión (independientemente del ejercicio, para dar una idea de fuerza general)
+    // Buscamos el peso máximo levantado en esa sesión
     let maxWeight = 0;
-    Object.values(session.logs).forEach((sets: any) => {
-      sets.forEach((s: any) => {
-        const w = parseFloat(s.weight);
-        if (w > maxWeight) maxWeight = w;
+    if (session.logs) {
+      Object.values(session.logs).forEach((sets: any) => {
+        sets.forEach((s: any) => {
+          const w = parseFloat(s.weight);
+          if (w > maxWeight) maxWeight = w;
+        });
       });
-    });
+    }
     if (maxWeight > 0) {
       contextStr += `- En rutina "${session.workoutName}": Llegó a mover ${maxWeight}kg.\n`;
     }
@@ -38,6 +41,7 @@ export async function generateSmartRoutine(user: User, history: any[] = []) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("ERROR: FALTA API KEY.");
 
+  // Correct initialization: new GoogleGenAI({ apiKey: ... })
   const ai = new GoogleGenAI({ apiKey: apiKey });
   const strengthContext = getStrengthContext(history);
 
@@ -57,6 +61,7 @@ export async function generateSmartRoutine(user: User, history: any[] = []) {
   OBLIGATORIO FORMATO JSON PURO CON ESTA ESTRUCTURA EXACTA.`;
 
   try {
+    // Using gemini-3-flash-preview for general generation
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
@@ -98,6 +103,7 @@ export async function generateSmartRoutine(user: User, history: any[] = []) {
       },
     });
 
+    // Extract text directly using .text property
     return JSON.parse(response.text || '{}');
   } catch (error: any) {
     console.error("AI Generation Error:", error);
@@ -114,7 +120,6 @@ export async function analyzeProgress(user: User, history: any[]) {
 
   const ai = new GoogleGenAI({ apiKey });
   
-  // Resumir historial para no saturar tokens
   const summary = history.slice(0, 5).map(h => ({
     date: h.date,
     workout: h.workoutName,
@@ -146,7 +151,6 @@ export async function getTechnicalAdvice(query: string, contextExercises: Exerci
 
   const ai = new GoogleGenAI({ apiKey });
   
-  // Contexto ligero de ejercicios disponibles
   const exercisesList = contextExercises.map(e => e.name).join(", ");
 
   const systemInstruction = `Eres un experto en biomecánica y entrenador de fuerza.
