@@ -13,7 +13,7 @@ export enum UserLevel {
 
 export type UserRole = 'coach' | 'client' | 'admin';
 
-export type TrainingMethod = 'standard' | 'biserie' | 'ahap' | 'dropset';
+export type TrainingMethod = 'standard' | 'biserie' | 'ahap' | 'dropset' | 'tabata' | 'emom';
 
 export interface User {
   id: string;
@@ -40,6 +40,30 @@ export interface Exercise {
   commonErrors: string[];
 }
 
+// --- CONFIGURACIONES AVANZADAS ---
+
+export interface TabataConfig {
+  workTimeSec: number;
+  restTimeSec: number;
+  rounds: number;
+  sets: number;
+  restBetweenSetsSec: number;
+  structure: 'simple' | 'alternado' | 'lista';
+  exercises: { id: string; name: string; videoUrl?: string }[]; 
+}
+
+export interface EmomConfig {
+  durationMin: number;
+  type: 'simple' | 'alternado' | 'complejo';
+  // Simple
+  simpleConfig?: { exercise: string; reps?: string; durationSec?: number };
+  // Alternado
+  minuteOdd?: { exercise: string; reps?: string; durationSec?: number };
+  minuteEven?: { exercise: string; reps?: string; durationSec?: number };
+  // Complejo
+  blocks?: { minutes: number[]; exercise: string; reps?: string; durationSec?: number }[];
+}
+
 export interface WorkoutExercise {
   exerciseId: string;
   name: string;
@@ -52,26 +76,28 @@ export interface WorkoutExercise {
   
   // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
   
-  // Para BISERIE: El segundo ejercicio se guarda aquí
+  // Para BISERIE
   pair?: {
-    exerciseId: string; // ID del catálogo
+    exerciseId: string;
     name: string;
     targetReps: string;
     targetLoad?: string;
-    videoUrl?: string; // URL del video del ejercicio B
+    videoUrl?: string;
   };
 
-  // Para AHAP: Lista de pesos específicos por serie (ej: ["10", "12", "15", "20"])
+  // Para AHAP
   targetWeights?: string[];
 
-  // Para DROP SET: Configuración de drops
-  dropsetPatternMode?: 'FIXED' | 'PER_SERIES'; // Modo de patrón
-  
-  // Si es FIXED, se usa este array para todas las series
+  // Para DROP SET
+  dropsetPatternMode?: 'FIXED' | 'PER_SERIES'; 
   drops?: { weight: string; reps: string }[]; 
-  
-  // Si es PER_SERIES, se usa este mapa: indice de serie (0-based) -> lista de drops
   dropsetSeriesPatterns?: { [setIndex: number]: { weight: string; reps: string }[] };
+
+  // Para TABATA (Nuevo)
+  tabataConfig?: TabataConfig;
+
+  // Para EMOM (Nuevo)
+  emomConfig?: EmomConfig;
 }
 
 export interface Workout {
