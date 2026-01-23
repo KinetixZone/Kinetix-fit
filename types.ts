@@ -56,12 +56,12 @@ export interface EmomConfig {
   durationMin: number;
   type: 'simple' | 'alternado' | 'complejo';
   // Simple
-  simpleConfig?: { exercise: string; reps?: string; durationSec?: number };
+  simpleConfig?: { exercise: string; reps?: string; durationSec?: number; videoUrl?: string };
   // Alternado
-  minuteOdd?: { exercise: string; reps?: string; durationSec?: number };
-  minuteEven?: { exercise: string; reps?: string; durationSec?: number };
+  minuteOdd?: { exercise: string; reps?: string; durationSec?: number; videoUrl?: string };
+  minuteEven?: { exercise: string; reps?: string; durationSec?: number; videoUrl?: string };
   // Complejo
-  blocks?: { minutes: number[]; exercise: string; reps?: string; durationSec?: number }[];
+  blocks?: { minutes: number[]; exercise: string; reps?: string; durationSec?: number; videoUrl?: string }[];
 }
 
 export interface WorkoutExercise {
