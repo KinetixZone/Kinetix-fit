@@ -8,10 +8,10 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, ChevronRight
+  Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
@@ -25,10 +25,10 @@ const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
 const RESCUE_WORKOUT: WorkoutExercise[] = [
-    { exerciseId: 'res1', name: 'Burpees', targetSets: 4, targetReps: '15', targetRest: 60, coachCue: 'Mantén ritmo constante.' },
-    { exerciseId: 'res2', name: 'Sentadillas Air', targetSets: 4, targetReps: '20', targetRest: 60, coachCue: 'Rompe paralelo.' },
-    { exerciseId: 'res3', name: 'Push Ups', targetSets: 4, targetReps: 'Max', targetRest: 60, coachCue: 'Pecho al suelo.' },
-    { exerciseId: 'res4', name: 'Plancha Abdominal', targetSets: 4, targetReps: '45s', targetRest: 60, coachCue: 'Aprieta abdomen.' },
+    { exerciseId: 'res1', name: 'Burpees', targetSets: 4, targetReps: '15', targetRest: 60, coachCue: 'Mantén ritmo constante.', method: 'standard' },
+    { exerciseId: 'res2', name: 'Sentadillas Air', targetSets: 4, targetReps: '20', targetRest: 60, coachCue: 'Rompe paralelo.', method: 'standard' },
+    { exerciseId: 'res3', name: 'Push Ups', targetSets: 4, targetReps: 'Max', targetRest: 60, coachCue: 'Pecho al suelo.', method: 'standard' },
+    { exerciseId: 'res4', name: 'Plancha Abdominal', targetSets: 4, targetReps: '45s', targetRest: 60, coachCue: 'Aprieta abdomen.', method: 'standard' },
 ];
 
 const formatDate = (dateStr: string) => {
@@ -259,6 +259,9 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
 const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history }: any) => {
   const [logs, setLogs] = useState<WorkoutProgress>(() => mode === 'athlete' ? DataEngine.getWorkoutLog(userId, workoutId) : {});
 
+  // Identificar el método de entrenamiento (fallback a 'standard' si no existe)
+  const method: TrainingMethod = exercise.method || 'standard';
+
   const lastSessionData = useMemo(() => {
     if(!history || history.length === 0) return null;
     for(const session of history) {
@@ -280,15 +283,34 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
     };
     DataEngine.saveSetLog(userId, workoutId, index, entry);
     setLogs(prev => ({...prev, [index]: [...(prev[index] || []).filter(s => s.setNumber !== setNum), entry]}));
-    if(!isDone) onSetComplete(exercise.targetRest);
+    
+    // LOGICA DE DESCANSO POR MÉTODO
+    if(!isDone) {
+        // En Bi-serie, el primer ejercicio no tiene descanso. El descanso va después del segundo.
+        // Como simplificación solicitada: si es bi-serie, asumimos que este ejercicio es parte de un bloque continuo.
+        // Si el coach pone descanso 0 manual, se respeta. Si no, forzamos 0 si es bi-serie.
+        const restTime = method === 'biserie' ? 0 : (exercise.targetRest || 60);
+        
+        // Solo lanzamos el timer si hay tiempo de descanso
+        if (restTime > 0) {
+            onSetComplete(restTime);
+        }
+    }
+    
     if (!isDone && navigator.vibrate) navigator.vibrate(50);
   };
 
   const currentExLogs = logs[index] || [];
 
   return (
-    <div className="bg-[#0F0F11] border border-white/5 rounded-2xl p-5 mb-4 shadow-sm hover:border-white/10 transition-all">
-      <div className="flex justify-between items-start mb-4">
+    <div className={`bg-[#0F0F11] border rounded-2xl p-5 mb-4 shadow-sm hover:border-white/10 transition-all relative overflow-hidden ${method === 'biserie' ? 'border-orange-500/30' : 'border-white/5'}`}>
+      
+      {/* Badges de Método */}
+      {method === 'biserie' && <div className="absolute top-0 right-0 bg-orange-600/20 text-orange-500 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-orange-500/20 flex items-center gap-1 uppercase tracking-widest"><Layers size={10} /> Bi-Serie (Sin descanso)</div>}
+      {method === 'ahap' && <div className="absolute top-0 right-0 bg-purple-600/20 text-purple-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-purple-500/20 flex items-center gap-1 uppercase tracking-widest"><ArrowUpCircle size={10} /> AHAP (Sube Peso)</div>}
+      {method === 'dropset' && <div className="absolute top-0 right-0 bg-red-600/20 text-red-500 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-red-500/20 flex items-center gap-1 uppercase tracking-widest"><CornerRightDown size={10} /> Drop Set</div>}
+
+      <div className="flex justify-between items-start mb-4 mt-2">
         <div className="flex items-start gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-bold text-gray-500 text-sm">{index + 1}</div>
           <div>
@@ -305,6 +327,13 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
               )}
               <div className="text-[10px] font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">{exercise.targetSets}X{exercise.targetReps}</div>
             </div>
+            {/* Coach Cue & Method Note */}
+            {(exercise.coachCue || method === 'dropset') && (
+                <p className="text-xs text-gray-400 mt-2 italic">
+                    {method === 'dropset' && <span className="text-red-400 font-bold mr-1">Fallo + Bajada de peso. </span>}
+                    {exercise.coachCue}
+                </p>
+            )}
           </div>
         </div>
         <button onClick={() => onShowVideo(exercise.name)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-red-500 transition-colors"><Play size={18} /></button>
@@ -314,11 +343,19 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
         <div className="space-y-2 mt-4">
           {Array.from({ length: exercise.targetSets }, (_, i) => i + 1).map(setNum => {
             const isDone = currentExLogs.find(l => l.setNumber === setNum)?.completed;
+            let setLabel = `SET ${setNum}`;
+            let setSubLabel = `OBJ: ${exercise.targetLoad || 'LIBRE'} x ${exercise.targetReps}`;
+
+            if (method === 'ahap') {
+                setLabel += " (↑)";
+                setSubLabel = "Sube peso respecto al anterior";
+            }
+
             return (
               <div key={setNum} className={`flex items-center justify-between p-2.5 rounded-xl transition-all ${isDone ? 'bg-green-500/10 border border-green-500/30' : 'bg-white/5 border border-transparent'}`}>
                 <div className="flex flex-col">
-                  <span className={`text-xs font-bold ${isDone ? 'text-green-400' : 'text-gray-400'}`}>SET {setNum}</span>
-                  <span className={`text-[10px] font-bold ${isDone ? 'text-green-500/60' : 'text-gray-600'}`}>OBJ: {exercise.targetLoad || 'LIBRE'} x {exercise.targetReps}</span>
+                  <span className={`text-xs font-bold ${isDone ? 'text-green-400' : 'text-gray-400'}`}>{setLabel}</span>
+                  <span className={`text-[10px] font-bold ${isDone ? 'text-green-500/60' : 'text-gray-600'}`}>{setSubLabel}</span>
                 </div>
                 <button 
                   onClick={() => handleToggle(setNum, !!isDone)} 
@@ -344,7 +381,10 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   const startTime = useRef(Date.now());
 
   const handleSetComplete = useCallback((rest?: number) => {
-    setTimer({ active: true, seconds: rest || 60 });
+    // Si rest es 0 o undefined, no activamos el timer (útil para bi-series)
+    if (rest && rest > 0) {
+        setTimer({ active: true, seconds: rest });
+    }
   }, []);
 
   const handleFinishWorkout = (workout: Workout) => {
@@ -475,7 +515,8 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   };
 
   const handleAddExercise = (exercise: Exercise) => {
-    const newExercise: WorkoutExercise = { exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '' };
+    // Default method: standard
+    const newExercise: WorkoutExercise = { exerciseId: exercise.id, name: exercise.name, targetSets: 4, targetReps: '10-12', targetLoad: '', targetRest: 60, coachCue: '', method: 'standard' };
     const updatedWorkouts = [...editedPlan.workouts];
     updatedWorkouts[selectedWorkoutIndex].exercises.push(newExercise);
     setEditedPlan({...editedPlan, workouts: updatedWorkouts});
@@ -535,6 +576,22 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                      {editedPlan.workouts[selectedWorkoutIndex].exercises.map((ex, idx) => (
                        <div key={idx} className="bg-[#111] border border-white/10 rounded-xl p-4 relative group">
                           <div className="flex justify-between items-start mb-3"><span className="font-bold text-lg">{ex.name}</span><button onClick={() => removeExercise(idx)} className="text-gray-600 hover:text-red-500 transition-colors"><Trash2 size={18} /></button></div>
+                          
+                          {/* Selector de Método */}
+                          <div className="mb-3">
+                              <label className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Método de Entrenamiento</label>
+                              <select 
+                                value={ex.method || 'standard'} 
+                                onChange={(e) => updateExercise(idx, 'method', e.target.value)}
+                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-white font-bold outline-none focus:border-red-500"
+                              >
+                                  <option value="standard">Standard (Series Planas)</option>
+                                  <option value="biserie">Bi-serie (Sin descanso)</option>
+                                  <option value="ahap">AHAP (Subir peso cada set)</option>
+                                  <option value="dropset">Drop Set (Fallo + Bajada)</option>
+                              </select>
+                          </div>
+
                           <div className="grid grid-cols-4 gap-3 mb-3">
                             <div><label className="text-[10px] text-gray-500 uppercase font-bold">Series</label><input type="number" value={ex.targetSets} onChange={(e) => updateExercise(idx, 'targetSets', parseInt(e.target.value))} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold" /></div>
                             <div><label className="text-[10px] text-gray-500 uppercase font-bold">Reps</label><input type="text" value={ex.targetReps} onChange={(e) => updateExercise(idx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-sm text-center font-bold" /></div>
@@ -709,7 +766,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                     {error && <div className="text-red-500 text-[10px] font-bold bg-red-500/10 p-3 rounded-xl flex items-center gap-2 uppercase"><AlertTriangle size={14}/> {error}</div>}
                     <button type="submit" className="w-full bg-red-600 text-white font-bold py-5 rounded-2xl hover:bg-red-500 transition-all shadow-lg shadow-red-900/30 uppercase tracking-widest text-xs">Ingresar al Sistema</button>
                  </form>
-                 <div className="mt-8 space-y-1"><p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p><p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.6.0 PRO | SAFE MODE</p></div>
+                 <div className="mt-8 space-y-1"><p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p><p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.0 PRO | TRAINING METHODS</p></div>
              </div>
         </div>
     );

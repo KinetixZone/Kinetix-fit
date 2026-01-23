@@ -13,6 +13,8 @@ export enum UserLevel {
 
 export type UserRole = 'coach' | 'client' | 'admin';
 
+export type TrainingMethod = 'standard' | 'biserie' | 'ahap' | 'dropset';
+
 export interface User {
   id: string;
   name: string;
@@ -46,6 +48,7 @@ export interface WorkoutExercise {
   targetLoad?: string;
   targetRest?: number;
   coachCue?: string;
+  method?: TrainingMethod; // Nuevo campo opcional
 }
 
 export interface Workout {
