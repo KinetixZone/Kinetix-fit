@@ -2,9 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { User, Exercise } from "../types";
 
-// Always use process.env.API_KEY directly as per guidelines
-const getApiKey = () => process.env.API_KEY;
-
 /**
  * Helper: Extraer contexto de fuerza del historial
  */
@@ -38,11 +35,8 @@ const getStrengthContext = (history: any[]) => {
  * Generador de Rutinas
  */
 export async function generateSmartRoutine(user: User, history: any[] = []) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("ERROR: FALTA API KEY.");
-
-  // Correct initialization: new GoogleGenAI({ apiKey: ... })
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  // Correct initialization: new GoogleGenAI({ apiKey: process.env.API_KEY }) directly.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const strengthContext = getStrengthContext(history);
 
   const systemInstruction = `Eres el Head Coach de Kinetix Functional Zone.
@@ -115,10 +109,7 @@ export async function generateSmartRoutine(user: User, history: any[] = []) {
  * Análisis de Progreso (Insights)
  */
 export async function analyzeProgress(user: User, history: any[]) {
-  const apiKey = getApiKey();
-  if (!apiKey) return "Error: No API Key";
-
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const summary = history.slice(0, 5).map(h => ({
     date: h.date,
@@ -146,10 +137,7 @@ export async function analyzeProgress(user: User, history: any[]) {
  * Chatbot Técnico (Dudas rápidas)
  */
 export async function getTechnicalAdvice(query: string, contextExercises: Exercise[]) {
-  const apiKey = getApiKey();
-  if (!apiKey) return "Error de conexión.";
-
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const exercisesList = contextExercises.map(e => e.name).join(", ");
 

@@ -35,6 +35,18 @@ const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+// --- UTILIDAD VIDEO (SOLO AGREGADO ESTO) ---
+const getEmbedUrl = (url: string | undefined) => {
+    if (!url) return null;
+    let id = '';
+    try {
+        if (url.includes('shorts/')) id = url.split('shorts/')[1].split('?')[0];
+        else if (url.includes('youtu.be/')) id = url.split('youtu.be/')[1].split('?')[0];
+        else if (url.includes('watch?v=')) id = url.split('watch?v=')[1].split('&')[0];
+    } catch (e) { return null; }
+    return id ? `https://www.youtube.com/embed/${id}?autoplay=1&rel=0` : null;
+};
+
 // --- MOTOR DE DATOS ---
 const DataEngine = {
   getStore: () => {
@@ -408,6 +420,24 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
   const [expandedWorkouts, setExpandedWorkouts] = useState<Record<string, boolean>>({});
   const startTime = useRef(Date.now());
 
+  // --- SOLUCIÓN DEL PROBLEMA DE VIDEO (BISERIE) ---
+  const activeVideoUrl = useMemo(() => {
+    if (!showVideo) return null;
+    const dbExercise = DataEngine.getExercises().find(e => e.name === showVideo);
+    if (dbExercise?.videoUrl) return dbExercise.videoUrl;
+    
+    // Si no está en catálogo principal, buscar en el plan actual (para pares de biserie con URL personalizada)
+    for (const w of plan.workouts) {
+        for (const ex of w.exercises) {
+            if (ex.pair?.name === showVideo && ex.pair.videoUrl) return ex.pair.videoUrl;
+        }
+    }
+    return null;
+  }, [showVideo, plan]);
+
+  const embedSrc = getEmbedUrl(activeVideoUrl || '');
+  // ------------------------------------------------
+
   const handleSetComplete = useCallback((rest?: number) => {
     // Si rest es 0 o undefined, no activamos el timer (útil para bi-series)
     if (rest && rest > 0) {
@@ -518,7 +548,22 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
         <div className="fixed inset-0 bg-black/95 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}>
           <div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/50"><h3 className="font-bold text-white text-sm uppercase">{showVideo}</h3><button onClick={() => setShowVideo(null)} className="text-gray-400 hover:text-white"><X size={20}/></button></div>
-            <div className="aspect-video bg-black flex items-center justify-center p-10"><div className="text-center flex flex-col items-center"><Play size={48} className="text-red-600 mb-4" /><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Cargando Tutorial Kinetix...</p></div></div>
+            <div className="aspect-video bg-black flex items-center justify-center relative">
+               {embedSrc ? (
+                 <iframe 
+                    src={embedSrc} 
+                    title={showVideo}
+                    className="w-full h-full absolute inset-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowFullScreen 
+                 />
+               ) : (
+                 <div className="text-center flex flex-col items-center">
+                    <Play size={48} className="text-red-600 mb-4" />
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Cargando Tutorial Kinetix...</p>
+                 </div>
+               )}
+            </div>
           </div>
         </div>
       )}
