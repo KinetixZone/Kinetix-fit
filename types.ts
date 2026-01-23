@@ -74,7 +74,7 @@ export interface WorkoutExercise {
   coachCue?: string;
   method?: TrainingMethod;
   
-  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
+  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS
   
   // Para BISERIE
   pair?: {
@@ -93,10 +93,10 @@ export interface WorkoutExercise {
   drops?: { weight: string; reps: string }[]; 
   dropsetSeriesPatterns?: { [setIndex: number]: { weight: string; reps: string }[] };
 
-  // Para TABATA (Nuevo)
+  // Para TABATA
   tabataConfig?: TabataConfig;
 
-  // Para EMOM (Nuevo)
+  // Para EMOM
   emomConfig?: EmomConfig;
 }
 

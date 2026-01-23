@@ -15,9 +15,9 @@ import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN ESTABLE 8644345 ---
-const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_7_FIX';
-const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_7_FIX';
+// --- CONFIGURACIÓN DE VERSIÓN ESTABLE V12.8 ---
+const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_8_FULL';
+const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_8_FULL';
 const ADMIN_UUID = '00000000-0000-0000-0000-000000000000';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
 
@@ -246,7 +246,7 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
     );
 };
 
-// --- LOGICA DE ENTRENAMIENTO ---
+// --- LOGICA DE ENTRENAMIENTO (ExerciseCard con soporte visual) ---
 
 const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history }: any) => {
   const [logs, setLogs] = useState<WorkoutProgress>(() => mode === 'athlete' ? DataEngine.getWorkoutLog(userId, workoutId) : {});
@@ -269,6 +269,8 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
 
   return (
     <div className={`bg-[#0F0F11] border rounded-2xl p-5 mb-4 shadow-sm hover:border-white/10 transition-all relative overflow-hidden ${method === 'biserie' ? 'border-orange-500/30' : method === 'tabata' ? 'border-cyan-500/30' : method === 'emom' ? 'border-yellow-500/30' : 'border-white/5'}`}>
+      
+      {/* Badges */}
       {method === 'biserie' && <div className="absolute top-0 right-0 bg-orange-600/20 text-orange-500 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-orange-500/20 flex items-center gap-1 uppercase tracking-widest"><Layers size={10} /> Bi-Serie</div>}
       {method === 'tabata' && <div className="absolute top-0 right-0 bg-cyan-600/20 text-cyan-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-cyan-500/20 flex items-center gap-1 uppercase tracking-widest"><TimerIcon size={10} /> TABATA</div>}
       {method === 'emom' && <div className="absolute top-0 right-0 bg-yellow-600/20 text-yellow-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-yellow-500/20 flex items-center gap-1 uppercase tracking-widest"><Clock size={10} /> EMOM</div>}
@@ -278,11 +280,17 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-bold text-gray-500 text-sm">{index + 1}</div>
           <div className="flex-1">
             <h3 className="font-bold text-lg text-white leading-tight">{exercise.name}</h3>
+            {/* Visualización Tabata */}
             {method === 'tabata' && exercise.tabataConfig && (
-                <div className="mt-2 text-cyan-400 text-xs font-bold uppercase tracking-wide">{exercise.tabataConfig.sets} SETS • {exercise.tabataConfig.workTimeSec}" ON / {exercise.tabataConfig.restTimeSec}" OFF • {exercise.tabataConfig.rounds} Rounds</div>
+                <div className="mt-2 text-cyan-400 text-xs font-bold uppercase tracking-wide">
+                    {exercise.tabataConfig.sets} SETS • {exercise.tabataConfig.workTimeSec}" ON / {exercise.tabataConfig.restTimeSec}" OFF • {exercise.tabataConfig.rounds} Rounds
+                </div>
             )}
+            {/* Visualización EMOM */}
             {method === 'emom' && exercise.emomConfig && (
-                <div className="mt-2 text-yellow-400 text-xs font-bold uppercase tracking-wide">EMOM {exercise.emomConfig.durationMin}' • {exercise.emomConfig.type}</div>
+                <div className="mt-2 text-yellow-400 text-xs font-bold uppercase tracking-wide">
+                    EMOM {exercise.emomConfig.durationMin}' • {exercise.emomConfig.type}
+                </div>
             )}
             {!['tabata', 'emom'].includes(method) && (
                 <div className="flex flex-wrap gap-2 mt-2 items-center">
@@ -291,7 +299,10 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
                 </div>
             )}
             {method === 'biserie' && exercise.pair && (
-                <div className="mt-3 bg-white/5 p-3 rounded-xl border border-white/5 flex items-start justify-between gap-3"><div className="flex items-start gap-3"><div className="w-1 h-8 bg-orange-500 rounded-full mt-1"></div><div><div className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">SEGUNDO EJERCICIO (B)</div><h4 className="font-bold text-sm text-white">{exercise.pair.name}</h4><div className="flex gap-2 mt-1"><span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300 font-bold">{exercise.pair.targetReps} Reps</span>{exercise.pair.targetLoad && <span className="text-[9px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded font-bold border border-yellow-500/10">{exercise.pair.targetLoad}kg</span>}</div></div></div><button onClick={() => onShowVideo(exercise.pair.name)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-orange-500 transition-colors shrink-0"><Play size={14} /></button></div>
+                <div className="mt-3 bg-white/5 p-3 rounded-xl border border-white/5 flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3"><div className="w-1 h-8 bg-orange-500 rounded-full mt-1"></div><div><div className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">SEGUNDO EJERCICIO (B)</div><h4 className="font-bold text-sm text-white">{exercise.pair.name}</h4><div className="flex gap-2 mt-1"><span className="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300 font-bold">{exercise.pair.targetReps} Reps</span>{exercise.pair.targetLoad && <span className="text-[9px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded font-bold border border-yellow-500/10">{exercise.pair.targetLoad}kg</span>}</div></div></div>
+                    <button onClick={() => onShowVideo(exercise.pair.name)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-orange-500 transition-colors shrink-0"><Play size={14} /></button>
+                </div>
             )}
             {(exercise.coachCue || method === 'dropset') && <p className="text-xs text-gray-400 mt-2 italic">{exercise.coachCue}</p>}
           </div>
@@ -417,7 +428,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   );
 }
 
-// --- VISTAS DE GESTIÓN (RESTAURADAS) ---
+// --- VISTAS DE GESTIÓN (LISTA DE CLIENTES) ---
 
 const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
     const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
@@ -531,7 +542,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                      </div>
                      <div>
                         <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p>
-                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7 COMPLETE</p>
+                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.8 FINAL STABLE</p>
                      </div>
                  </div>
              </div>
