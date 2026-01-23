@@ -9,7 +9,7 @@ import {
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
   Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown, Link as LinkIcon,
-  Clock, Repeat
+  Clock, Repeat, Pause, RotateCcw, AlertCircle
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
@@ -37,7 +37,7 @@ const formatDate = (dateStr: string) => {
 };
 
 // --- UTILIDAD VIDEO (MEJORADA PARA SOPORTE TOTAL) ---
-const getEmbedUrl = (url: string | undefined) => {
+const getYoutubeId = (url: string | undefined) => {
     if (!url) return null;
     let id = '';
     try {
@@ -58,8 +58,18 @@ const getEmbedUrl = (url: string | undefined) => {
         else if (url.includes('youtu.be/')) id = url.split('youtu.be/')[1].split('?')[0];
         else if (url.includes('watch?v=')) id = url.split('watch?v=')[1].split('&')[0];
     }
+    return id;
+};
+
+const getEmbedUrl = (url: string | undefined) => {
+    const id = getYoutubeId(url);
     return id ? `https://www.youtube.com/embed/${id}?autoplay=1&rel=0` : null;
 };
+
+const getThumbnailUrl = (url: string | undefined) => {
+    const id = getYoutubeId(url);
+    return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
+}
 
 // --- MOTOR DE DATOS ---
 const DataEngine = {
@@ -282,47 +292,138 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
 
 // --- VISTAS ESPECÍFICAS ---
 
+const VideoThumbnail: React.FC<{ url?: string, name: string, onClick: () => void }> = ({ url, name, onClick }) => {
+    const thumb = getThumbnailUrl(url);
+    return (
+        <div 
+            onClick={onClick} 
+            className="relative bg-black rounded-lg overflow-hidden group cursor-pointer border border-white/10 hover:border-red-500/50 transition-all shrink-0 w-24 h-16 md:w-32 md:h-20"
+        >
+            {thumb ? (
+                <img src={thumb} alt={name} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
+            ) : (
+                <div className="w-full h-full flex items-center justify-center bg-white/5"><Play size={20} className="text-gray-500"/></div>
+            )}
+            <div className="absolute inset-0 flex items-center justify-center">
+                <div className="bg-black/50 p-1.5 rounded-full backdrop-blur-sm group-hover:scale-110 transition-transform">
+                     <Play size={12} fill="white" className="text-white"/>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, onSetComplete, history }: any) => {
   const [logs, setLogs] = useState<WorkoutProgress>(() => mode === 'athlete' ? DataEngine.getWorkoutLog(userId, workoutId) : {});
+  const [executionState, setExecutionState] = useState<'idle' | 'running' | 'paused'>('idle');
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [currentRound, setCurrentRound] = useState(1);
+  const [currentPhase, setCurrentPhase] = useState<'work' | 'rest'>('work');
+  const [currentMinute, setCurrentMinute] = useState(1);
+  const timerRef = useRef<number | null>(null);
 
-  // Identificar el método de entrenamiento (fallback a 'standard' si no existe)
+  // Identificar el método de entrenamiento
   const method: TrainingMethod = exercise.method || 'standard';
 
-  const lastSessionData = useMemo(() => {
-    if(!history || history.length === 0) return null;
-    for(const session of history) {
-      if(session.logs && session.logs[index]) {
-        const sessionLogs = session.logs[index];
-        return sessionLogs[sessionLogs.length - 1];
-      }
-    }
-    return null;
-  }, [history, index]);
-
   const handleToggle = (setNum: number, isDone: boolean) => {
-    const entry: SetEntry = { 
-      setNumber: setNum, 
-      weight: exercise.targetLoad || '0', 
-      reps: exercise.targetReps, 
-      completed: !isDone, 
-      timestamp: Date.now() 
-    };
+    const entry: SetEntry = { setNumber: setNum, weight: exercise.targetLoad || '0', reps: exercise.targetReps, completed: !isDone, timestamp: Date.now() };
     DataEngine.saveSetLog(userId, workoutId, index, entry);
     setLogs(prev => ({...prev, [index]: [...(prev[index] || []).filter(s => s.setNumber !== setNum), entry]}));
     
-    // LOGICA DE DESCANSO POR MÉTODO
-    if(!isDone) {
+    // Si marcamos como completo en Tabata/EMOM, detenemos el timer
+    if (!isDone && (method === 'tabata' || method === 'emom')) {
+        setExecutionState('idle');
+        if(timerRef.current) window.clearInterval(timerRef.current);
+    } else if (!isDone) {
+        // Lógica standard de descanso
         let restTime = (exercise.targetRest || 60);
-        // En Bi-serie, el primer ejercicio no tiene descanso (0). 
         if (method === 'biserie') restTime = 0;
-        
-        if (restTime > 0) {
-            onSetComplete(restTime);
-        }
+        if (restTime > 0) onSetComplete(restTime);
     }
-    
     if (!isDone && navigator.vibrate) navigator.vibrate(50);
   };
+
+  const startTabata = () => {
+      setExecutionState('running');
+      setCurrentRound(1);
+      setCurrentPhase('work');
+      setTimeLeft(exercise.tabataConfig.workTimeSec);
+  };
+
+  const startEmom = () => {
+      setExecutionState('running');
+      setCurrentMinute(1);
+      setTimeLeft(60);
+  };
+
+  const togglePause = () => {
+      setExecutionState(prev => prev === 'running' ? 'paused' : 'running');
+  };
+
+  const stopExecution = () => {
+      setExecutionState('idle');
+      if(timerRef.current) window.clearInterval(timerRef.current);
+  };
+
+  // Timer Logic
+  useEffect(() => {
+      if (executionState === 'running') {
+          timerRef.current = window.setInterval(() => {
+              setTimeLeft(prev => {
+                  if (prev <= 1) {
+                      // Fase terminada
+                      if (method === 'tabata') {
+                          if (currentPhase === 'work') {
+                              setCurrentPhase('rest');
+                              return exercise.tabataConfig.restTimeSec;
+                          } else {
+                              if (currentRound < exercise.tabataConfig.rounds) {
+                                  setCurrentRound(r => r + 1);
+                                  setCurrentPhase('work');
+                                  return exercise.tabataConfig.workTimeSec;
+                              } else {
+                                  // Tabata Complete
+                                  setExecutionState('idle');
+                                  return 0;
+                              }
+                          }
+                      } else if (method === 'emom') {
+                          if (currentMinute < exercise.emomConfig.durationMin) {
+                              setCurrentMinute(m => m + 1);
+                              return 60;
+                          } else {
+                              // EMOM Complete
+                              setExecutionState('idle');
+                              return 0;
+                          }
+                      }
+                  }
+                  return prev - 1;
+              });
+          }, 1000);
+      } else {
+          if(timerRef.current) window.clearInterval(timerRef.current);
+      }
+      return () => { if(timerRef.current) window.clearInterval(timerRef.current); };
+  }, [executionState, method, currentPhase, currentRound, currentMinute, exercise]);
+
+  // Determine current active exercise for display
+  const activeExerciseName = useMemo(() => {
+      if (method === 'tabata') {
+          if (currentPhase === 'rest') return "DESCANSAR";
+          if (exercise.tabataConfig.structure === 'simple') return exercise.tabataConfig.exercises[0]?.name;
+          if (exercise.tabataConfig.structure === 'alternado') return exercise.tabataConfig.exercises[(currentRound - 1) % exercise.tabataConfig.exercises.length]?.name;
+          if (exercise.tabataConfig.structure === 'lista') return exercise.tabataConfig.exercises[(currentRound - 1) % exercise.tabataConfig.exercises.length]?.name;
+      } else if (method === 'emom') {
+          if (exercise.emomConfig.type === 'simple') return exercise.emomConfig.simpleConfig?.exercise;
+          if (exercise.emomConfig.type === 'alternado') return currentMinute % 2 !== 0 ? exercise.emomConfig.minuteOdd?.exercise : exercise.emomConfig.minuteEven?.exercise;
+          if (exercise.emomConfig.type === 'complejo' && exercise.emomConfig.blocks) {
+              const block = exercise.emomConfig.blocks.find((b: any) => b.minutes.includes(currentMinute));
+              return block ? block.exercise : "Descanso";
+          }
+      }
+      return exercise.name;
+  }, [method, exercise, currentRound, currentPhase, currentMinute]);
 
   const currentExLogs = logs[index] || [];
 
@@ -336,7 +437,25 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
       {method === 'tabata' && <div className="absolute top-0 right-0 bg-cyan-600/20 text-cyan-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-cyan-500/20 flex items-center gap-1 uppercase tracking-widest"><TimerIcon size={10} /> TABATA</div>}
       {method === 'emom' && <div className="absolute top-0 right-0 bg-yellow-600/20 text-yellow-400 text-[9px] font-bold px-3 py-1 rounded-bl-xl border-l border-b border-yellow-500/20 flex items-center gap-1 uppercase tracking-widest"><Clock size={10} /> EMOM</div>}
 
-      {/* CABECERA (Ejercicio A) */}
+      {/* VISTA EJECUCIÓN ACTIVA (TIMER) */}
+      {executionState !== 'idle' && (
+          <div className="absolute inset-0 bg-[#0F0F11] z-10 flex flex-col items-center justify-center p-6 animate-fade-in">
+              <div className="text-[10px] font-bold uppercase text-gray-500 tracking-widest mb-2">
+                  {method === 'tabata' ? `ROUND ${currentRound} / ${exercise.tabataConfig.rounds}` : `MINUTO ${currentMinute} / ${exercise.emomConfig.durationMin}`}
+              </div>
+              <div className={`text-6xl font-black font-display mb-4 tabular-nums ${currentPhase === 'rest' ? 'text-blue-500' : 'text-white'}`}>{timeLeft}s</div>
+              <div className="flex items-center gap-2 mb-8">
+                  <span className={`text-xl font-bold uppercase ${currentPhase === 'rest' ? 'text-blue-500' : 'text-white'}`}>{activeExerciseName}</span>
+                  {activeExerciseName !== 'DESCANSAR' && <button onClick={() => onShowVideo(activeExerciseName)} className="text-gray-400 hover:text-white"><Play size={20}/></button>}
+              </div>
+              <div className="flex gap-4 w-full max-w-xs">
+                  <button onClick={togglePause} className="flex-1 bg-white/10 hover:bg-white/20 py-4 rounded-xl flex items-center justify-center text-white transition-colors">{executionState === 'running' ? <Pause size={24}/> : <Play size={24}/>}</button>
+                  <button onClick={stopExecution} className="flex-1 bg-red-900/20 hover:bg-red-900/40 text-red-500 py-4 rounded-xl flex items-center justify-center transition-colors"><StopCircle size={24}/></button>
+              </div>
+          </div>
+      )}
+
+      {/* CABECERA STANDARD (Cuando no está en ejecución) */}
       <div className="flex justify-between items-start mb-4 mt-2">
         <div className="flex items-start gap-3 w-full">
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center font-bold text-gray-500 text-sm">{index + 1}</div>
@@ -351,22 +470,28 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
                          <span className="text-[10px] font-bold bg-white/5 text-gray-300 px-2 py-1 rounded border border-white/5">{exercise.tabataConfig.workTimeSec}s ON / {exercise.tabataConfig.restTimeSec}s OFF</span>
                          <span className="text-[10px] font-bold bg-white/5 text-gray-300 px-2 py-1 rounded border border-white/5">{exercise.tabataConfig.rounds} Rounds</span>
                     </div>
-                    {exercise.tabataConfig.structure !== 'simple' && (
-                        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <p className="text-[9px] text-gray-500 uppercase font-bold mb-2 tracking-widest">Ejercicios del Tabata ({exercise.tabataConfig.structure}):</p>
-                            <div className="space-y-2">
-                                {exercise.tabataConfig.exercises.map((ex:any, i:number) => (
-                                    <div key={i} className="flex justify-between items-center text-xs text-gray-300">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-cyan-500 font-bold">{i+1}.</span>
-                                            <span>{ex.name}</span>
-                                        </div>
-                                        {ex.videoUrl && <button onClick={() => onShowVideo(ex.name)} className="text-cyan-500 hover:text-white"><Play size={12}/></button>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                         <p className="text-[9px] text-gray-500 uppercase font-bold mb-2 tracking-widest">Protocolo: {exercise.tabataConfig.structure}</p>
+                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                             {exercise.tabataConfig.exercises.map((ex: any, i: number) => (
+                                 <VideoThumbnail 
+                                    key={i} 
+                                    name={ex.name} 
+                                    url={ex.videoUrl} 
+                                    onClick={() => onShowVideo(ex.name)}
+                                 />
+                             ))}
+                         </div>
+                         <div className="flex flex-col gap-1 mt-2">
+                            {exercise.tabataConfig.exercises.map((ex: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-xs text-gray-400">
+                                    <span className="text-cyan-500 font-bold">{i+1}.</span>
+                                    <span>{ex.name}</span>
+                                </div>
+                            ))}
+                         </div>
+                    </div>
                 </div>
             )}
 
@@ -377,51 +502,66 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
                          <span className="text-[10px] font-bold bg-white/5 text-gray-300 px-2 py-1 rounded border border-white/5 uppercase">{exercise.emomConfig.type}</span>
                     </div>
 
-                    {/* Simple */}
-                    {exercise.emomConfig.type === 'simple' && exercise.emomConfig.simpleConfig && (
-                         <div className="bg-white/5 p-3 rounded-xl border border-white/5 flex justify-between items-center">
-                             <div>
-                                <p className="text-[9px] text-gray-500 uppercase font-bold tracking-widest">CADA MINUTO</p>
-                                <p className="text-sm font-bold text-white mt-1">{exercise.emomConfig.simpleConfig.exercise}</p>
-                                <p className="text-xs text-yellow-500 font-bold">{exercise.emomConfig.simpleConfig.reps ? `${exercise.emomConfig.simpleConfig.reps} Reps` : `${exercise.emomConfig.simpleConfig.durationSec}s Trabajo`}</p>
+                    <div className="bg-white/5 p-3 rounded-xl border border-white/5">
+                        {/* Simple */}
+                        {exercise.emomConfig.type === 'simple' && exercise.emomConfig.simpleConfig && (
+                             <div className="flex items-center gap-3">
+                                 <VideoThumbnail 
+                                    name={exercise.emomConfig.simpleConfig.exercise} 
+                                    url={DataEngine.getExercises().find(e => e.name === exercise.emomConfig.simpleConfig?.exercise)?.videoUrl} 
+                                    onClick={() => onShowVideo(exercise.emomConfig.simpleConfig?.exercise)}
+                                 />
+                                 <div>
+                                    <p className="text-sm font-bold text-white">{exercise.emomConfig.simpleConfig.exercise}</p>
+                                    <p className="text-xs text-yellow-500 font-bold">{exercise.emomConfig.simpleConfig.reps ? `${exercise.emomConfig.simpleConfig.reps} Reps` : `${exercise.emomConfig.simpleConfig.durationSec}s Trabajo`}</p>
+                                 </div>
                              </div>
-                             <button onClick={() => onShowVideo(exercise.emomConfig.simpleConfig.exercise)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-yellow-500 transition-colors"><Play size={14}/></button>
-                         </div>
-                    )}
+                        )}
 
-                    {/* Alternado */}
-                    {exercise.emomConfig.type === 'alternado' && (
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-white/5 p-2 rounded-xl border border-white/5">
-                                <div className="flex justify-between mb-1"><span className="text-[9px] font-bold text-blue-400">MIN IMPAR</span><button onClick={() => onShowVideo(exercise.emomConfig.minuteOdd?.exercise)}><Play size={10} className="text-gray-500 hover:text-white"/></button></div>
-                                <p className="text-xs font-bold text-white leading-tight">{exercise.emomConfig.minuteOdd?.exercise}</p>
-                                <p className="text-[10px] text-gray-400 mt-1">{exercise.emomConfig.minuteOdd?.reps || exercise.emomConfig.minuteOdd?.durationSec + 's'}</p>
-                            </div>
-                            <div className="bg-white/5 p-2 rounded-xl border border-white/5">
-                                <div className="flex justify-between mb-1"><span className="text-[9px] font-bold text-green-400">MIN PAR</span><button onClick={() => onShowVideo(exercise.emomConfig.minuteEven?.exercise)}><Play size={10} className="text-gray-500 hover:text-white"/></button></div>
-                                <p className="text-xs font-bold text-white leading-tight">{exercise.emomConfig.minuteEven?.exercise}</p>
-                                <p className="text-[10px] text-gray-400 mt-1">{exercise.emomConfig.minuteEven?.reps || exercise.emomConfig.minuteEven?.durationSec + 's'}</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Complejo */}
-                    {exercise.emomConfig.type === 'complejo' && exercise.emomConfig.blocks && (
-                        <div className="space-y-1">
-                            {exercise.emomConfig.blocks.map((block: any, i: number) => (
-                                <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5">
-                                     <div className="flex-1">
-                                        <p className="text-[9px] text-gray-500 font-bold">MIN {block.minutes.join(', ')}</p>
-                                        <p className="text-xs font-bold text-white">{block.exercise}</p>
-                                     </div>
-                                     <div className="text-right mr-3">
-                                         <p className="text-xs font-bold text-yellow-500">{block.reps || block.durationSec + 's'}</p>
-                                     </div>
-                                     <button onClick={() => onShowVideo(block.exercise)} className="text-gray-500 hover:text-white"><Play size={14}/></button>
+                        {/* Alternado */}
+                        {exercise.emomConfig.type === 'alternado' && (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <div className="text-[9px] font-bold text-blue-400 mb-1">MIN IMPAR</div>
+                                    <VideoThumbnail 
+                                        name={exercise.emomConfig.minuteOdd?.exercise || ''}
+                                        url={DataEngine.getExercises().find(e => e.name === exercise.emomConfig.minuteOdd?.exercise)?.videoUrl}
+                                        onClick={() => onShowVideo(exercise.emomConfig.minuteOdd?.exercise)}
+                                    />
+                                    <p className="text-xs font-bold text-white mt-1 truncate">{exercise.emomConfig.minuteOdd?.exercise}</p>
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                                <div>
+                                    <div className="text-[9px] font-bold text-green-400 mb-1">MIN PAR</div>
+                                    <VideoThumbnail 
+                                        name={exercise.emomConfig.minuteEven?.exercise || ''}
+                                        url={DataEngine.getExercises().find(e => e.name === exercise.emomConfig.minuteEven?.exercise)?.videoUrl}
+                                        onClick={() => onShowVideo(exercise.emomConfig.minuteEven?.exercise)}
+                                    />
+                                    <p className="text-xs font-bold text-white mt-1 truncate">{exercise.emomConfig.minuteEven?.exercise}</p>
+                                </div>
+                            </div>
+                        )}
+                        
+                         {/* Complejo */}
+                        {exercise.emomConfig.type === 'complejo' && exercise.emomConfig.blocks && (
+                            <div className="space-y-2">
+                                {exercise.emomConfig.blocks.map((block: any, i: number) => (
+                                    <div key={i} className="flex justify-between items-center border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center cursor-pointer hover:text-yellow-500" onClick={() => onShowVideo(block.exercise)}><Play size={12}/></div>
+                                            <div>
+                                                <p className="text-[9px] text-gray-500 font-bold">MIN {block.minutes.join(', ')}</p>
+                                                <p className="text-xs font-bold text-white">{block.exercise}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-bold text-yellow-500">{block.reps || block.durationSec + 's'}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -507,12 +647,16 @@ const ExerciseCard = ({ exercise, index, workoutId, userId, onShowVideo, mode, o
                   <span className={`text-xs font-bold ${isDone ? 'text-green-400' : 'text-gray-400'}`}>{setLabel}</span>
                   <span className={`text-[10px] font-bold ${isDone ? 'text-green-500/60' : 'text-gray-600'}`}>{setSubLabel}</span>
                 </div>
-                <button 
-                  onClick={() => handleToggle(setNum, !!isDone)} 
-                  className={`w-12 h-10 rounded-lg flex items-center justify-center transition-all ${isDone ? 'bg-green-500 text-black shadow-lg shadow-green-500/20 animate-flash' : 'bg-white/10 text-gray-500 hover:bg-white/20'}`}
-                >
-                  {isDone ? <Check size={20} strokeWidth={4} /> : <Circle size={20} />}
-                </button>
+                {(method === 'tabata' || method === 'emom') && !isDone ? (
+                    <button onClick={method === 'tabata' ? startTabata : startEmom} className="px-4 py-2 bg-white text-black text-[10px] font-bold rounded-lg uppercase tracking-widest hover:bg-gray-200 transition-colors flex items-center gap-2"><Play size={12}/> INICIAR</button>
+                ) : (
+                    <button 
+                    onClick={() => handleToggle(setNum, !!isDone)} 
+                    className={`w-12 h-10 rounded-lg flex items-center justify-center transition-all ${isDone ? 'bg-green-500 text-black shadow-lg shadow-green-500/20 animate-flash' : 'bg-white/10 text-gray-500 hover:bg-white/20'}`}
+                    >
+                    {isDone ? <Check size={20} strokeWidth={4} /> : <Circle size={20} />}
+                    </button>
+                )}
               </div>
             );
           })}
@@ -536,7 +680,7 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
     const dbExercise = DataEngine.getExercises().find(e => e.name === showVideo);
     if (dbExercise?.videoUrl) return dbExercise.videoUrl;
     
-    // Búsqueda profunda en workouts para encontrar videos custom (ej: Biserie pairs, Tabata list, Emom simple/odd/even/blocks)
+    // Búsqueda profunda en workouts para encontrar videos custom
     for (const w of plan.workouts) {
         for (const ex of w.exercises) {
             if (ex.pair?.name === showVideo && ex.pair.videoUrl) return ex.pair.videoUrl;
@@ -545,13 +689,8 @@ const PlanViewer = ({ plan, mode = 'coach' }: { plan: Plan, mode?: 'coach' | 'at
                 if (tabataEx?.videoUrl) return tabataEx.videoUrl;
             }
             if (ex.emomConfig) {
+                // Resolver videos para EMOM si no están en catálogo global (fallback)
                 if (ex.emomConfig.simpleConfig?.exercise === showVideo && dbExercise) return dbExercise.videoUrl;
-                if (ex.emomConfig.minuteOdd?.exercise === showVideo && dbExercise) return dbExercise.videoUrl;
-                if (ex.emomConfig.minuteEven?.exercise === showVideo && dbExercise) return dbExercise.videoUrl;
-                if (ex.emomConfig.blocks) {
-                    const blockEx = ex.emomConfig.blocks.find((b: any) => b.exercise === showVideo);
-                    if (blockEx && dbExercise) return dbExercise.videoUrl;
-                }
             }
         }
     }
@@ -702,7 +841,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   const [activeDropSetTab, setActiveDropSetTab] = useState<number>(0); 
   
   // Modos de selector de ejercicio expandidos
-  const [exerciseSelectorContext, setExerciseSelectorContext] = useState<{ mode: 'add' } | { mode: 'pair', exerciseIndex: number } | { mode: 'tabata-list', exerciseIndex: number } | { mode: 'emom-simple', exerciseIndex: number } | { mode: 'emom-odd', exerciseIndex: number } | { mode: 'emom-even', exerciseIndex: number }>({ mode: 'add' });
+  const [exerciseSelectorContext, setExerciseSelectorContext] = useState<{ mode: 'add' } | { mode: 'pair', exerciseIndex: number } | { mode: 'tabata-list', exerciseIndex: number } | { mode: 'emom-simple', exerciseIndex: number } | { mode: 'emom-odd', exerciseIndex: number } | { mode: 'emom-even', exerciseIndex: number } | { mode: 'emom-block', exerciseIndex: number, blockIndex: number }>({ mode: 'add' });
   const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null);
 
   const allExercises = useMemo(() => DataEngine.getExercises(), []);
@@ -778,6 +917,17 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
             ...currentExercise,
             emomConfig: { ...currentExercise.emomConfig!, minuteEven: { ...currentExercise.emomConfig?.minuteEven, exercise: exercise.name } }
         };
+    } else if (exerciseSelectorContext.mode === 'emom-block') {
+        const idx = exerciseSelectorContext.exerciseIndex;
+        const bIdx = exerciseSelectorContext.blockIndex;
+        const currentExercise = currentWorkout.exercises[idx];
+        const newBlocks = [...(currentExercise.emomConfig?.blocks || [])];
+        if(!newBlocks[bIdx]) return;
+        newBlocks[bIdx] = { ...newBlocks[bIdx], exercise: exercise.name };
+        currentWorkout.exercises[idx] = {
+            ...currentExercise,
+            emomConfig: { ...currentExercise.emomConfig!, blocks: newBlocks }
+        };
     }
 
     setEditedPlan({...editedPlan, workouts: updatedWorkouts});
@@ -823,6 +973,26 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     if (searchQuery) filtered = filtered.filter(ex => ex.name.toLowerCase().includes(searchQuery.toLowerCase()));
     return filtered;
   }, [searchQuery, activeCategory, allExercises]);
+
+  // VALIDACIONES BLOQUEANTES
+  const isFormValid = useMemo(() => {
+    if (configMethodIdx === null) return true;
+    const ex = editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx];
+    
+    if (ex.method === 'tabata') {
+        if (!ex.tabataConfig) return false;
+        if (ex.tabataConfig.exercises.length === 0) return false;
+        if (ex.tabataConfig.structure === 'alternado' && ex.tabataConfig.exercises.length < 2) return false;
+        if (ex.tabataConfig.workTimeSec <= 0 || ex.tabataConfig.restTimeSec < 0) return false;
+    }
+    if (ex.method === 'emom') {
+        if (!ex.emomConfig) return false;
+        if (ex.emomConfig.type === 'simple' && !ex.emomConfig.simpleConfig?.exercise) return false;
+        if (ex.emomConfig.type === 'alternado' && (!ex.emomConfig.minuteOdd?.exercise || !ex.emomConfig.minuteEven?.exercise)) return false;
+        if (ex.emomConfig.type === 'complejo' && ex.emomConfig.blocks?.some(b => !b.exercise)) return false;
+    }
+    return true;
+  }, [configMethodIdx, editedPlan, selectedWorkoutIndex]);
 
   return (
     <div className="bg-[#0A0A0C] min-h-screen fixed inset-0 z-50 overflow-y-auto pb-20 flex flex-col">
@@ -937,12 +1107,17 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                       )}
                                   </div>
                               ))}
+                              
                               {/* Botón de agregar depende de la estructura */}
                               {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure === 'simple' && editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.exercises.length === 0) && (
                                    <button onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'tabata-list', exerciseIndex: configMethodIdx }); }} className="w-full py-2 border border-dashed border-white/20 rounded text-xs flex items-center justify-center gap-2"><Plus size={14}/> Seleccionar Ejercicio</button>
                               )}
                               {(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure !== 'simple') && (
                                   <button onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'tabata-list', exerciseIndex: configMethodIdx }); }} className="w-full py-2 border border-dashed border-white/20 rounded text-xs flex items-center justify-center gap-2"><Plus size={14}/> Agregar Ejercicio a Lista</button>
+                              )}
+
+                              {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.structure === 'alternado' && editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].tabataConfig.exercises.length < 2 && (
+                                  <div className="text-[10px] text-red-500 flex items-center gap-1 mt-2 bg-red-500/10 p-2 rounded"><AlertCircle size={10}/> Se requieren mínimo 2 ejercicios para Alternado.</div>
                               )}
                           </div>
                       </div>
@@ -952,7 +1127,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                   {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'emom' && editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig && (
                       <div className="space-y-4">
                           <div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración Total (min)</label><input type="number" className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.durationMin} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, durationMin: parseInt(e.target.value)})} /></div>
-                          <div><label className="text-[9px] uppercase font-bold text-gray-500">Tipo de EMOM</label><select className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, type: e.target.value})}><option value="simple">Simple (Mismo cada min)</option><option value="alternado">Alternado (Impar/Par)</option></select></div>
+                          <div><label className="text-[9px] uppercase font-bold text-gray-500">Tipo de EMOM</label><select className="w-full bg-black border border-white/10 rounded-lg p-2 text-white" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, type: e.target.value})}><option value="simple">Simple (Mismo cada min)</option><option value="alternado">Alternado (Impar/Par)</option><option value="complejo">Complejo (Bloques)</option></select></div>
                           
                           {/* Config Simple */}
                           {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type === 'simple' && (
@@ -1003,11 +1178,56 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                   </div>
                               </div>
                           )}
+
+                          {/* Config Complejo (Bloques) */}
+                          {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.type === 'complejo' && (
+                              <div className="space-y-4">
+                                  <div className="flex justify-between items-center"><p className="text-xs text-gray-400">Define bloques de minutos.</p><button onClick={() => {
+                                      const newBlocks = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.blocks || [])];
+                                      newBlocks.push({ minutes: [], exercise: '', reps: '' });
+                                      updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, blocks: newBlocks});
+                                  }} className="text-[10px] bg-white/10 px-2 py-1 rounded hover:bg-white/20 flex items-center gap-1"><Plus size={10}/> Bloque</button></div>
+                                  {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.blocks?.map((block: any, bIdx: number) => (
+                                      <div key={bIdx} className="bg-white/5 p-3 rounded-xl border border-white/5 relative">
+                                          <button onClick={() => {
+                                               const newBlocks = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.blocks || [])];
+                                               newBlocks.splice(bIdx, 1);
+                                               updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, blocks: newBlocks});
+                                          }} className="absolute top-2 right-2 text-red-500 hover:text-white"><Trash2 size={14}/></button>
+                                          <div className="mb-2">
+                                              <label className="text-[9px] uppercase font-bold text-gray-500">Minutos (ej: 1,2,3)</label>
+                                              <input className="w-full bg-black p-2 rounded text-xs text-white" value={block.minutes.join(',')} onChange={(e) => {
+                                                  const newBlocks = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.blocks || [])];
+                                                  newBlocks[bIdx] = { ...newBlocks[bIdx], minutes: e.target.value.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n)) };
+                                                  updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, blocks: newBlocks});
+                                              }} />
+                                          </div>
+                                          <button 
+                                              onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-block', exerciseIndex: configMethodIdx, blockIndex: bIdx }); }}
+                                              className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                          >
+                                              {block.exercise || "Seleccionar Ejercicio"}
+                                          </button>
+                                          <div className="flex gap-2">
+                                              <input className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Reps" value={block.reps || ''} onChange={(e) => {
+                                                  const newBlocks = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.blocks || [])];
+                                                  newBlocks[bIdx] = { ...newBlocks[bIdx], reps: e.target.value, durationSec: undefined };
+                                                  updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, blocks: newBlocks});
+                                              }} />
+                                              <input type="number" className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Segundos" value={block.durationSec || ''} onChange={(e) => {
+                                                  const newBlocks = [...(editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.blocks || [])];
+                                                  newBlocks[bIdx] = { ...newBlocks[bIdx], durationSec: parseInt(e.target.value), reps: undefined };
+                                                  updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, blocks: newBlocks});
+                                              }} />
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
                       </div>
                   )}
 
                   {/* --- BISERIE / AHAP / DROPSET (ORIGINALES) --- */}
-                  {/* Se mantienen intactos */}
                   {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].method === 'biserie' && (
                       <div className="space-y-4">
                           <p className="text-xs text-gray-400">Selecciona el segundo ejercicio del par. Se ejecutará inmediatamente después del primero.</p>
@@ -1137,7 +1357,13 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                   )}
 
                   <div className="flex gap-3 mt-6">
-                      <button onClick={() => setConfigMethodIdx(null)} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white">Listo</button>
+                      <button 
+                        onClick={() => isFormValid && setConfigMethodIdx(null)} 
+                        disabled={!isFormValid}
+                        className={`flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all ${isFormValid ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/30' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+                      >
+                          {isFormValid ? 'Confirmar Configuración' : 'Faltan datos requeridos'}
+                      </button>
                   </div>
               </div>
           </div>
