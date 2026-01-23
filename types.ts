@@ -56,12 +56,12 @@ export interface EmomConfig {
   durationMin: number;
   type: 'simple' | 'alternado' | 'complejo';
   // Simple
-  simpleConfig?: { exercise: string; reps?: string; durationSec?: number; videoUrl?: string };
+  simpleConfig?: { exercise: string; reps?: string; durationSec?: number };
   // Alternado
-  minuteOdd?: { exercise: string; reps?: string; durationSec?: number; videoUrl?: string };
-  minuteEven?: { exercise: string; reps?: string; durationSec?: number; videoUrl?: string };
+  minuteOdd?: { exercise: string; reps?: string; durationSec?: number };
+  minuteEven?: { exercise: string; reps?: string; durationSec?: number };
   // Complejo
-  blocks?: { minutes: number[]; exercise: string; reps?: string; durationSec?: number; videoUrl?: string }[];
+  blocks?: { minutes: number[]; exercise: string; reps?: string; durationSec?: number }[];
 }
 
 export interface WorkoutExercise {
@@ -74,7 +74,7 @@ export interface WorkoutExercise {
   coachCue?: string;
   method?: TrainingMethod;
   
-  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS
+  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
   
   // Para BISERIE
   pair?: {
@@ -93,10 +93,10 @@ export interface WorkoutExercise {
   drops?: { weight: string; reps: string }[]; 
   dropsetSeriesPatterns?: { [setIndex: number]: { weight: string; reps: string }[] };
 
-  // Para TABATA
+  // Para TABATA (Nuevo)
   tabataConfig?: TabataConfig;
 
-  // Para EMOM
+  // Para EMOM (Nuevo)
   emomConfig?: EmomConfig;
 }
 
