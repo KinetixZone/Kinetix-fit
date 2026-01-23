@@ -923,6 +923,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
         const currentExercise = currentWorkout.exercises[idx];
         const newBlocks = [...(currentExercise.emomConfig?.blocks || [])];
         if(!newBlocks[bIdx]) return;
+        // Para EMOM Complex, 'exercise' es string en types.ts, así que guardamos solo el nombre.
         newBlocks[bIdx] = { ...newBlocks[bIdx], exercise: exercise.name };
         currentWorkout.exercises[idx] = {
             ...currentExercise,
@@ -989,7 +990,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
         if (!ex.emomConfig) return false;
         if (ex.emomConfig.type === 'simple' && !ex.emomConfig.simpleConfig?.exercise) return false;
         if (ex.emomConfig.type === 'alternado' && (!ex.emomConfig.minuteOdd?.exercise || !ex.emomConfig.minuteEven?.exercise)) return false;
-        if (ex.emomConfig.type === 'complejo' && ex.emomConfig.blocks?.some(b => !b.exercise)) return false;
+        if (ex.emomConfig.type === 'complejo' && (!ex.emomConfig.blocks || ex.emomConfig.blocks.length === 0 || ex.emomConfig.blocks.some(b => !b.exercise || b.minutes.length === 0))) return false;
     }
     return true;
   }, [configMethodIdx, editedPlan, selectedWorkoutIndex]);
