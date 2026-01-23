@@ -9,7 +9,7 @@ import {
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
   Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown, Link as LinkIcon,
-  Clock, Repeat, Pause, RotateCcw, AlertCircle
+  Clock, Repeat, Pause, RotateCcw, AlertCircle, Copy, Archive
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
@@ -136,6 +136,11 @@ const DataEngine = {
     store[`PLAN_${plan.userId}`] = JSON.stringify(plan);
     DataEngine.saveStore(store);
   },
+  deletePlan: (uid: string) => {
+    const store = DataEngine.getStore();
+    delete store[`PLAN_${uid}`];
+    DataEngine.saveStore(store);
+  },
   saveSetLog: (userId: string, workoutId: string, exIdx: number, entry: SetEntry) => {
     const store = DataEngine.getStore();
     const key = `LOG_${userId}_${workoutId}`;
@@ -184,7 +189,36 @@ const DataEngine = {
     DataEngine.saveStore(store);
     return session;
   },
-  getClientHistory: (userId: string) => JSON.parse(DataEngine.getStore()[`HISTORY_${userId}`] || '[]')
+  getClientHistory: (userId: string) => JSON.parse(DataEngine.getStore()[`HISTORY_${userId}`] || '[]'),
+  // Métodos para plantillas (usando planes de admin)
+  getTemplates: (): Plan[] => {
+      // En este modelo simple, asumimos que los planes del ADMIN son las plantillas maestras
+      // O buscamos en el store claves que empiecen por PLAN_ADMIN_UUID
+      // Como getPlan solo devuelve uno por ID, vamos a simular una colección de plantillas
+      // buscando en todas las claves PLAN_xxxx
+      const store = DataEngine.getStore();
+      const templates: Plan[] = [];
+      // Iterar keys para encontrar planes que pertenezcan a Admin (o marcados como template)
+      // Como el sistema actual es 1 plan por usuario, usaremos un truco:
+      // Las plantillas se guardarán en un array en TEMPLATES_DB
+      const tplData = store['TEMPLATES_DB'];
+      return tplData ? JSON.parse(tplData) : [];
+  },
+  saveTemplate: (template: Plan) => {
+      const store = DataEngine.getStore();
+      const templates = store['TEMPLATES_DB'] ? JSON.parse(store['TEMPLATES_DB']) : [];
+      const idx = templates.findIndex((t: Plan) => t.id === template.id);
+      if (idx >= 0) templates[idx] = template; else templates.push(template);
+      store['TEMPLATES_DB'] = JSON.stringify(templates);
+      DataEngine.saveStore(store);
+  },
+  deleteTemplate: (id: string) => {
+      const store = DataEngine.getStore();
+      let templates = store['TEMPLATES_DB'] ? JSON.parse(store['TEMPLATES_DB']) : [];
+      templates = templates.filter((t: Plan) => t.id !== id);
+      store['TEMPLATES_DB'] = JSON.stringify(templates);
+      DataEngine.saveStore(store);
+  }
 };
 
 // --- COMPONENTES UI ---
@@ -903,6 +937,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
             ...currentExercise,
             emomConfig: { ...currentExercise.emomConfig!, simpleConfig: { ...currentExercise.emomConfig?.simpleConfig, exercise: exercise.name } }
         };
+        setConfigMethodIdx(idx); // Restaurar vista config
     } else if (exerciseSelectorContext.mode === 'emom-odd') {
         const idx = exerciseSelectorContext.exerciseIndex;
         const currentExercise = currentWorkout.exercises[idx];
@@ -910,6 +945,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
             ...currentExercise,
             emomConfig: { ...currentExercise.emomConfig!, minuteOdd: { ...currentExercise.emomConfig?.minuteOdd, exercise: exercise.name } }
         };
+        setConfigMethodIdx(idx);
     } else if (exerciseSelectorContext.mode === 'emom-even') {
         const idx = exerciseSelectorContext.exerciseIndex;
         const currentExercise = currentWorkout.exercises[idx];
@@ -917,18 +953,20 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
             ...currentExercise,
             emomConfig: { ...currentExercise.emomConfig!, minuteEven: { ...currentExercise.emomConfig?.minuteEven, exercise: exercise.name } }
         };
+        setConfigMethodIdx(idx);
     } else if (exerciseSelectorContext.mode === 'emom-block') {
         const idx = exerciseSelectorContext.exerciseIndex;
         const bIdx = exerciseSelectorContext.blockIndex;
         const currentExercise = currentWorkout.exercises[idx];
         const newBlocks = [...(currentExercise.emomConfig?.blocks || [])];
-        if(!newBlocks[bIdx]) return;
-        // Para EMOM Complex, 'exercise' es string en types.ts, así que guardamos solo el nombre.
-        newBlocks[bIdx] = { ...newBlocks[bIdx], exercise: exercise.name };
-        currentWorkout.exercises[idx] = {
-            ...currentExercise,
-            emomConfig: { ...currentExercise.emomConfig!, blocks: newBlocks }
-        };
+        if(newBlocks[bIdx]) {
+             newBlocks[bIdx] = { ...newBlocks[bIdx], exercise: exercise.name };
+             currentWorkout.exercises[idx] = {
+                 ...currentExercise,
+                 emomConfig: { ...currentExercise.emomConfig!, blocks: newBlocks }
+             };
+        }
+        setConfigMethodIdx(idx);
     }
 
     setEditedPlan({...editedPlan, workouts: updatedWorkouts});
@@ -1136,9 +1174,10 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                   <p className="text-xs font-bold mb-2">Configuración Minuto a Minuto</p>
                                   <button 
                                       onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-simple', exerciseIndex: configMethodIdx }); }}
-                                      className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                      className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10 flex justify-between items-center hover:bg-white/10"
                                   >
-                                      {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.exercise || "Seleccionar Ejercicio"}
+                                      <span>{editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.exercise || "Seleccionar Ejercicio"}</span>
+                                      <Search size={14} className="text-gray-400"/>
                                   </button>
                                   <div className="flex gap-2">
                                       <input className="w-1/2 bg-black p-2 rounded text-xs text-white border border-white/10" placeholder="Reps (ej: 15)" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.simpleConfig?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, simpleConfig: {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!.simpleConfig, reps: e.target.value, durationSec: undefined}})} />
@@ -1155,9 +1194,10 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                       <p className="text-xs font-bold mb-2 text-blue-400">Minutos Impares (1, 3, 5...)</p>
                                       <button 
                                           onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-odd', exerciseIndex: configMethodIdx }); }}
-                                          className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                          className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10 flex justify-between items-center hover:bg-white/10"
                                       >
-                                          {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.exercise || "Seleccionar Ejercicio A"}
+                                          <span>{editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.exercise || "Seleccionar Ejercicio A"}</span>
+                                          <Search size={14} className="text-gray-400"/>
                                       </button>
                                       <div className="flex gap-2">
                                          <input className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Reps" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteOdd?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteOdd: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteOdd, reps: e.target.value, durationSec: undefined }})} />
@@ -1168,9 +1208,10 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                       <p className="text-xs font-bold mb-2 text-green-400">Minutos Pares (2, 4, 6...)</p>
                                       <button 
                                           onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-even', exerciseIndex: configMethodIdx }); }}
-                                          className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                          className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10 flex justify-between items-center hover:bg-white/10"
                                       >
-                                          {editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.exercise || "Seleccionar Ejercicio B"}
+                                          <span>{editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.exercise || "Seleccionar Ejercicio B"}</span>
+                                          <Search size={14} className="text-gray-400"/>
                                       </button>
                                       <div className="flex gap-2">
                                          <input className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Reps" value={editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig.minuteEven?.reps || ''} onChange={(e) => updateExercise(configMethodIdx, 'emomConfig', {...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig!, minuteEven: { ...editedPlan.workouts[selectedWorkoutIndex].exercises[configMethodIdx].emomConfig?.minuteEven, reps: e.target.value, durationSec: undefined }})} />
@@ -1205,9 +1246,10 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                           </div>
                                           <button 
                                               onClick={() => { setConfigMethodIdx(null); openExerciseSelector({ mode: 'emom-block', exerciseIndex: configMethodIdx, blockIndex: bIdx }); }}
-                                              className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10"
+                                              className="w-full bg-black mb-2 p-2 rounded text-xs text-left text-white border border-white/10 flex justify-between items-center hover:bg-white/10"
                                           >
-                                              {block.exercise || "Seleccionar Ejercicio"}
+                                              <span>{block.exercise || "Seleccionar Ejercicio"}</span>
+                                              <Search size={14} className="text-gray-400"/>
                                           </button>
                                           <div className="flex gap-2">
                                               <input className="w-1/2 bg-black p-2 rounded text-xs text-white" placeholder="Reps" value={block.reps || ''} onChange={(e) => {
@@ -1383,12 +1425,92 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
   );
 }
 
+const RoutinesView = ({ onAssign }: { onAssign: (p: Plan) => void }) => {
+    const [templates, setTemplates] = useState<Plan[]>(DataEngine.getTemplates());
+    const [showBuilder, setShowBuilder] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState<Plan | null>(null);
+
+    const handleSave = (p: Plan) => {
+        DataEngine.saveTemplate(p);
+        setTemplates(DataEngine.getTemplates());
+        setShowBuilder(false);
+        setEditingTemplate(null);
+    };
+
+    const handleDelete = (id: string) => {
+        if(confirm("¿Archivar esta plantilla?")) {
+            DataEngine.deleteTemplate(id);
+            setTemplates(DataEngine.getTemplates());
+        }
+    };
+
+    const handleDuplicate = (p: Plan) => {
+        const copy = { ...p, id: generateUUID(), title: `${p.title} (Copia)`, updatedAt: new Date().toISOString() };
+        DataEngine.saveTemplate(copy);
+        setTemplates(DataEngine.getTemplates());
+    };
+
+    if (showBuilder && editingTemplate) {
+        return <ManualPlanBuilder plan={editingTemplate} onSave={handleSave} onCancel={() => { setShowBuilder(false); setEditingTemplate(null); }} />;
+    }
+
+    return (
+        <div className="pb-32 animate-fade-in">
+             <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-display font-black italic text-white uppercase">Rutinas Maestras</h3>
+                 <button onClick={() => {
+                     const newTpl: Plan = { id: generateUUID(), title: 'Nueva Rutina', userId: ADMIN_UUID, workouts: [], updatedAt: new Date().toISOString() };
+                     setEditingTemplate(newTpl);
+                     setShowBuilder(true);
+                 }} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200"><Plus size={14}/> Nueva Rutina</button>
+             </div>
+             
+             <div className="grid grid-cols-1 gap-4">
+                 {templates.length === 0 ? (
+                     <div className="text-center py-10 text-gray-500 border-2 border-dashed border-white/5 rounded-2xl">
+                         <p className="text-xs font-bold uppercase tracking-widest mb-2">No hay plantillas creadas</p>
+                         <p className="text-[10px]">Crea rutinas base para asignarlas rápidamente.</p>
+                     </div>
+                 ) : templates.map(t => (
+                     <div key={t.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-white/20 transition-all group relative">
+                         <div className="flex justify-between items-start mb-2">
+                             <div>
+                                 <h4 className="font-bold text-white uppercase text-sm">{t.title}</h4>
+                                 <p className="text-[10px] text-gray-500 uppercase font-bold mt-1">v1.0 • {t.workouts.length} Días • Actualizado: {formatDate(t.updatedAt)}</p>
+                             </div>
+                             <div className="flex gap-2">
+                                 <button onClick={() => { setEditingTemplate(t); setShowBuilder(true); }} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"><Edit3 size={14}/></button>
+                                 <button onClick={() => handleDuplicate(t)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"><Copy size={14}/></button>
+                                 <button onClick={() => handleDelete(t.id)} className="p-2 bg-red-900/10 rounded-lg text-red-500 hover:bg-red-900/30 transition-colors"><Archive size={14}/></button>
+                             </div>
+                         </div>
+                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar mt-2">
+                             {t.workouts.map(w => (
+                                 <span key={w.id} className="text-[9px] bg-white/5 px-2 py-1 rounded text-gray-400 whitespace-nowrap border border-white/5">{w.name}</span>
+                             ))}
+                         </div>
+                         <button onClick={() => onAssign(t)} className="w-full mt-3 py-2 bg-blue-600/10 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2">Asignar a Atleta <ArrowRight size={12}/></button>
+                     </div>
+                 ))}
+             </div>
+        </div>
+    );
+};
+
 const WorkoutsView = ({ user }: { user: User }) => {
     const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
     const [filter, setFilter] = useState('');
     const [showVideo, setShowVideo] = useState<string | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [activeTab, setActiveTab] = useState<'exercises' | 'routines'>('exercises');
+    
+    // Asignación de rutinas
+    const [assigningTemplate, setAssigningTemplate] = useState<Plan | null>(null);
+    const [targetClient, setTargetClient] = useState<string>('');
+    const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
+
     const filtered = exercises.filter(e => e.name.toLowerCase().includes(filter.toLowerCase()) || e.muscleGroup.toLowerCase().includes(filter.toLowerCase()));
+    
     const handleAddExercise = (e: React.FormEvent) => {
         e.preventDefault();
         const form = e.target as HTMLFormElement;
@@ -1398,12 +1520,45 @@ const WorkoutsView = ({ user }: { user: User }) => {
         setExercises(DataEngine.getExercises());
         setShowAddModal(false);
     };
+
+    const executeAssignment = () => {
+        if (!assigningTemplate || !targetClient) return;
+        const newPlan = { ...assigningTemplate, id: generateUUID(), userId: targetClient, title: assigningTemplate.title, updatedAt: new Date().toISOString() };
+        DataEngine.savePlan(newPlan);
+        alert("Rutina asignada correctamente.");
+        setAssigningTemplate(null);
+        setTargetClient('');
+    };
+
     return (
         <div className="space-y-6 animate-fade-in">
-             <div className="flex items-center justify-between"><h2 className="text-3xl font-display font-black italic text-white uppercase">BIBLIOTECA</h2>{(user.role === 'coach' || user.role === 'admin') && (<button onClick={() => setShowAddModal(true)} className="text-xs font-bold bg-white text-black px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-200"><Plus size={16}/> Nuevo</button>)}</div>
-             <div className="relative"><Search className="absolute left-4 top-3.5 text-gray-500" size={18} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar ejercicio o músculo..." className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none" /></div>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">{filtered.map(ex => (<div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/20 transition-colors"><div><h4 className="font-bold text-white uppercase text-sm">{ex.name}</h4><span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block uppercase font-bold">{ex.muscleGroup}</span></div><button onClick={() => setShowVideo(ex.name)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-red-500 transition-colors"><Play size={16} /></button></div>))}</div>
+             <div className="flex items-center justify-between">
+                 <h2 className="text-3xl font-display font-black italic text-white uppercase">BIBLIOTECA</h2>
+             </div>
+             
+             {(user.role === 'coach' || user.role === 'admin') && (
+                 <div className="flex gap-4 border-b border-white/5">
+                     <button onClick={() => setActiveTab('exercises')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'exercises' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Ejercicios</button>
+                     <button onClick={() => setActiveTab('routines')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'routines' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Rutinas (Plantillas)</button>
+                 </div>
+             )}
+
+             {activeTab === 'exercises' && (
+                 <>
+                     <div className="flex justify-between items-center">
+                         <div className="relative w-full"><Search className="absolute left-4 top-3.5 text-gray-500" size={18} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar ejercicio o músculo..." className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none" /></div>
+                         {(user.role === 'coach' || user.role === 'admin') && <button onClick={() => setShowAddModal(true)} className="ml-3 text-xs font-bold bg-white text-black px-4 py-3 rounded-xl flex items-center gap-2 hover:bg-gray-200 shrink-0"><Plus size={16}/> Nuevo</button>}
+                     </div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">{filtered.map(ex => (<div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/20 transition-colors"><div><h4 className="font-bold text-white uppercase text-sm">{ex.name}</h4><span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block uppercase font-bold">{ex.muscleGroup}</span></div><button onClick={() => setShowVideo(ex.name)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-red-500 transition-colors"><Play size={16} /></button></div>))}</div>
+                 </>
+             )}
+
+             {activeTab === 'routines' && (user.role === 'coach' || user.role === 'admin') && (
+                 <RoutinesView onAssign={setAssigningTemplate} />
+             )}
+             
              {showVideo && (<div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}><div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]"><h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3><button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button></div><div className="aspect-video bg-black flex items-center justify-center relative group"><a href={exercises.find(e => e.name === showVideo)?.videoUrl || '#'} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40"><Play size={32} fill="white" className="ml-1" /></div><span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span></a></div></div></div>)}
+             
              {showAddModal && (
                 <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddModal(false)}>
                     <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10" onClick={e => e.stopPropagation()}>
@@ -1414,6 +1569,27 @@ const WorkoutsView = ({ user }: { user: User }) => {
                             <input name="video" placeholder="URL Video (YouTube)" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
                             <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button><button type="submit" className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500">Guardar</button></div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {assigningTemplate && (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setAssigningTemplate(null)}>
+                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-white mb-4">Asignar Rutina: {assigningTemplate.title}</h3>
+                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Seleccionar Atleta</label>
+                        <select 
+                            className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white mb-6 outline-none focus:border-blue-500"
+                            value={targetClient}
+                            onChange={(e) => setTargetClient(e.target.value)}
+                        >
+                            <option value="">-- Seleccionar --</option>
+                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <div className="flex gap-3">
+                            <button onClick={() => setAssigningTemplate(null)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button>
+                            <button onClick={executeAssignment} disabled={!targetClient} className="flex-1 py-3 bg-blue-600 rounded-xl font-bold text-sm text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">Confirmar</button>
+                        </div>
                     </div>
                 </div>
             )}
