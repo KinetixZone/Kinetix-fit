@@ -8,14 +8,14 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar
+  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database
 } from 'lucide-react';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES, INITIAL_TEMPLATES } from './constants';
 import { getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE) ---
+// --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE + LIBRARY MANAGER) ---
 const STORAGE_KEY = 'KINETIX_DATA_V1_CLASSIC';
 const SESSION_KEY = 'KINETIX_SESSION_V1';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
@@ -85,6 +85,21 @@ const DataEngine = {
     DataEngine.saveStore(store);
   },
   getExercises: (): Exercise[] => JSON.parse(DataEngine.getStore().EXERCISES || '[]'),
+  saveExercise: (exercise: Exercise) => {
+      const store = DataEngine.getStore();
+      const exercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
+      const idx = exercises.findIndex((e: Exercise) => e.id === exercise.id);
+      if (idx >= 0) exercises[idx] = exercise; else exercises.push(exercise);
+      store.EXERCISES = JSON.stringify(exercises);
+      DataEngine.saveStore(store);
+  },
+  deleteExercise: (id: string) => {
+      const store = DataEngine.getStore();
+      let exercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
+      exercises = exercises.filter((e: Exercise) => e.id !== id);
+      store.EXERCISES = JSON.stringify(exercises);
+      DataEngine.saveStore(store);
+  },
   getPlan: (uid: string): Plan | null => {
     const data = DataEngine.getStore()[`PLAN_${uid}`];
     return data ? JSON.parse(data) : null;
@@ -267,7 +282,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
             targetReps: '10', 
             targetRest: 60, 
             coachCue: '', 
-            method: 'standard', 
+            method: 'standard', // Por defecto standard
             videoUrl: ex.videoUrl 
         };
         const newWorkouts = [...editedPlan.workouts];
@@ -323,6 +338,19 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                     <input placeholder="Kg" value={ex.targetLoad || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetLoad', e.target.value)} className="bg-black border border-yellow-500/20 rounded p-2 text-xs text-yellow-500 text-center"/>
                                     <input type="number" placeholder="Rest" value={ex.targetRest || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetRest', parseInt(e.target.value))} className="bg-black border border-blue-500/20 rounded p-2 text-xs text-blue-400 text-center"/>
                                 </div>
+                                
+                                <div className="mb-3">
+                                    <label className="text-[10px] text-gray-500 uppercase font-bold">Modo de Entrenamiento</label>
+                                    <select value={ex.method || 'standard'} onChange={(e) => updateExercise(currentWorkoutIndex, idx, 'method', e.target.value as TrainingMethod)} className="w-full bg-black border border-white/10 rounded p-2 text-xs text-blue-400 outline-none mt-1 uppercase font-bold">
+                                        <option value="standard">Standard</option>
+                                        <option value="biserie">Biserie</option>
+                                        <option value="ahap">AHAP (As Heavy As Possible)</option>
+                                        <option value="dropset">Drop Set</option>
+                                        <option value="tabata">Tabata</option>
+                                        <option value="emom">EMOM</option>
+                                    </select>
+                                </div>
+
                                 <input placeholder="Notas técnicas..." value={ex.coachCue || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'coachCue', e.target.value)} className="w-full bg-black border border-white/10 rounded p-2 text-xs text-gray-300 outline-none"/>
                             </div>
                         ))}
@@ -341,6 +369,78 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+// --- GESTIÓN DE EJERCICIOS (NUEVO) ---
+const ExercisesManager = () => {
+    const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
+    const [search, setSearch] = useState('');
+    const [editingEx, setEditingEx] = useState<Exercise | null>(null);
+
+    const refresh = () => setExercises(DataEngine.getExercises());
+
+    const handleSave = (e: React.FormEvent) => {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        const formData = new FormData(form);
+        
+        const newEx: Exercise = {
+            id: editingEx?.id || generateUUID(),
+            name: formData.get('name') as string,
+            muscleGroup: formData.get('muscleGroup') as string,
+            videoUrl: formData.get('videoUrl') as string,
+            technique: '',
+            commonErrors: []
+        };
+        DataEngine.saveExercise(newEx);
+        setEditingEx(null);
+        refresh();
+    };
+
+    const handleDelete = (id: string) => {
+        if(confirm("¿Eliminar ejercicio de la base de datos?")) {
+            DataEngine.deleteExercise(id);
+            refresh();
+        }
+    };
+
+    const filtered = exercises.filter(e => e.name.toLowerCase().includes(search.toLowerCase()));
+
+    if (editingEx) {
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center gap-2"><button onClick={() => setEditingEx(null)}><ChevronLeft className="text-gray-400"/></button><h3 className="text-xl font-bold text-white uppercase italic">{editingEx.id ? 'Editar' : 'Nuevo'} Ejercicio</h3></div>
+                <form onSubmit={handleSave} className="bg-[#151518] p-6 rounded-2xl border border-white/5 space-y-4">
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold">Nombre</label><input name="name" defaultValue={editingEx.name} required className="w-full bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500"/></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold">Grupo Muscular</label><input name="muscleGroup" defaultValue={editingEx.muscleGroup} required className="w-full bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500"/></div>
+                    <div><label className="text-[10px] text-gray-500 uppercase font-bold">Link Video (YouTube/Shorts)</label><input name="videoUrl" defaultValue={editingEx.videoUrl} className="w-full bg-black border border-white/10 rounded-xl p-3 text-blue-400 text-sm outline-none focus:border-red-500"/></div>
+                    <div className="flex gap-2 pt-4"><button type="button" onClick={() => setEditingEx(null)} className="flex-1 py-3 bg-white/5 text-gray-400 rounded-xl font-bold text-xs uppercase">Cancelar</button><button type="submit" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-red-500">Guardar</button></div>
+                </form>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                 <h3 className="text-xl font-bold text-white uppercase italic">Base de Datos ({exercises.length})</h3>
+                 <button onClick={() => setEditingEx({id: '', name: '', muscleGroup: '', videoUrl: '', technique: '', commonErrors: []})} className="bg-white text-black px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 flex items-center gap-2"><Plus size={16}/> Nuevo</button>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl flex items-center px-3 py-2"><Search size={16} className="text-gray-500 mr-2"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre..." className="bg-transparent border-none outline-none text-xs text-white w-full"/></div>
+            <div className="grid grid-cols-1 gap-2">
+                {filtered.map(ex => (
+                    <div key={ex.id} className="bg-[#151518] p-3 rounded-xl border border-white/5 flex justify-between items-center group hover:border-white/20">
+                        <div><div className="font-bold text-white text-sm">{ex.name}</div><div className="text-[10px] text-gray-500">{ex.muscleGroup}</div></div>
+                        <div className="flex gap-2">
+                            {ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="p-2 bg-blue-900/20 text-blue-500 rounded-lg"><Youtube size={14}/></a>}
+                            <button onClick={() => setEditingEx(ex)} className="p-2 bg-white/5 text-gray-400 rounded-lg hover:text-white"><Edit3 size={14}/></button>
+                            <button onClick={() => handleDelete(ex.id)} className="p-2 bg-red-900/10 text-red-500 rounded-lg hover:bg-red-900/30"><Trash2 size={14}/></button>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
@@ -422,7 +522,7 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: strin
                     <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white uppercase font-display italic">Acciones Rápidas</h3></div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                          <button onClick={() => onNavigate('clients')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group"><div className="bg-red-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-red-500 mb-4 group-hover:scale-110 transition-transform"><UserPlus size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Gestionar Atletas</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Ver lista, crear planes, asignar rutinas.</p></button>
-                         <button onClick={() => onNavigate('workouts')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group"><div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform"><Dumbbell size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Biblioteca</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Gestionar ejercicios y videos tutoriales.</p></button>
+                         <button onClick={() => onNavigate('workouts')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group"><div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform"><Dumbbell size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Biblioteca</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Gestionar ejercicios, videos y plantillas.</p></button>
                          {user.role === 'admin' && (<button onClick={() => onNavigate('admin')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group"><div className="bg-yellow-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-yellow-500 mb-4 group-hover:scale-110 transition-transform"><Briefcase size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Ajustes Admin</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Configuración total del sistema.</p></button>)}
                     </div>
                 </div>
@@ -554,10 +654,22 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
 };
 
 const WorkoutsView = ({ user }: { user: User }) => {
+    // COACH VIEW: Gestión de Biblioteca (Plantillas y Ejercicios)
     if (user.role === 'coach' || user.role === 'admin') {
-        return <RoutinesView onAssign={() => {}} />;
+        const [activeTab, setActiveTab] = useState<'templates' | 'exercises'>('templates');
+        
+        return (
+            <div className="space-y-6">
+                <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 w-fit">
+                    <button onClick={() => setActiveTab('templates')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTab === 'templates' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><List size={16}/> Plantillas</button>
+                    <button onClick={() => setActiveTab('exercises')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTab === 'exercises' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><Database size={16}/> Ejercicios</button>
+                </div>
+                {activeTab === 'templates' ? <RoutinesView onAssign={() => {}} /> : <ExercisesManager />}
+            </div>
+        );
     }
 
+    // CLIENT VIEW: Entrenamiento
     const plan = DataEngine.getPlan(user.id);
     const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
     const [timer, setTimer] = useState(0);
@@ -612,7 +724,17 @@ const WorkoutsView = ({ user }: { user: User }) => {
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
                     {activeWorkout.exercises.map((ex, i) => (
                          <div key={i} className="bg-[#151518] p-4 rounded-xl border border-white/5">
-                            <div className="flex justify-between items-start mb-4"><h4 className="font-bold text-white">{ex.name}</h4>{ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-blue-500"><Youtube size={20}/></a>}</div>
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h4 className="font-bold text-white">{ex.name}</h4>
+                                    {ex.method && ex.method !== 'standard' && (
+                                        <span className="text-[10px] bg-red-900/30 text-red-500 px-2 py-0.5 rounded border border-red-500/20 uppercase font-bold mt-1 inline-block">
+                                            {ex.method}
+                                        </span>
+                                    )}
+                                </div>
+                                {ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-blue-500"><Youtube size={20}/></a>}
+                            </div>
                             {ex.coachCue && <p className="text-xs text-gray-500 mb-4 bg-white/5 p-2 rounded italic">"{ex.coachCue}"</p>}
                             <div className="space-y-2">
                                 <div className="grid grid-cols-4 text-[10px] text-gray-500 font-bold uppercase text-center mb-1"><div>Set</div><div>Kg</div><div>Reps</div><div>Check</div></div>
