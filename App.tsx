@@ -256,7 +256,6 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
         setLoadingSchema(true);
         try {
             const schema = await generateEditionSchema(customizedPlan, athlete);
-            console.log("Generado UI Schema Determinista (Fase 1):", schema);
             setGeneratedSchema(schema);
         } catch (e) {
             console.error("Error generando schema", e);
@@ -266,10 +265,13 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     };
 
     // --- LOGICA DE PERSONALIZACIÓN (OVERRIDES) ---
+    // FIX: Usar Deep Clone (JSON) para asegurar inmutabilidad y re-render en objetos anidados
     const updateExerciseOverride = (wIdx: number, eIdx: number, field: string, value: any, subObject?: string) => {
         if (!customizedPlan) return;
-        const newPlan = { ...customizedPlan };
-        const exercise = newPlan.workouts[wIdx].exercises[eIdx] as any;
+        
+        // Clonación profunda para evitar referencias compartidas y asegurar que React detecte el cambio
+        const newPlan = JSON.parse(JSON.stringify(customizedPlan));
+        const exercise = newPlan.workouts[wIdx].exercises[eIdx];
 
         if (subObject) {
             // Manejo de objetos anidados (tabataConfig, ahapConfig, etc)
@@ -284,7 +286,8 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
 
     const updateExerciseMethod = (wIdx: number, eIdx: number, method: TrainingMethod) => {
         if (!customizedPlan) return;
-        const newPlan = { ...customizedPlan };
+        // Clonación profunda
+        const newPlan = JSON.parse(JSON.stringify(customizedPlan));
         const ex = newPlan.workouts[wIdx].exercises[eIdx];
         ex.method = method;
         setCustomizedPlan(newPlan);
