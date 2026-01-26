@@ -15,7 +15,6 @@ import { supabaseConnectionStatus } from './services/supabaseClient';
 
 // --- CONFIGURACIÓN DE VERSIÓN ---
 const STORAGE_KEY = 'KINETIX_DATA_V1_CLASSIC';
-const SESSION_KEY = 'KINETIX_SESSION_V1';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);

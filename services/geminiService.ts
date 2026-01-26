@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { User, Exercise, Plan, OverrideSchemaResponse } from "../types";
 

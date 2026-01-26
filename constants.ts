@@ -1,4 +1,3 @@
-
 import { Exercise, Goal, UserLevel, Plan } from './types';
 
 export const EXERCISES_DB: Exercise[] = [
