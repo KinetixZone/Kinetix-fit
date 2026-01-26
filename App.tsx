@@ -8,11 +8,11 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database, Copy, Settings2
+  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database, Copy, Settings2, FileJson
 } from 'lucide-react';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod, OverrideSchemaResponse } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES, INITIAL_TEMPLATES } from './constants';
-import { getTechnicalAdvice } from './services/geminiService';
+import { getTechnicalAdvice, generateEditionSchema } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
 // --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE + LIBRARY MANAGER + ADVANCED ASSIGNMENT) ---
@@ -228,6 +228,8 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     const [step, setStep] = useState<'select' | 'mode' | 'customize'>('select');
     const [targetClient, setTargetClient] = useState<string>('');
     const [customizedPlan, setCustomizedPlan] = useState<Plan | null>(null);
+    const [generatedSchema, setGeneratedSchema] = useState<OverrideSchemaResponse | null>(null);
+    const [loadingSchema, setLoadingSchema] = useState(false);
     const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
     
     // Al montar, clonamos la plantilla para no afectar la original (Principio de Inmutabilidad)
@@ -240,10 +242,27 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     }, [template]);
 
     const getClientName = () => clients.find(c => c.id === targetClient)?.name || 'Atleta';
+    const getClientObj = () => clients.find(c => c.id === targetClient);
 
     const handleConfirmDirect = () => {
         if (!targetClient || !customizedPlan) return;
         onConfirm(customizedPlan, targetClient);
+    };
+
+    const handleGenerateSchema = async () => {
+        const athlete = getClientObj();
+        if (!athlete || !customizedPlan) return;
+        
+        setLoadingSchema(true);
+        try {
+            const schema = await generateEditionSchema(customizedPlan, athlete);
+            console.log("Generado UI Schema Determinista (Fase 1):", schema);
+            setGeneratedSchema(schema);
+        } catch (e) {
+            console.error("Error generando schema", e);
+        } finally {
+            setLoadingSchema(false);
+        }
     };
 
     // --- LOGICA DE PERSONALIZACIÓN (OVERRIDES) ---
@@ -368,10 +387,29 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
 
                     {step === 'customize' && customizedPlan && (
                         <div className="space-y-8 animate-fade-in">
-                            <div className="flex items-center gap-2 mb-4 bg-blue-900/20 p-3 rounded-xl border border-blue-500/20">
-                                <Info size={16} className="text-blue-400"/>
-                                <p className="text-xs text-blue-200">Estás editando la copia para <strong>{getClientName()}</strong>. La plantilla original no cambiará.</p>
+                            <div className="flex items-center justify-between mb-4 bg-blue-900/20 p-3 rounded-xl border border-blue-500/20">
+                                <div className="flex items-center gap-2">
+                                    <Info size={16} className="text-blue-400"/>
+                                    <p className="text-xs text-blue-200">Estás editando la copia para <strong>{getClientName()}</strong>.</p>
+                                </div>
+                                <button 
+                                    onClick={handleGenerateSchema} 
+                                    disabled={loadingSchema}
+                                    className="px-3 py-1 bg-blue-600/20 border border-blue-500/50 rounded-lg text-[10px] font-bold text-blue-300 hover:bg-blue-600/40 flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    {loadingSchema ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                                    IA ANALYZE (Fase 1)
+                                </button>
                             </div>
+                            
+                            {generatedSchema && (
+                                <div className="mb-4 bg-green-900/20 border border-green-500/20 p-3 rounded-xl">
+                                    <div className="flex items-center gap-2 mb-2 text-green-400 font-bold text-xs"><FileJson size={14}/> Schema Generado (Ready for Phase 2)</div>
+                                    <pre className="text-[9px] text-green-300 overflow-x-auto p-2 bg-black/50 rounded max-h-32">
+                                        {JSON.stringify(generatedSchema, null, 2)}
+                                    </pre>
+                                </div>
+                            )}
 
                             {customizedPlan.workouts.map((workout, wIdx) => (
                                 <div key={workout.id} className="space-y-3">

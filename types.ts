@@ -138,3 +138,37 @@ export interface ChatMessage {
     text: string;
     timestamp: number;
 }
+
+// --- UI SCHEMA GENERATION TYPES (FASE 1) ---
+
+export interface SchemaField {
+  name: string;
+  type: 'number' | 'string' | 'textarea' | 'object';
+  label: string;
+  optional: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  helpText?: string;
+  constraints?: { oneOf?: string[] };
+}
+
+export interface BlockSchema {
+  blockId: string; // exerciseId en el contexto actual
+  method: string;
+  title: string;
+  editableFields: SchemaField[];
+  exercises?: { // Específico para BISERIE/Complex
+    exerciseId: string;
+    fields: SchemaField[];
+  }[];
+}
+
+export interface OverrideSchemaResponse {
+  status: 'OK' | 'ERROR';
+  templateId: string;
+  athleteId: string;
+  uiSchemaVersion: number;
+  blocks: BlockSchema[];
+  issues: string[];
+}
