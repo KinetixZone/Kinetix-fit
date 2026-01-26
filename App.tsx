@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
   Plus, LogOut, UserPlus, Edit3, ChevronLeft, Sparkles, Activity,
@@ -8,19 +9,16 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown, Link as LinkIcon,
-  Clock, Repeat, Pause, RotateCcw, AlertCircle, Copy, Archive, Sliders, Calendar
+  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
-import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
+import { getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN ESTABLE 8644345 ---
-const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_6_SAFE';
-const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_6_SAFE';
-const ADMIN_UUID = '00000000-0000-0000-0000-000000000000';
+// --- CONFIGURACIÓN DE VERSIÓN ESTABLE 369EA99 ---
+const STORAGE_KEY = 'KINETIX_DATA_V1_STABLE';
+const SESSION_KEY = 'KINETIX_SESSION_V1';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -29,7 +27,7 @@ const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// --- MOTOR DE DATOS ---
+// --- MOTOR DE DATOS (CORE) ---
 const DataEngine = {
   getStore: () => {
     try {
@@ -46,17 +44,17 @@ const DataEngine = {
     if (!store.USERS) {
       const initialUsers = [
           { ...MOCK_USER, isActive: true },
-          { id: 'coach-id-1', name: 'Jorge Gonzalez', email: 'coach@kinetix.com', role: 'coach' as UserRole, goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, streak: 15, daysPerWeek: 6, equipment: [], createdAt: new Date().toISOString(), isActive: true },
-          { id: ADMIN_UUID, name: 'Admin Kinetix', email: 'admin@kinetix.com', role: 'admin' as UserRole, goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, streak: 0, daysPerWeek: 0, equipment: [], createdAt: new Date().toISOString(), isActive: true }
+          { id: 'coach-1', name: 'Jorge Gonzalez', email: 'coach@kinetix.com', role: 'coach' as UserRole, goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, streak: 99, daysPerWeek: 6, equipment: [], createdAt: new Date().toISOString(), isActive: true },
+          { id: 'admin-1', name: 'Admin System', email: 'admin@kinetix.com', role: 'admin' as UserRole, goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, streak: 0, daysPerWeek: 0, equipment: [], createdAt: new Date().toISOString(), isActive: true }
       ];
       store.USERS = JSON.stringify(initialUsers);
       store.EXERCISES = JSON.stringify(INITIAL_EXERCISES);
-      store.CONFIG = JSON.stringify({ appName: 'KINETIX ZONE', logoUrl: OFFICIAL_LOGO_URL, ai: { chatbot: { enabled: true } } });
+      store.CONFIG = JSON.stringify({ appName: 'KINETIX ZONE', logoUrl: OFFICIAL_LOGO_URL });
+      store.TEMPLATES_DB = JSON.stringify([]); 
       DataEngine.saveStore(store);
     }
   },
   getConfig: () => JSON.parse(DataEngine.getStore().CONFIG || '{}'),
-  saveConfig: (cfg: any) => { const store = DataEngine.getStore(); store.CONFIG = JSON.stringify(cfg); DataEngine.saveStore(store); },
   getUsers: (): User[] => JSON.parse(DataEngine.getStore().USERS || '[]'),
   getUserById: (id: string) => DataEngine.getUsers().find(u => u.id === id),
   getUserByNameOrEmail: (query: string) => {
@@ -71,20 +69,7 @@ const DataEngine = {
     store.USERS = JSON.stringify(users);
     DataEngine.saveStore(store);
   },
-  deleteUser: (id: string) => {
-    const users = DataEngine.getUsers().filter(u => u.id !== id);
-    const store = DataEngine.getStore();
-    store.USERS = JSON.stringify(users);
-    DataEngine.saveStore(store);
-  },
   getExercises: (): Exercise[] => JSON.parse(DataEngine.getStore().EXERCISES || '[]'),
-  addExercise: (ex: Exercise) => {
-    const exs = DataEngine.getExercises();
-    exs.push(ex);
-    const store = DataEngine.getStore();
-    store.EXERCISES = JSON.stringify(exs);
-    DataEngine.saveStore(store);
-  },
   getPlan: (uid: string): Plan | null => {
     const data = DataEngine.getStore()[`PLAN_${uid}`];
     return data ? JSON.parse(data) : null;
@@ -92,11 +77,6 @@ const DataEngine = {
   savePlan: (plan: Plan) => {
     const store = DataEngine.getStore();
     store[`PLAN_${plan.userId}`] = JSON.stringify(plan);
-    DataEngine.saveStore(store);
-  },
-  deletePlan: (uid: string) => {
-    const store = DataEngine.getStore();
-    delete store[`PLAN_${uid}`];
     DataEngine.saveStore(store);
   },
   saveSetLog: (userId: string, workoutId: string, exIdx: number, entry: SetEntry) => {
@@ -127,12 +107,7 @@ const DataEngine = {
       workoutName: workout.name,
       date: new Date().toISOString(),
       logs,
-      summary: { 
-        durationMinutes, 
-        totalVolume, 
-        exercisesCompleted: Object.keys(logs).length,
-        prCount: 0 
-      }
+      summary: { durationMinutes, totalVolume }
     };
     history.unshift(session);
     store[historyKey] = JSON.stringify(history);
@@ -148,25 +123,20 @@ const DataEngine = {
     return session;
   },
   getClientHistory: (userId: string) => JSON.parse(DataEngine.getStore()[`HISTORY_${userId}`] || '[]'),
-  // Métodos para plantillas (usando planes de admin)
-  getTemplates: (): Plan[] => {
-      const store = DataEngine.getStore();
-      const tplData = store['TEMPLATES_DB'];
-      return tplData ? JSON.parse(tplData) : [];
-  },
+  getTemplates: (): Plan[] => JSON.parse(DataEngine.getStore().TEMPLATES_DB || '[]'),
   saveTemplate: (template: Plan) => {
       const store = DataEngine.getStore();
-      const templates = store['TEMPLATES_DB'] ? JSON.parse(store['TEMPLATES_DB']) : [];
+      const templates = store.TEMPLATES_DB ? JSON.parse(store.TEMPLATES_DB) : [];
       const idx = templates.findIndex((t: Plan) => t.id === template.id);
       if (idx >= 0) templates[idx] = template; else templates.push(template);
-      store['TEMPLATES_DB'] = JSON.stringify(templates);
+      store.TEMPLATES_DB = JSON.stringify(templates);
       DataEngine.saveStore(store);
   },
   deleteTemplate: (id: string) => {
       const store = DataEngine.getStore();
-      let templates = store['TEMPLATES_DB'] ? JSON.parse(store['TEMPLATES_DB']) : [];
+      let templates = store.TEMPLATES_DB ? JSON.parse(store.TEMPLATES_DB) : [];
       templates = templates.filter((t: Plan) => t.id !== id);
-      store['TEMPLATES_DB'] = JSON.stringify(templates);
+      store.TEMPLATES_DB = JSON.stringify(templates);
       DataEngine.saveStore(store);
   }
 };
@@ -216,19 +186,11 @@ const ConnectionStatus = () => (
     </div>
 );
 
-// --- WIZARD DE ASIGNACIÓN (CALENDARIO) ---
+// --- COMPONENTES LÓGICOS PRINCIPALES ---
 
 const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, onClose: () => void, onConfirm: (finalPlan: Plan, userId: string) => void }) => {
-    const [step, setStep] = useState<'select' | 'schedule' | 'choice' | 'customize'>('select');
     const [targetClient, setTargetClient] = useState<string>('');
     const [customizedPlan, setCustomizedPlan] = useState<Plan | null>(null);
-    
-    // Configuración de Calendario
-    const [scheduleType, setScheduleType] = useState<'weekly' | 'specific' | 'range'>('weekly');
-    const [selectedDays, setSelectedDays] = useState<number[]>([]); 
-    const [durationWeeks, setDurationWeeks] = useState(4);
-    const [specificDates, setSpecificDates] = useState<string[]>([]);
-    
     const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
 
     useEffect(() => {
@@ -239,160 +201,28 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
         }
     }, [template]);
 
-    // Lógica de expansión de calendario
-    const generateScheduledWorkouts = (basePlan: Plan) => {
-        if (!basePlan) return basePlan;
-        const newPlan = { ...basePlan, workouts: [] as Workout[] };
-        const baseWorkouts = basePlan.workouts;
-        if (baseWorkouts.length === 0) return newPlan;
-
-        let datesToSchedule: Date[] = [];
-        const today = new Date();
-        today.setHours(0,0,0,0);
-
-        if (scheduleType === 'weekly') {
-            for (let w = 0; w < durationWeeks; w++) {
-                selectedDays.forEach(dayIdx => {
-                    const d = new Date(today);
-                    const currentDay = d.getDay() || 7; 
-                    let diff = dayIdx - currentDay + (w * 7);
-                    if (w === 0 && dayIdx < currentDay) diff += 7;
-                    d.setDate(d.getDate() + diff);
-                    datesToSchedule.push(d);
-                });
-            }
-        } else if (scheduleType === 'specific') {
-            datesToSchedule = specificDates.map(d => new Date(d)).sort((a,b) => a.getTime() - b.getTime());
-        }
-
-        datesToSchedule.forEach((date, index) => {
-            const templateWorkout = baseWorkouts[index % baseWorkouts.length];
-            const newWorkout = JSON.parse(JSON.stringify(templateWorkout));
-            newWorkout.id = generateUUID();
-            newWorkout.scheduledDate = date.toISOString().split('T')[0];
-            newWorkout.name = `${templateWorkout.name}`;
-            newPlan.workouts.push(newWorkout);
-        });
-
-        newPlan.workouts.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
-        return newPlan;
-    };
-
-    const handleUpdateExercise = (workoutIndex: number, exerciseIndex: number, field: string, value: any) => {
-        if (!customizedPlan) return;
-        const newPlan = { ...customizedPlan };
-        const ex = newPlan.workouts[workoutIndex].exercises[exerciseIndex];
-        
-        if (field === 'tabata_work') { if (ex.tabataConfig) ex.tabataConfig.workTimeSec = parseInt(value); }
-        else if (field === 'tabata_rest') { if (ex.tabataConfig) ex.tabataConfig.restTimeSec = parseInt(value); }
-        else if (field === 'emom_duration') { if (ex.emomConfig) ex.emomConfig.durationMin = parseInt(value); }
-        else { (ex as any)[field] = value; }
-        setCustomizedPlan(newPlan);
-    };
-
     const handleConfirm = () => {
         if (!targetClient || !customizedPlan) return;
-        const finalPlan = generateScheduledWorkouts(customizedPlan);
-        const planToSave = (finalPlan.workouts.length > 0) ? finalPlan : customizedPlan;
-        onConfirm(planToSave, targetClient);
-    };
-
-    const toggleDay = (d: number) => {
-        if (selectedDays.includes(d)) setSelectedDays(prev => prev.filter(x => x !== d));
-        else setSelectedDays(prev => [...prev, d].sort());
+        onConfirm(customizedPlan, targetClient);
     };
 
     return (
         <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-[#1A1A1D] w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-                <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                    <div>
-                        <h3 className="text-xl font-bold text-white uppercase italic">Asignar Rutina</h3>
-                        <p className="text-xs text-gray-500">{template.title}</p>
-                    </div>
+            <div className="bg-[#1A1A1D] w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl flex flex-col p-6 space-y-6">
+                <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                    <h3 className="text-xl font-bold text-white uppercase italic">Asignar: {template.title}</h3>
                     <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-white"/></button>
                 </div>
-
-                <div className="p-6 overflow-y-auto flex-1">
-                    {step === 'select' && (
-                        <div className="space-y-6">
-                            <div className="text-center"><Users size={48} className="mx-auto text-blue-500 mb-4"/><h4 className="text-lg font-bold text-white">1. Selecciona al Atleta</h4></div>
-                            <select className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 text-sm" value={targetClient} onChange={(e) => setTargetClient(e.target.value)}>
-                                <option value="">-- Seleccionar Atleta --</option>
-                                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <button onClick={() => setStep('schedule')} disabled={!targetClient} className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all uppercase tracking-widest text-xs">Continuar</button>
-                        </div>
-                    )}
-
-                    {step === 'schedule' && (
-                        <div className="space-y-6">
-                            <div className="text-center"><CalendarDays size={48} className="mx-auto text-red-500 mb-4"/><h4 className="text-lg font-bold text-white">2. Programación (Calendario)</h4><p className="text-xs text-gray-400">Define cuándo entrenará el atleta.</p></div>
-                            <div className="flex bg-black/50 p-1 rounded-xl border border-white/10"><button onClick={() => setScheduleType('weekly')} className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase ${scheduleType === 'weekly' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>Semanal</button><button onClick={() => setScheduleType('specific')} className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase ${scheduleType === 'specific' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>Días Específicos</button></div>
-                            {scheduleType === 'weekly' && (
-                                <div className="space-y-4 bg-white/5 p-4 rounded-xl border border-white/5">
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Días de entrenamiento</p>
-                                    <div className="flex justify-between gap-2">{['L','M','X','J','V','S','D'].map((d, i) => (<button key={i} onClick={() => toggleDay(i+1)} className={`w-10 h-10 rounded-full font-bold text-xs transition-all ${selectedDays.includes(i+1) ? 'bg-white text-black' : 'bg-black text-gray-600 border border-white/10'}`}>{d}</button>))}</div>
-                                    <div><p className="text-xs font-bold text-gray-400 uppercase mb-2">Duración (Semanas)</p><input type="range" min="1" max="12" value={durationWeeks} onChange={e => setDurationWeeks(parseInt(e.target.value))} className="w-full accent-red-600"/><div className="text-right text-xs font-bold text-white">{durationWeeks} Semanas</div></div>
-                                </div>
-                            )}
-                            {scheduleType === 'specific' && (
-                                <div className="space-y-2 bg-white/5 p-4 rounded-xl border border-white/5">
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Selecciona Fechas</p>
-                                    <input type="date" className="w-full bg-black border border-white/10 rounded-lg p-3 text-white text-sm" onChange={(e) => { if (e.target.value && !specificDates.includes(e.target.value)) setSpecificDates([...specificDates, e.target.value].sort()); }}/>
-                                    <div className="flex flex-wrap gap-2 mt-2">{specificDates.map(d => (<div key={d} className="bg-red-900/30 text-red-400 px-3 py-1 rounded-full text-[10px] font-bold border border-red-500/20 flex items-center gap-2">{formatDate(d)} <button onClick={() => setSpecificDates(prev => prev.filter(x => x !== d))}><X size={12}/></button></div>))}</div>
-                                </div>
-                            )}
-                            <div className="flex gap-3"><button onClick={() => setStep('choice')} className="w-full py-4 bg-white text-black rounded-xl font-bold hover:bg-gray-200 transition-all uppercase tracking-widest text-xs">Continuar</button></div>
-                        </div>
-                    )}
-
-                    {step === 'choice' && (
-                        <div className="space-y-6 text-center">
-                            <h4 className="text-lg font-bold text-white">3. ¿Deseas Personalizar?</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                                <button onClick={handleConfirm} className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-green-500/50 hover:bg-green-900/10 transition-all group"><CheckCircle2 size={32} className="mx-auto text-green-500 mb-3 group-hover:scale-110 transition-transform"/><h4 className="font-bold text-white text-sm uppercase">Asignar Tal Cual</h4><p className="text-[10px] text-gray-500 mt-2">Usar valores base de la plantilla.</p></button>
-                                <button onClick={() => setStep('customize')} className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-blue-500/50 hover:bg-blue-900/10 transition-all group"><Sliders size={32} className="mx-auto text-blue-500 mb-3 group-hover:scale-110 transition-transform"/><h4 className="font-bold text-white text-sm uppercase">Personalizar (Overrides)</h4><p className="text-[10px] text-gray-500 mt-2">Ajustar cargas, reps o tiempos.</p></button>
-                            </div>
-                        </div>
-                    )}
-
-                    {step === 'customize' && customizedPlan && (
-                        <div className="space-y-8">
-                            <div className="bg-blue-900/20 p-4 rounded-xl border border-blue-500/20 flex items-start gap-3"><Info size={16} className="text-blue-400 mt-0.5 shrink-0"/><p className="text-[10px] text-blue-200">Ajusta variables por bloque. La estructura es inmutable.</p></div>
-                            {customizedPlan.workouts.map((workout, wIdx) => (
-                                <div key={workout.id} className="space-y-4">
-                                    <h4 className="text-sm font-bold text-red-500 uppercase border-b border-white/10 pb-2">Día {workout.day}: {workout.name}</h4>
-                                    {workout.exercises.map((ex, exIdx) => (
-                                        <div key={exIdx} className="bg-white/5 p-4 rounded-xl border border-white/5">
-                                            <div className="flex justify-between mb-3"><span className="font-bold text-sm text-white">{ex.name}</span><span className="text-[9px] bg-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">{ex.method || 'Standard'}</span></div>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                {!['tabata', 'emom'].includes(ex.method || '') && (
-                                                    <>
-                                                        <div><label className="text-[9px] uppercase font-bold text-gray-500">Reps</label><input value={ex.targetReps} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                                        <div><label className="text-[9px] uppercase font-bold text-yellow-500">Carga (Kg)</label><input value={ex.targetLoad || ''} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'targetLoad', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white text-yellow-500 font-bold"/></div>
-                                                        <div><label className="text-[9px] uppercase font-bold text-gray-500">Series</label><input type="number" value={ex.targetSets} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'targetSets', parseInt(e.target.value))} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                                        <div><label className="text-[9px] uppercase font-bold text-blue-500">Descanso (s)</label><input type="number" value={ex.targetRest || ''} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'targetRest', parseInt(e.target.value))} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                                    </>
-                                                )}
-                                                {ex.method === 'tabata' && ex.tabataConfig && (
-                                                    <>
-                                                        <div><label className="text-[9px] uppercase font-bold text-cyan-500">Trabajo (s)</label><input type="number" value={ex.tabataConfig.workTimeSec} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'tabata_work', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                                        <div><label className="text-[9px] uppercase font-bold text-gray-500">Descanso (s)</label><input type="number" value={ex.tabataConfig.restTimeSec} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'tabata_rest', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                                    </>
-                                                )}
-                                                {ex.method === 'emom' && ex.emomConfig && (
-                                                    <><div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración (min)</label><input type="number" value={ex.emomConfig.durationMin} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'emom_duration', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div></>
-                                                )}
-                                                <div className="col-span-2"><label className="text-[9px] uppercase font-bold text-gray-500">Notas Técnicas</label><input value={ex.coachCue || ''} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'coachCue', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ))}
-                            <button onClick={handleConfirm} className="w-full py-4 bg-green-600 rounded-xl font-bold text-white hover:bg-green-500 shadow-lg shadow-green-900/20 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"><Save size={16}/> Guardar Asignación</button>
-                        </div>
-                    )}
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Seleccionar Atleta</label>
+                        <select className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 text-sm" value={targetClient} onChange={(e) => setTargetClient(e.target.value)}>
+                            <option value="">-- Atleta --</option>
+                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                    <button onClick={handleConfirm} disabled={!targetClient} className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 disabled:opacity-50 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Confirmar Asignación</button>
                 </div>
             </div>
         </div>
@@ -403,7 +233,6 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     const [editedPlan, setEditedPlan] = useState<Plan>(plan);
     const [showExerciseSelector, setShowExerciseSelector] = useState(false);
     const [currentWorkoutIndex, setCurrentWorkoutIndex] = useState(0);
-    const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const exercises = DataEngine.getExercises();
 
@@ -416,7 +245,16 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     };
 
     const handleAddExercise = (ex: Exercise) => {
-        const newEx: WorkoutExercise = { exerciseId: ex.id, name: ex.name, targetSets: 4, targetReps: '10', targetRest: 60, coachCue: '', method: 'standard' };
+        const newEx: WorkoutExercise = { 
+            exerciseId: ex.id, 
+            name: ex.name, 
+            targetSets: 4, 
+            targetReps: '10', 
+            targetRest: 60, 
+            coachCue: '', 
+            method: 'standard', 
+            videoUrl: ex.videoUrl 
+        };
         const newWorkouts = [...editedPlan.workouts];
         newWorkouts[currentWorkoutIndex].exercises.push(newEx);
         setEditedPlan({...editedPlan, workouts: newWorkouts});
@@ -425,15 +263,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
 
     const updateExercise = (wIdx: number, eIdx: number, field: keyof WorkoutExercise, value: any) => {
         const newWorkouts = [...editedPlan.workouts];
-        const ex = newWorkouts[wIdx].exercises[eIdx];
-        if (field === 'method') {
-            if (value === 'tabata' && !ex.tabataConfig) {
-                ex.tabataConfig = { workTimeSec: 20, restTimeSec: 10, rounds: 8, sets: 1, restBetweenSetsSec: 60, structure: 'simple', exercises: [{id: ex.exerciseId, name: ex.name}] };
-            } else if (value === 'emom' && !ex.emomConfig) {
-                ex.emomConfig = { durationMin: 10, type: 'simple', simpleConfig: { exercise: ex.name, reps: '10' } };
-            }
-        }
-        (ex as any)[field] = value;
+        (newWorkouts[wIdx].exercises[eIdx] as any)[field] = value;
         setEditedPlan({...editedPlan, workouts: newWorkouts});
     };
 
@@ -472,15 +302,6 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                     <span className="font-bold text-white">{ex.name}</span>
                                     <button onClick={() => removeExercise(currentWorkoutIndex, idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={16}/></button>
                                 </div>
-                                <div className="mb-3">
-                                    <label className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Método</label>
-                                    <div className="flex gap-2">
-                                        <select value={ex.method || 'standard'} onChange={(e) => updateExercise(currentWorkoutIndex, idx, 'method', e.target.value)} className="flex-1 bg-black border border-white/10 rounded-lg p-2 text-xs text-white outline-none"><option value="standard">Standard</option><option value="biserie">Bi-serie</option><option value="ahap">AHAP</option><option value="dropset">Drop Set</option><option value="tabata">TABATA</option><option value="emom">EMOM</option></select>
-                                        {['tabata', 'emom'].includes(ex.method || '') && (<button onClick={() => setConfigMethodIdx(idx)} className="bg-white/10 px-3 rounded-lg text-white hover:bg-white/20 font-bold text-xs flex items-center gap-1 border border-white/10"><Edit3 size={12}/> Config</button>)}
-                                    </div>
-                                    {ex.method === 'tabata' && ex.tabataConfig && <div className="mt-2 text-[10px] text-cyan-400 font-bold bg-cyan-900/10 p-2 rounded border border-cyan-500/20">{ex.tabataConfig.rounds} Rounds | {ex.tabataConfig.workTimeSec}/{ex.tabataConfig.restTimeSec}</div>}
-                                    {ex.method === 'emom' && ex.emomConfig && <div className="mt-2 text-[10px] text-yellow-400 font-bold bg-yellow-900/10 p-2 rounded border border-yellow-500/20">{ex.emomConfig.durationMin}' | {ex.emomConfig.type}</div>}
-                                </div>
                                 <div className="grid grid-cols-4 gap-2 mb-3">
                                     <input type="number" placeholder="Sets" value={ex.targetSets} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetSets', parseInt(e.target.value))} className="bg-black border border-white/10 rounded p-2 text-xs text-white text-center"/>
                                     <input placeholder="Reps" value={ex.targetReps} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetReps', e.target.value)} className="bg-black border border-white/10 rounded p-2 text-xs text-white text-center"/>
@@ -502,31 +323,6 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                         {filteredExercises.map(ex => (
                             <button key={ex.id} onClick={() => handleAddExercise(ex)} className="w-full bg-[#151518] p-3 rounded-xl flex justify-between items-center text-left hover:bg-white/5"><div><div className="font-bold text-sm text-white">{ex.name}</div><div className="text-[10px] text-gray-500">{ex.muscleGroup}</div></div><Plus size={16} className="text-gray-500"/></button>
                         ))}
-                    </div>
-                </div>
-            )}
-
-            {configMethodIdx !== null && (
-                <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4">
-                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 relative">
-                        <button onClick={() => setConfigMethodIdx(null)} className="absolute top-4 right-4 text-gray-400"><X size={20}/></button>
-                        <h3 className="text-lg font-bold text-white mb-4 uppercase">Configuración {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method}</h3>
-                        {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method === 'tabata' && editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig && (
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-[9px] uppercase font-bold text-cyan-500">Trabajo (s)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig.workTimeSec} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig!.workTimeSec = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
-                                    <div><label className="text-[9px] uppercase font-bold text-gray-500">Descanso (s)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig.restTimeSec} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig!.restTimeSec = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
-                                    <div><label className="text-[9px] uppercase font-bold text-gray-500">Rounds</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig.rounds} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig!.rounds = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
-                                </div>
-                            </div>
-                        )}
-                        {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method === 'emom' && editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig && (
-                            <div className="space-y-4">
-                                <div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración (min)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig.durationMin} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].emomConfig!.durationMin = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
-                                <div><label className="text-[9px] uppercase font-bold text-gray-500">Tipo</label><select className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig.type} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].emomConfig!.type = e.target.value; setEditedPlan({...editedPlan, workouts: nw})}}><option value="simple">Simple</option><option value="alternado">Alternado</option></select></div>
-                            </div>
-                        )}
-                        <button onClick={() => setConfigMethodIdx(null)} className="w-full mt-4 py-3 bg-red-600 rounded-xl font-bold text-white text-xs uppercase">Listo</button>
                     </div>
                 </div>
             )}
@@ -595,76 +391,31 @@ const RoutinesView = ({ onAssign }: { onAssign: (template: Plan) => void }) => {
     );
 };
 
-const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
-    const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'ai', text: 'Hola, soy tu coach IA. ¿En qué te ayudo hoy?', timestamp: Date.now() }]);
-    const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
-
-    const handleSend = async () => {
-        if (!input.trim()) return;
-        const userMsg: ChatMessage = { role: 'user', text: input, timestamp: Date.now() };
-        setMessages(prev => [...prev, userMsg]);
-        setInput('');
-        setLoading(true);
-        try {
-            const exercises = DataEngine.getExercises();
-            const reply = await getTechnicalAdvice(userMsg.text, exercises);
-            setMessages(prev => [...prev, { role: 'ai', text: reply || 'No pude procesar eso.', timestamp: Date.now() }]);
-        } catch (e) {
-            setMessages(prev => [...prev, { role: 'ai', text: 'Error de conexión con el coach.', timestamp: Date.now() }]);
-        }
-        setLoading(false);
-    };
-
-    return (
-        <div className="fixed bottom-24 right-4 md:bottom-24 md:right-8 w-80 h-96 bg-[#1A1A1D] rounded-2xl border border-white/10 shadow-2xl flex flex-col z-50 overflow-hidden">
-            <div className="p-4 bg-blue-900/20 border-b border-white/10 flex justify-between items-center">
-                <div className="flex items-center gap-2"><Sparkles size={16} className="text-blue-400"/><span className="font-bold text-xs text-white">Coach IA</span></div>
-                <button onClick={onClose}><X size={16} className="text-gray-400 hover:text-white"/></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {messages.map((m, i) => (
-                    <div key={i} className={`p-3 rounded-xl text-xs ${m.role === 'user' ? 'bg-white/10 ml-8 text-white' : 'bg-blue-600/20 mr-8 text-blue-100'}`}>
-                        {m.text}
-                    </div>
-                ))}
-                {loading && <div className="text-xs text-gray-500 animate-pulse">Pensando...</div>}
-            </div>
-            <div className="p-3 border-t border-white/10 flex gap-2">
-                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} className="flex-1 bg-black border border-white/10 rounded-lg px-3 text-xs text-white" placeholder="Pregunta algo..." />
-                <button onClick={handleSend} className="p-2 bg-blue-600 rounded-lg text-white"><Send size={14}/></button>
-            </div>
-        </div>
-    );
-};
-
 const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: string) => void }) => {
     const clients = DataEngine.getUsers().filter(u => u.role === 'client');
     const plan = DataEngine.getPlan(user.id);
-    const hasScheduledWorkouts = plan?.workouts.some(w => w.scheduledDate);
-    const today = new Date().toISOString().split('T')[0];
-    const todaysWorkout = plan?.workouts.find(w => w.scheduledDate === today);
-    const nextWorkout = plan?.workouts.filter(w => w.scheduledDate && w.scheduledDate >= today).sort((a,b) => a.scheduledDate!.localeCompare(b.scheduledDate!))[0];
-    const displayPlan = hasScheduledWorkouts ? (todaysWorkout ? { ...plan, workouts: [todaysWorkout] } : (nextWorkout ? { ...plan, workouts: [nextWorkout] } : null)) : plan;
+    const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
+    const exercises = DataEngine.getExercises();
 
     if (user.role === 'coach' || user.role === 'admin') {
-        const allUsers = DataEngine.getUsers();
-        const clients = allUsers.filter(u => u.role === 'client');
-        const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
-        const exercises = DataEngine.getExercises();
         return (
             <div className="space-y-8 animate-fade-in pb-20">
                 <div className="flex justify-between items-center"><div><h2 className="text-4xl font-display font-black italic text-white uppercase tracking-tighter">COMMAND CENTER</h2><p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Gestión de Alto Rendimiento</p></div></div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><StatCard label="Atletas" value={clients.length} icon={<Users className="text-blue-500" size={16} />} /><StatCard label="Protocolos" value={activePlans} icon={<Activity className="text-green-500" size={16} />} /><StatCard label="Librería" value={exercises.length} icon={<Dumbbell className="text-orange-500" size={16} />} /><StatCard label="Status" value="OK" icon={<Shield className="text-red-500" size={16} />} /></div>
-                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-[2.5rem] shadow-xl"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white uppercase font-display italic">Acciones Rápidas</h3></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-[2.5rem] shadow-xl">
+                    <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white uppercase font-display italic">Acciones Rápidas</h3></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                          <button onClick={() => onNavigate('clients')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group"><div className="bg-red-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-red-500 mb-4 group-hover:scale-110 transition-transform"><UserPlus size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Gestionar Atletas</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Ver lista, crear planes, asignar rutinas.</p></button>
                          <button onClick={() => onNavigate('workouts')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group"><div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform"><Dumbbell size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Biblioteca</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Gestionar ejercicios y videos tutoriales.</p></button>
                          {user.role === 'admin' && (<button onClick={() => onNavigate('admin')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group"><div className="bg-yellow-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-yellow-500 mb-4 group-hover:scale-110 transition-transform"><Briefcase size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Ajustes Admin</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Configuración total del sistema.</p></button>)}
-                    </div></div>
+                    </div>
+                </div>
             </div>
         );
     }
 
+    // CLIENT DASHBOARD
     return (
         <div className="space-y-8">
             <div className="flex justify-between items-end">
@@ -678,7 +429,7 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: strin
             </div>
             {user.role === 'client' && (
                 <div className="bg-gradient-to-r from-red-900/20 to-black border border-red-500/20 rounded-3xl p-8 relative overflow-hidden group cursor-pointer hover:border-red-500/40 transition-all" onClick={() => onNavigate('workouts')}>
-                    <div className="relative z-10"><h3 className="text-2xl font-display font-black italic text-white mb-2">{hasScheduledWorkouts ? 'TU AGENDA' : 'TU ENTRENAMIENTO'}</h3><p className="text-sm text-gray-400 max-w-md">{todaysWorkout ? 'Tu sesión de hoy está lista.' : (nextWorkout ? 'Próxima sesión programada.' : 'Accede a tu plan.')}</p><button className="mt-6 bg-white text-black px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-colors flex items-center gap-2">Comenzar <ArrowRight size={16}/></button></div><Dumbbell className="absolute -bottom-4 -right-4 w-48 h-48 text-red-600/10 rotate-12 group-hover:scale-110 transition-transform"/>
+                    <div className="relative z-10"><h3 className="text-2xl font-display font-black italic text-white mb-2">TU ENTRENAMIENTO</h3><p className="text-sm text-gray-400 max-w-md">Tu plan personalizado está listo. Supera tus límites.</p><button className="mt-6 bg-white text-black px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-colors flex items-center gap-2">Comenzar <ArrowRight size={16}/></button></div><Dumbbell className="absolute -bottom-4 -right-4 w-48 h-48 text-red-600/10 rotate-12 group-hover:scale-110 transition-transform"/>
                 </div>
             )}
         </div>
@@ -686,11 +437,8 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: strin
 };
 
 const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
-    const clients = DataEngine.getUsers().filter(u => u.role === 'client');
     const [search, setSearch] = useState('');
     const [showAdd, setShowAdd] = useState(false);
-    
-    // Refresh hack
     const [refresh, setRefresh] = useState(0);
     const filtered = DataEngine.getUsers().filter(u => u.role === 'client' && u.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -744,6 +492,7 @@ const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user:
 };
 
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
+    const [refresh, setRefresh] = useState(0);
     const client = DataEngine.getUserById(clientId);
     const plan = DataEngine.getPlan(clientId);
     const history = DataEngine.getClientHistory(clientId);
@@ -754,6 +503,7 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
         finalPlan.userId = targetId;
         DataEngine.savePlan(finalPlan);
         setShowWizard(false);
+        setRefresh(prev => prev + 1); // Force Update
     };
 
     if (!client) return <div>Cliente no encontrado</div>;
@@ -798,11 +548,6 @@ const WorkoutsView = ({ user }: { user: User }) => {
     const [timer, setTimer] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [logData, setLogData] = useState<WorkoutProgress>({});
-
-    // Calendar logic for athlete view
-    const today = new Date().toISOString().split('T')[0];
-    const hasScheduledWorkouts = plan?.workouts.some(w => w.scheduledDate);
-    const displayWorkouts = hasScheduledWorkouts ? plan?.workouts.filter(w => w.scheduledDate === today || (w.scheduledDate && w.scheduledDate >= today)).slice(0, 1) : plan?.workouts;
 
     useEffect(() => {
         let interval: any;
@@ -874,22 +619,9 @@ const WorkoutsView = ({ user }: { user: User }) => {
     return (
         <div className="space-y-6">
             <h3 className="text-xl font-bold text-white uppercase italic">Mi Plan Actual</h3>
-            {hasScheduledWorkouts && (
-                <div className="flex overflow-x-auto gap-2 pb-4 no-scrollbar mb-4">
-                    {plan?.workouts.filter(w => w.scheduledDate).sort((a,b) => a.scheduledDate!.localeCompare(b.scheduledDate!)).map(w => {
-                        const isToday = w.scheduledDate === today;
-                        return (
-                            <div key={w.id} className={`flex-shrink-0 w-20 p-2 rounded-xl text-center border ${isToday ? 'bg-red-600 border-red-600 text-white' : 'bg-white/5 border-white/10 text-gray-400'}`}>
-                                <div className="text-[10px] font-bold uppercase">{new Date(w.scheduledDate!).toLocaleDateString('es-ES', {weekday: 'short'})}</div>
-                                <div className="text-xl font-bold">{new Date(w.scheduledDate!).getDate()}</div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
             {plan ? (
                 <div className="space-y-4">
-                    {displayWorkouts?.map(w => (
+                    {plan.workouts.map(w => (
                         <div key={w.id} className="bg-[#151518] p-5 rounded-xl border border-white/5 flex justify-between items-center group hover:border-red-500/30 transition-all">
                             <div><h4 className="font-bold text-white">{w.name}</h4><p className="text-xs text-gray-500">{w.exercises.length} Ejercicios {w.scheduledDate && `• ${formatDate(w.scheduledDate)}`}</p></div>
                             <button onClick={() => handleStart(w)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs uppercase hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2"><Play size={16}/> Entrenar</button>
@@ -965,6 +697,49 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                      <div><p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p><p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.2 PRO | RECOVERY</p></div>
                  </div>
              </div>
+        </div>
+    );
+};
+
+const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
+    const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'ai', text: 'Hola, soy tu coach IA. ¿En qué te ayudo hoy?', timestamp: Date.now() }]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSend = async () => {
+        if (!input.trim()) return;
+        const userMsg: ChatMessage = { role: 'user', text: input, timestamp: Date.now() };
+        setMessages(prev => [...prev, userMsg]);
+        setInput('');
+        setLoading(true);
+        try {
+            const exercises = DataEngine.getExercises();
+            const reply = await getTechnicalAdvice(userMsg.text, exercises);
+            setMessages(prev => [...prev, { role: 'ai', text: reply || 'No pude procesar eso.', timestamp: Date.now() }]);
+        } catch (e) {
+            setMessages(prev => [...prev, { role: 'ai', text: 'Error de conexión con el coach.', timestamp: Date.now() }]);
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="fixed bottom-24 right-4 md:bottom-24 md:right-8 w-80 h-96 bg-[#1A1A1D] rounded-2xl border border-white/10 shadow-2xl flex flex-col z-50 overflow-hidden">
+            <div className="p-4 bg-blue-900/20 border-b border-white/10 flex justify-between items-center">
+                <div className="flex items-center gap-2"><Sparkles size={16} className="text-blue-400"/><span className="font-bold text-xs text-white">Coach IA</span></div>
+                <button onClick={onClose}><X size={16} className="text-gray-400 hover:text-white"/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.map((m, i) => (
+                    <div key={i} className={`p-3 rounded-xl text-xs ${m.role === 'user' ? 'bg-white/10 ml-8 text-white' : 'bg-blue-600/20 mr-8 text-blue-100'}`}>
+                        {m.text}
+                    </div>
+                ))}
+                {loading && <div className="text-xs text-gray-500 animate-pulse">Pensando...</div>}
+            </div>
+            <div className="p-3 border-t border-white/10 flex gap-2">
+                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} className="flex-1 bg-black border border-white/10 rounded-lg px-3 text-xs text-white" placeholder="Pregunta algo..." />
+                <button onClick={handleSend} className="p-2 bg-blue-600 rounded-lg text-white"><Send size={14}/></button>
+            </div>
         </div>
     );
 };

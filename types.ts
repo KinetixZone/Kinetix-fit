@@ -1,4 +1,5 @@
 
+
 export enum Goal {
   LOSE_FAT = 'Bajar Grasa',
   GAIN_MUSCLE = 'Subir Músculo',
@@ -72,6 +73,7 @@ export interface WorkoutExercise {
   targetLoad?: string;
   targetRest?: number;
   coachCue?: string;
+  videoUrl?: string;
   method?: TrainingMethod;
   
   // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
