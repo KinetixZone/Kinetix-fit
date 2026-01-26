@@ -108,6 +108,7 @@ export interface Workout {
   isCompleted?: boolean;
   isClass?: boolean;
   classType?: string;
+  scheduledDate?: string; // ISO 8601 YYYY-MM-DD
 }
 
 export interface SetEntry {

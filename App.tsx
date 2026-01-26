@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
@@ -8,7 +9,7 @@ import {
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
   Instagram, Facebook, Linkedin, Phone, ChevronRight, Layers, ArrowUpCircle, CornerRightDown, Link as LinkIcon,
-  Clock, Repeat, Pause, RotateCcw, AlertCircle, Copy, Archive, Sliders
+  Clock, Repeat, Pause, RotateCcw, AlertCircle, Copy, Archive, Sliders, Calendar
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
@@ -257,52 +258,98 @@ const ConnectionStatus = () => (
     </div>
 );
 
-// --- COMPONENTES AUXILIARES PARA ASIGNACIÓN AVANZADA ---
+// --- WIZARD DE ASIGNACIÓN (CALENDARIO) ---
 
 const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, onClose: () => void, onConfirm: (finalPlan: Plan, userId: string) => void }) => {
-    const [step, setStep] = useState<'select' | 'choice' | 'customize'>('select');
+    const [step, setStep] = useState<'select' | 'schedule' | 'choice' | 'customize'>('select');
     const [targetClient, setTargetClient] = useState<string>('');
     const [customizedPlan, setCustomizedPlan] = useState<Plan | null>(null);
+    
+    // Configuración de Calendario
+    const [scheduleType, setScheduleType] = useState<'weekly' | 'specific' | 'range'>('weekly');
+    const [selectedDays, setSelectedDays] = useState<number[]>([]); // 1=Mon, 2=Tue...
+    const [durationWeeks, setDurationWeeks] = useState(4);
+    const [specificDates, setSpecificDates] = useState<string[]>([]);
+    
     const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
 
     useEffect(() => {
-        // Deep copy para personalización sin afectar plantilla original
         if (template) {
             const clone = JSON.parse(JSON.stringify(template));
-            clone.id = generateUUID(); // Nuevo ID para la instancia
+            clone.id = generateUUID(); 
             setCustomizedPlan(clone);
         }
     }, [template]);
+
+    // Lógica de expansión de calendario
+    const generateScheduledWorkouts = (basePlan: Plan) => {
+        if (!basePlan) return basePlan;
+        const newPlan = { ...basePlan, workouts: [] as Workout[] };
+        const baseWorkouts = basePlan.workouts;
+        if (baseWorkouts.length === 0) return newPlan;
+
+        let datesToSchedule: Date[] = [];
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        if (scheduleType === 'weekly') {
+            for (let w = 0; w < durationWeeks; w++) {
+                selectedDays.forEach(dayIdx => {
+                    const d = new Date(today);
+                    const currentDay = d.getDay() || 7; 
+                    let diff = dayIdx - currentDay + (w * 7);
+                    if (w === 0 && dayIdx < currentDay) diff += 7;
+                    d.setDate(d.getDate() + diff);
+                    datesToSchedule.push(d);
+                });
+            }
+        } else if (scheduleType === 'specific') {
+            datesToSchedule = specificDates.map(d => new Date(d)).sort((a,b) => a.getTime() - b.getTime());
+        }
+
+        datesToSchedule.forEach((date, index) => {
+            const templateWorkout = baseWorkouts[index % baseWorkouts.length];
+            const newWorkout = JSON.parse(JSON.stringify(templateWorkout));
+            newWorkout.id = generateUUID();
+            newWorkout.scheduledDate = date.toISOString().split('T')[0];
+            newWorkout.name = `${templateWorkout.name}`;
+            newPlan.workouts.push(newWorkout);
+        });
+
+        newPlan.workouts.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
+        return newPlan;
+    };
 
     const handleUpdateExercise = (workoutIndex: number, exerciseIndex: number, field: string, value: any) => {
         if (!customizedPlan) return;
         const newPlan = { ...customizedPlan };
         const ex = newPlan.workouts[workoutIndex].exercises[exerciseIndex];
         
-        // Manejo específico para configs anidadas
-        if (field === 'tabata_work') {
-            if (ex.tabataConfig) ex.tabataConfig.workTimeSec = parseInt(value);
-        } else if (field === 'tabata_rest') {
-            if (ex.tabataConfig) ex.tabataConfig.restTimeSec = parseInt(value);
-        } else if (field === 'emom_duration') {
-            if (ex.emomConfig) ex.emomConfig.durationMin = parseInt(value);
-        } else {
-            // Campos standard
-            (ex as any)[field] = value;
-        }
+        if (field === 'tabata_work') { if (ex.tabataConfig) ex.tabataConfig.workTimeSec = parseInt(value); }
+        else if (field === 'tabata_rest') { if (ex.tabataConfig) ex.tabataConfig.restTimeSec = parseInt(value); }
+        else if (field === 'emom_duration') { if (ex.emomConfig) ex.emomConfig.durationMin = parseInt(value); }
+        else { (ex as any)[field] = value; }
         setCustomizedPlan(newPlan);
     };
 
     const handleConfirm = () => {
         if (!targetClient || !customizedPlan) return;
-        onConfirm(customizedPlan, targetClient);
+        const finalPlan = generateScheduledWorkouts(customizedPlan);
+        if (finalPlan.workouts.length === 0 && customizedPlan.workouts.length > 0) {
+             onConfirm(customizedPlan, targetClient);
+        } else {
+             onConfirm(finalPlan, targetClient);
+        }
+    };
+
+    const toggleDay = (d: number) => {
+        if (selectedDays.includes(d)) setSelectedDays(prev => prev.filter(x => x !== d));
+        else setSelectedDays(prev => [...prev, d].sort());
     };
 
     return (
         <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-[#1A1A1D] w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-                
-                {/* Header */}
                 <div className="p-6 border-b border-white/10 flex justify-between items-center">
                     <div>
                         <h3 className="text-xl font-bold text-white uppercase italic">Asignar Rutina</h3>
@@ -311,76 +358,60 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
                     <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-white"/></button>
                 </div>
 
-                {/* Content based on Step */}
                 <div className="p-6 overflow-y-auto flex-1">
-                    
                     {step === 'select' && (
                         <div className="space-y-6">
-                            <div className="text-center">
-                                <Users size={48} className="mx-auto text-blue-500 mb-4"/>
-                                <h4 className="text-lg font-bold text-white">Selecciona al Atleta</h4>
-                                <p className="text-xs text-gray-400">¿Quién realizará este entrenamiento?</p>
-                            </div>
-                            <select 
-                                className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 text-sm"
-                                value={targetClient}
-                                onChange={(e) => setTargetClient(e.target.value)}
-                            >
+                            <div className="text-center"><Users size={48} className="mx-auto text-blue-500 mb-4"/><h4 className="text-lg font-bold text-white">1. Selecciona al Atleta</h4></div>
+                            <select className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 text-sm" value={targetClient} onChange={(e) => setTargetClient(e.target.value)}>
                                 <option value="">-- Seleccionar Atleta --</option>
                                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
-                            <button 
-                                onClick={() => setStep('choice')} 
-                                disabled={!targetClient}
-                                className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all uppercase tracking-widest text-xs"
-                            >
-                                Continuar
-                            </button>
+                            <button onClick={() => setStep('schedule')} disabled={!targetClient} className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all uppercase tracking-widest text-xs">Continuar</button>
+                        </div>
+                    )}
+
+                    {step === 'schedule' && (
+                        <div className="space-y-6">
+                            <div className="text-center"><CalendarDays size={48} className="mx-auto text-red-500 mb-4"/><h4 className="text-lg font-bold text-white">2. Programación (Calendario)</h4><p className="text-xs text-gray-400">Define cuándo entrenará el atleta.</p></div>
+                            <div className="flex bg-black/50 p-1 rounded-xl border border-white/10"><button onClick={() => setScheduleType('weekly')} className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase ${scheduleType === 'weekly' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>Semanal</button><button onClick={() => setScheduleType('specific')} className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase ${scheduleType === 'specific' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>Días Específicos</button></div>
+                            {scheduleType === 'weekly' && (
+                                <div className="space-y-4 bg-white/5 p-4 rounded-xl border border-white/5">
+                                    <p className="text-xs font-bold text-gray-400 uppercase">Días de entrenamiento</p>
+                                    <div className="flex justify-between gap-2">{['L','M','X','J','V','S','D'].map((d, i) => (<button key={i} onClick={() => toggleDay(i+1)} className={`w-10 h-10 rounded-full font-bold text-xs transition-all ${selectedDays.includes(i+1) ? 'bg-white text-black' : 'bg-black text-gray-600 border border-white/10'}`}>{d}</button>))}</div>
+                                    <div><p className="text-xs font-bold text-gray-400 uppercase mb-2">Duración (Semanas)</p><input type="range" min="1" max="12" value={durationWeeks} onChange={e => setDurationWeeks(parseInt(e.target.value))} className="w-full accent-red-600"/><div className="text-right text-xs font-bold text-white">{durationWeeks} Semanas</div></div>
+                                </div>
+                            )}
+                            {scheduleType === 'specific' && (
+                                <div className="space-y-2 bg-white/5 p-4 rounded-xl border border-white/5">
+                                    <p className="text-xs font-bold text-gray-400 uppercase">Selecciona Fechas</p>
+                                    <input type="date" className="w-full bg-black border border-white/10 rounded-lg p-3 text-white text-sm" onChange={(e) => { if (e.target.value && !specificDates.includes(e.target.value)) setSpecificDates([...specificDates, e.target.value].sort()); }}/>
+                                    <div className="flex flex-wrap gap-2 mt-2">{specificDates.map(d => (<div key={d} className="bg-red-900/30 text-red-400 px-3 py-1 rounded-full text-[10px] font-bold border border-red-500/20 flex items-center gap-2">{formatDate(d)} <button onClick={() => setSpecificDates(prev => prev.filter(x => x !== d))}><X size={12}/></button></div>))}</div>
+                                </div>
+                            )}
+                            <div className="flex gap-3"><button onClick={() => setStep('choice')} className="w-full py-4 bg-white text-black rounded-xl font-bold hover:bg-gray-200 transition-all uppercase tracking-widest text-xs">Continuar</button></div>
                         </div>
                     )}
 
                     {step === 'choice' && (
                         <div className="space-y-6 text-center">
+                            <h4 className="text-lg font-bold text-white">3. ¿Deseas Personalizar?</h4>
                             <div className="grid grid-cols-2 gap-4">
-                                <button 
-                                    onClick={handleConfirm}
-                                    className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-green-500/50 hover:bg-green-900/10 transition-all group"
-                                >
-                                    <CheckCircle2 size={32} className="mx-auto text-green-500 mb-3 group-hover:scale-110 transition-transform"/>
-                                    <h4 className="font-bold text-white text-sm uppercase">Asignar Directo</h4>
-                                    <p className="text-[10px] text-gray-500 mt-2">Usar valores base de la plantilla.</p>
-                                </button>
-                                <button 
-                                    onClick={() => setStep('customize')}
-                                    className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-blue-500/50 hover:bg-blue-900/10 transition-all group"
-                                >
-                                    <Sliders size={32} className="mx-auto text-blue-500 mb-3 group-hover:scale-110 transition-transform"/>
-                                    <h4 className="font-bold text-white text-sm uppercase">Personalizar</h4>
-                                    <p className="text-[10px] text-gray-500 mt-2">Ajustar cargas, reps o tiempos.</p>
-                                </button>
+                                <button onClick={handleConfirm} className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-green-500/50 hover:bg-green-900/10 transition-all group"><CheckCircle2 size={32} className="mx-auto text-green-500 mb-3 group-hover:scale-110 transition-transform"/><h4 className="font-bold text-white text-sm uppercase">Asignar Tal Cual</h4><p className="text-[10px] text-gray-500 mt-2">Usar valores base de la plantilla.</p></button>
+                                <button onClick={() => setStep('customize')} className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-blue-500/50 hover:bg-blue-900/10 transition-all group"><Sliders size={32} className="mx-auto text-blue-500 mb-3 group-hover:scale-110 transition-transform"/><h4 className="font-bold text-white text-sm uppercase">Personalizar (Overrides)</h4><p className="text-[10px] text-gray-500 mt-2">Ajustar cargas, reps o tiempos.</p></button>
                             </div>
                         </div>
                     )}
 
                     {step === 'customize' && customizedPlan && (
                         <div className="space-y-8">
-                            <div className="bg-blue-900/20 p-4 rounded-xl border border-blue-500/20 flex items-start gap-3">
-                                <Info size={16} className="text-blue-400 mt-0.5 shrink-0"/>
-                                <p className="text-[10px] text-blue-200">Personalizando para el atleta. La plantilla original no se modificará. Ajusta los campos permitidos según el método.</p>
-                            </div>
-
+                            <div className="bg-blue-900/20 p-4 rounded-xl border border-blue-500/20 flex items-start gap-3"><Info size={16} className="text-blue-400 mt-0.5 shrink-0"/><p className="text-[10px] text-blue-200">Ajusta variables por bloque. La estructura es inmutable.</p></div>
                             {customizedPlan.workouts.map((workout, wIdx) => (
                                 <div key={workout.id} className="space-y-4">
                                     <h4 className="text-sm font-bold text-red-500 uppercase border-b border-white/10 pb-2">Día {workout.day}: {workout.name}</h4>
                                     {workout.exercises.map((ex, exIdx) => (
                                         <div key={exIdx} className="bg-white/5 p-4 rounded-xl border border-white/5">
-                                            <div className="flex justify-between mb-3">
-                                                <span className="font-bold text-sm text-white">{ex.name}</span>
-                                                <span className="text-[9px] bg-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">{ex.method || 'Standard'}</span>
-                                            </div>
-                                            
+                                            <div className="flex justify-between mb-3"><span className="font-bold text-sm text-white">{ex.name}</span><span className="text-[9px] bg-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">{ex.method || 'Standard'}</span></div>
                                             <div className="grid grid-cols-2 gap-4">
-                                                {/* Campos Comunes */}
                                                 {!['tabata', 'emom'].includes(ex.method || '') && (
                                                     <>
                                                         <div><label className="text-[9px] uppercase font-bold text-gray-500">Reps</label><input value={ex.targetReps} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
@@ -389,35 +420,22 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
                                                         <div><label className="text-[9px] uppercase font-bold text-blue-500">Descanso (s)</label><input type="number" value={ex.targetRest || ''} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'targetRest', parseInt(e.target.value))} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
                                                     </>
                                                 )}
-
-                                                {/* Overrides Tabata */}
                                                 {ex.method === 'tabata' && ex.tabataConfig && (
                                                     <>
                                                         <div><label className="text-[9px] uppercase font-bold text-cyan-500">Trabajo (s)</label><input type="number" value={ex.tabataConfig.workTimeSec} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'tabata_work', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
                                                         <div><label className="text-[9px] uppercase font-bold text-gray-500">Descanso (s)</label><input type="number" value={ex.tabataConfig.restTimeSec} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'tabata_rest', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
                                                     </>
                                                 )}
-
-                                                {/* Overrides EMOM */}
                                                 {ex.method === 'emom' && ex.emomConfig && (
-                                                    <>
-                                                        <div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración (min)</label><input type="number" value={ex.emomConfig.durationMin} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'emom_duration', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
-                                                    </>
+                                                    <><div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración (min)</label><input type="number" value={ex.emomConfig.durationMin} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'emom_duration', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div></>
                                                 )}
-                                                
                                                 <div className="col-span-2"><label className="text-[9px] uppercase font-bold text-gray-500">Notas Técnicas</label><input value={ex.coachCue || ''} onChange={(e) => handleUpdateExercise(wIdx, exIdx, 'coachCue', e.target.value)} className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white"/></div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             ))}
-                            
-                            <button 
-                                onClick={handleConfirm}
-                                className="w-full py-4 bg-green-600 rounded-xl font-bold text-white hover:bg-green-500 shadow-lg shadow-green-900/20 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-                            >
-                                <Save size={16}/> Guardar Asignación
-                            </button>
+                            <button onClick={handleConfirm} className="w-full py-4 bg-green-600 rounded-xl font-bold text-white hover:bg-green-500 shadow-lg shadow-green-900/20 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"><Save size={16}/> Guardar Asignación</button>
                         </div>
                     )}
                 </div>
@@ -426,491 +444,610 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     );
 };
 
-const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUser: User, onClose: () => void, onInviteSuccess: () => void }) => {
-    const [formData, setFormData] = useState({ name: '', email: '', goal: Goal.PERFORMANCE, level: UserLevel.BEGINNER });
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const newUser: User = {
-            id: generateUUID(),
-            name: formData.name,
-            email: formData.email,
-            goal: formData.goal,
-            level: formData.level,
-            role: 'client',
-            daysPerWeek: 3,
-            equipment: [],
-            streak: 0,
-            createdAt: new Date().toISOString(),
-            isActive: true,
-            coachId: currentUser.id
-        };
-        DataEngine.saveUser(newUser);
-        onInviteSuccess();
-        onClose();
-    };
-    return (
-        <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10" onClick={e => e.stopPropagation()}>
-                <h3 className="text-xl font-bold text-white mb-4">Alta de Atleta</h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <input required placeholder="Nombre Completo" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
-                    <input required type="email" placeholder="Correo Electrónico" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
-                    <select value={formData.goal} onChange={(e) => setFormData({...formData, goal: e.target.value as Goal})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white outline-none">
-                        {Object.values(Goal).map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                    <select value={formData.level} onChange={(e) => setFormData({...formData, level: e.target.value as UserLevel})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white outline-none">
-                        {Object.values(UserLevel).map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                    <button type="submit" className="w-full py-3 bg-red-600 rounded-xl font-bold text-white hover:bg-red-500 uppercase tracking-widest text-xs mt-4">Registrar</button>
-                </form>
-            </div>
-        </div>
-    );
-};
-
 const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
-    const [draft, setDraft] = useState<Plan>(JSON.parse(JSON.stringify(plan)));
-    const [exercises] = useState<Exercise[]>(DataEngine.getExercises());
+    const [editedPlan, setEditedPlan] = useState<Plan>(plan);
+    const [showExerciseSelector, setShowExerciseSelector] = useState(false);
+    const [currentWorkoutIndex, setCurrentWorkoutIndex] = useState(0);
+    const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null); // Index of exercise being configured
+    const [searchQuery, setSearchQuery] = useState('');
+    const exercises = DataEngine.getExercises();
 
     const addWorkout = () => {
-        setDraft(prev => ({
+        setEditedPlan(prev => ({
             ...prev,
             workouts: [...prev.workouts, { id: generateUUID(), name: `Día ${prev.workouts.length + 1}`, day: prev.workouts.length + 1, exercises: [] }]
         }));
+        setCurrentWorkoutIndex(editedPlan.workouts.length);
     };
 
-    const addExerciseToWorkout = (workoutIndex: number) => {
-        if(exercises.length === 0) return alert("No hay ejercicios en la biblioteca");
-        const ex = exercises[0];
-        const newEx: WorkoutExercise = { exerciseId: ex.id, name: ex.name, targetSets: 3, targetReps: '10', targetRest: 60, coachCue: '', method: 'standard' };
-        const newWorkouts = [...draft.workouts];
-        newWorkouts[workoutIndex].exercises.push(newEx);
-        setDraft({...draft, workouts: newWorkouts});
+    const handleAddExercise = (ex: Exercise) => {
+        const newEx: WorkoutExercise = { exerciseId: ex.id, name: ex.name, targetSets: 4, targetReps: '10', targetRest: 60, coachCue: '', method: 'standard' };
+        const newWorkouts = [...editedPlan.workouts];
+        newWorkouts[currentWorkoutIndex].exercises.push(newEx);
+        setEditedPlan({...editedPlan, workouts: newWorkouts});
+        setShowExerciseSelector(false);
     };
-    
+
     const updateExercise = (wIdx: number, eIdx: number, field: keyof WorkoutExercise, value: any) => {
-        const newWorkouts = [...draft.workouts];
-        (newWorkouts[wIdx].exercises[eIdx] as any)[field] = value;
-        setDraft({...draft, workouts: newWorkouts});
+        const newWorkouts = [...editedPlan.workouts];
+        const ex = newWorkouts[wIdx].exercises[eIdx];
+        
+        // Handle method switch defaults
+        if (field === 'method') {
+            if (value === 'tabata' && !ex.tabataConfig) {
+                ex.tabataConfig = { workTimeSec: 20, restTimeSec: 10, rounds: 8, sets: 1, restBetweenSetsSec: 60, structure: 'simple', exercises: [{id: ex.exerciseId, name: ex.name}] };
+            } else if (value === 'emom' && !ex.emomConfig) {
+                ex.emomConfig = { durationMin: 10, type: 'simple', simpleConfig: { exercise: ex.name, reps: '10' } };
+            }
+        }
+        
+        (ex as any)[field] = value;
+        setEditedPlan({...editedPlan, workouts: newWorkouts});
     };
 
     const removeExercise = (wIdx: number, eIdx: number) => {
-        const newWorkouts = [...draft.workouts];
+        const newWorkouts = [...editedPlan.workouts];
         newWorkouts[wIdx].exercises.splice(eIdx, 1);
-        setDraft({...draft, workouts: newWorkouts});
+        setEditedPlan({...editedPlan, workouts: newWorkouts});
     };
 
+    const filteredExercises = exercises.filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <input value={draft.title} onChange={e => setDraft({...draft, title: e.target.value})} className="bg-transparent text-2xl font-bold text-white border-b border-white/20 focus:border-red-500 outline-none w-full" placeholder="Nombre del Plan" />
+        <div className="fixed inset-0 bg-[#0A0A0C] z-[60] flex flex-col overflow-y-auto pb-20">
+            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#0A0A0C] sticky top-0 z-10">
+                <input value={editedPlan.title} onChange={e => setEditedPlan({...editedPlan, title: e.target.value})} className="bg-transparent text-xl font-bold text-white outline-none w-full" placeholder="Nombre de la Rutina" />
                 <div className="flex gap-2">
-                    <button onClick={onCancel} className="p-2 bg-white/10 rounded-lg text-gray-400"><X size={20}/></button>
-                    <button onClick={() => onSave(draft)} className="p-2 bg-green-600 rounded-lg text-white"><Save size={20}/></button>
+                    <button onClick={onCancel} className="p-2 bg-white/10 rounded-lg text-gray-400 hover:text-white"><X size={20}/></button>
+                    <button onClick={() => onSave(editedPlan)} className="p-2 bg-red-600 rounded-lg text-white hover:bg-red-500"><Save size={20}/></button>
                 </div>
             </div>
-            <div className="space-y-8">
-                {draft.workouts.map((w, wIdx) => (
-                    <div key={w.id} className="bg-[#1A1A1D] p-4 rounded-xl border border-white/10">
-                        <div className="flex justify-between mb-4">
-                            <input value={w.name} onChange={e => {const nw = [...draft.workouts]; nw[wIdx].name = e.target.value; setDraft({...draft, workouts: nw})}} className="bg-transparent font-bold text-white border-b border-white/10 outline-none"/>
-                            <button onClick={() => {const nw = [...draft.workouts]; nw.splice(wIdx, 1); setDraft({...draft, workouts: nw})}} className="text-red-500"><Trash2 size={16}/></button>
-                        </div>
-                        <div className="space-y-2">
-                            {w.exercises.map((ex, eIdx) => (
-                                <div key={eIdx} className="grid grid-cols-12 gap-2 items-center bg-black/20 p-2 rounded">
-                                    <div className="col-span-4">
-                                        <select value={ex.exerciseId} onChange={(e) => { 
-                                            const sel = exercises.find(x => x.id === e.target.value); 
-                                            if(sel) updateExercise(wIdx, eIdx, 'name', sel.name);
-                                            updateExercise(wIdx, eIdx, 'exerciseId', e.target.value);
-                                        }} className="w-full bg-transparent text-xs text-white outline-none">
-                                            {exercises.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                                        </select>
-                                    </div>
-                                    <input placeholder="Sets" type="number" value={ex.targetSets} onChange={e => updateExercise(wIdx, eIdx, 'targetSets', parseInt(e.target.value))} className="col-span-1 bg-white/5 rounded p-1 text-xs text-center text-white"/>
-                                    <input placeholder="Reps" value={ex.targetReps} onChange={e => updateExercise(wIdx, eIdx, 'targetReps', e.target.value)} className="col-span-2 bg-white/5 rounded p-1 text-xs text-center text-white"/>
-                                    <input placeholder="Carga" value={ex.targetLoad || ''} onChange={e => updateExercise(wIdx, eIdx, 'targetLoad', e.target.value)} className="col-span-2 bg-white/5 rounded p-1 text-xs text-center text-yellow-500"/>
-                                    <input placeholder="Nota" value={ex.coachCue || ''} onChange={e => updateExercise(wIdx, eIdx, 'coachCue', e.target.value)} className="col-span-2 bg-white/5 rounded p-1 text-xs text-gray-400"/>
-                                    <button onClick={() => removeExercise(wIdx, eIdx)} className="col-span-1 text-red-500 flex justify-center"><X size={14}/></button>
-                                </div>
-                            ))}
-                            <button onClick={() => addExerciseToWorkout(wIdx)} className="w-full py-2 border border-dashed border-white/20 rounded-lg text-xs text-gray-500 hover:text-white">+ Ejercicio</button>
-                        </div>
-                    </div>
-                ))}
-                <button onClick={addWorkout} className="w-full py-4 bg-white/5 rounded-xl font-bold text-gray-400 hover:text-white flex items-center justify-center gap-2">+ Agregar Día de Entrenamiento</button>
-            </div>
-        </div>
-    );
-};
 
-const RoutinesView = ({ onAssign }: { onAssign: (plan: Plan) => void }) => {
-    const [templates, setTemplates] = useState<Plan[]>(DataEngine.getTemplates());
-    const [editing, setEditing] = useState<Plan | null>(null);
-
-    const handleCreate = () => {
-        const newTpl: Plan = { id: generateUUID(), title: 'Nueva Plantilla', userId: 'TEMPLATE', workouts: [], updatedAt: new Date().toISOString() };
-        setEditing(newTpl);
-    };
-
-    const handleSave = (tpl: Plan) => {
-        DataEngine.saveTemplate(tpl);
-        setTemplates(DataEngine.getTemplates());
-        setEditing(null);
-    };
-
-    const handleDelete = (id: string) => {
-        if(confirm("¿Eliminar plantilla?")) {
-            DataEngine.deleteTemplate(id);
-            setTemplates(DataEngine.getTemplates());
-        }
-    };
-
-    if(editing) return <ManualPlanBuilder plan={editing} onSave={handleSave} onCancel={() => setEditing(null)} />;
-
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-32">
-            <button onClick={handleCreate} className="h-40 border-2 border-dashed border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-white hover:border-white/30 transition-all">
-                <Plus size={32} />
-                <span className="text-xs font-bold uppercase mt-2">Crear Plantilla</span>
-            </button>
-            {templates.map(t => (
-                <div key={t.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl group relative">
-                    <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold text-white">{t.title}</h4>
-                        <div className="flex gap-1">
-                            <button onClick={() => setEditing(t)} className="p-1 text-gray-500 hover:text-white"><Edit3 size={14}/></button>
-                            <button onClick={() => handleDelete(t.id)} className="p-1 text-gray-500 hover:text-red-500"><Trash2 size={14}/></button>
-                        </div>
-                    </div>
-                    <p className="text-xs text-gray-500 mb-4">{t.workouts.length} días • {(t.workouts.reduce((acc, w) => acc + w.exercises.length, 0))} ejercicios</p>
-                    <button onClick={() => onAssign(t)} className="w-full py-2 bg-white/5 rounded-lg text-xs font-bold text-white hover:bg-white/10 border border-white/5 uppercase tracking-widest">Asignar</button>
+            <div className="p-4 space-y-6">
+                <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                    {editedPlan.workouts.map((w, idx) => (
+                        <button key={w.id} onClick={() => setCurrentWorkoutIndex(idx)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${currentWorkoutIndex === idx ? 'bg-white text-black' : 'bg-white/5 text-gray-500'}`}>{w.name}</button>
+                    ))}
+                    <button onClick={addWorkout} className="px-3 py-2 rounded-full bg-red-900/20 text-red-500 border border-red-500/20 text-xs font-bold flex items-center gap-1"><Plus size={12}/> DÍA</button>
                 </div>
-            ))}
-        </div>
-    );
-};
 
-const PlanViewer = ({ plan, mode }: { plan: Plan, mode: 'coach' | 'athlete' }) => {
-    const [activeDay, setActiveDay] = useState(0);
-    const [started, setStarted] = useState(false);
-    const [startTime, setStartTime] = useState(0);
-    const [logs, setLogs] = useState<WorkoutProgress>({});
-
-    const currentWorkout = plan.workouts[activeDay];
-
-    const handleLog = (exIdx: number, setIdx: number, field: keyof SetEntry, value: any) => {
-        const newLogs = { ...logs };
-        if (!newLogs[exIdx]) newLogs[exIdx] = [];
-        for(let i=0; i<=setIdx; i++) {
-            if(!newLogs[exIdx][i]) newLogs[exIdx][i] = { setNumber: i+1, weight: '', reps: '', completed: false, timestamp: Date.now() };
-        }
-        (newLogs[exIdx][setIdx] as any)[field] = value;
-        setLogs(newLogs);
-    };
-
-    const finishWorkout = async () => {
-        if (!currentWorkout) return;
-        if (confirm("¿Terminar entrenamiento?")) {
-            await DataEngine.archiveWorkout(plan.userId, currentWorkout, logs, startTime);
-            alert("¡Entrenamiento guardado!");
-            setStarted(false);
-            setLogs({});
-        }
-    };
-
-    return (
-        <div className="space-y-6">
-            <div className="flex overflow-x-auto gap-2 pb-2">
-                {plan.workouts.map((w, i) => (
-                    <button key={w.id} onClick={() => setActiveDay(i)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${activeDay === i ? 'bg-red-600 text-white' : 'bg-white/5 text-gray-500'}`}>
-                        Día {w.day}: {w.name}
-                    </button>
-                ))}
-            </div>
-
-            {currentWorkout && (
-                <div className="bg-[#1A1A1D] border border-white/5 rounded-2xl p-4 md:p-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-white italic uppercase">{currentWorkout.name}</h3>
-                        {mode === 'athlete' && (
-                            !started ? (
-                                <button onClick={() => { setStarted(true); setStartTime(Date.now()); }} className="bg-green-600 text-white px-6 py-2 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center gap-2 animate-pulse"><Play size={16}/> Iniciar</button>
-                            ) : (
-                                <button onClick={finishWorkout} className="bg-red-600 text-white px-6 py-2 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center gap-2"><StopCircle size={16}/> Terminar</button>
-                            )
-                        )}
-                    </div>
-
+                {editedPlan.workouts[currentWorkoutIndex] && (
                     <div className="space-y-4">
-                        {currentWorkout.exercises.map((ex, exIdx) => (
-                            <div key={exIdx} className="bg-black/20 p-4 rounded-xl border border-white/5">
+                        <input value={editedPlan.workouts[currentWorkoutIndex].name} onChange={e => {const nw = [...editedPlan.workouts]; nw[currentWorkoutIndex].name = e.target.value; setEditedPlan({...editedPlan, workouts: nw})}} className="bg-transparent text-lg font-bold text-red-500 outline-none w-full border-b border-white/10 pb-1 mb-2" />
+                        
+                        {editedPlan.workouts[currentWorkoutIndex].exercises.map((ex, idx) => (
+                            <div key={idx} className="bg-[#151518] p-4 rounded-xl border border-white/5 relative">
                                 <div className="flex justify-between items-start mb-3">
-                                    <div>
-                                        <h4 className="font-bold text-white text-sm">{ex.name}</h4>
-                                        <div className="flex gap-2 text-[10px] text-gray-500 mt-1">
-                                            <span>{ex.targetSets} Sets</span> • <span>{ex.targetReps} Reps</span>
-                                            {ex.targetLoad && <span className="text-yellow-500 font-bold">• {ex.targetLoad}kg</span>}
-                                            {ex.targetRest && <span className="text-blue-400">• {ex.targetRest}s Rest</span>}
-                                        </div>
+                                    <span className="font-bold text-white">{ex.name}</span>
+                                    <button onClick={() => removeExercise(currentWorkoutIndex, idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={16}/></button>
+                                </div>
+                                
+                                <div className="mb-3">
+                                    <label className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Método</label>
+                                    <div className="flex gap-2">
+                                        <select value={ex.method || 'standard'} onChange={(e) => updateExercise(currentWorkoutIndex, idx, 'method', e.target.value)} className="flex-1 bg-black border border-white/10 rounded-lg p-2 text-xs text-white outline-none">
+                                            <option value="standard">Standard</option>
+                                            <option value="biserie">Bi-serie</option>
+                                            <option value="ahap">AHAP</option>
+                                            <option value="dropset">Drop Set</option>
+                                            <option value="tabata">TABATA</option>
+                                            <option value="emom">EMOM</option>
+                                        </select>
+                                        {['tabata', 'emom'].includes(ex.method || '') && (
+                                            <button onClick={() => setConfigMethodIdx(idx)} className="bg-white/10 px-3 rounded-lg text-white hover:bg-white/20 font-bold text-xs flex items-center gap-1 border border-white/10"><Edit3 size={12}/> Config</button>
+                                        )}
                                     </div>
-                                    {ex.coachCue && <div className="bg-blue-900/20 text-blue-300 text-[10px] p-2 rounded max-w-[50%] text-right">{ex.coachCue}</div>}
+                                    {ex.method === 'tabata' && ex.tabataConfig && <div className="mt-2 text-[10px] text-cyan-400 font-bold bg-cyan-900/10 p-2 rounded border border-cyan-500/20">{ex.tabataConfig.rounds} Rounds | {ex.tabataConfig.workTimeSec}/{ex.tabataConfig.restTimeSec}</div>}
+                                    {ex.method === 'emom' && ex.emomConfig && <div className="mt-2 text-[10px] text-yellow-400 font-bold bg-yellow-900/10 p-2 rounded border border-yellow-500/20">{ex.emomConfig.durationMin}' | {ex.emomConfig.type}</div>}
                                 </div>
 
-                                {mode === 'athlete' && started && (
-                                    <div className="space-y-2 mt-4">
-                                        {Array.from({ length: ex.targetSets }).map((_, sIdx) => {
-                                            const log = logs[exIdx]?.[sIdx] || { weight: '', reps: '', completed: false };
-                                            return (
-                                                <div key={sIdx} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${log.completed ? 'bg-green-900/10 border border-green-500/20' : 'bg-white/5'}`}>
-                                                    <span className="text-xs font-bold text-gray-500 w-6 text-center">{sIdx + 1}</span>
-                                                    <input placeholder="kg" value={log.weight} onChange={e => handleLog(exIdx, sIdx, 'weight', e.target.value)} className="w-16 bg-black border border-white/10 rounded px-2 py-1 text-xs text-white text-center" />
-                                                    <input placeholder="reps" value={log.reps} onChange={e => handleLog(exIdx, sIdx, 'reps', e.target.value)} className="w-16 bg-black border border-white/10 rounded px-2 py-1 text-xs text-white text-center" />
-                                                    <button onClick={() => handleLog(exIdx, sIdx, 'completed', !log.completed)} className={`ml-auto p-1.5 rounded-full ${log.completed ? 'bg-green-500 text-black' : 'bg-white/10 text-gray-500'}`}>
-                                                        <Check size={14} />
-                                                    </button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                <div className="grid grid-cols-4 gap-2 mb-3">
+                                    <input type="number" placeholder="Sets" value={ex.targetSets} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetSets', parseInt(e.target.value))} className="bg-black border border-white/10 rounded p-2 text-xs text-white text-center"/>
+                                    <input placeholder="Reps" value={ex.targetReps} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetReps', e.target.value)} className="bg-black border border-white/10 rounded p-2 text-xs text-white text-center"/>
+                                    <input placeholder="Kg" value={ex.targetLoad || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetLoad', e.target.value)} className="bg-black border border-yellow-500/20 rounded p-2 text-xs text-yellow-500 text-center"/>
+                                    <input type="number" placeholder="Rest" value={ex.targetRest || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetRest', parseInt(e.target.value))} className="bg-black border border-blue-500/20 rounded p-2 text-xs text-blue-400 text-center"/>
+                                </div>
+                                <input placeholder="Notas técnicas..." value={ex.coachCue || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'coachCue', e.target.value)} className="w-full bg-black border border-white/10 rounded p-2 text-xs text-gray-300 outline-none"/>
                             </div>
+                        ))}
+                        <button onClick={() => setShowExerciseSelector(true)} className="w-full py-3 border border-dashed border-white/20 rounded-xl text-gray-500 font-bold text-xs hover:text-white flex items-center justify-center gap-2"><Plus size={16}/> AÑADIR EJERCICIO</button>
+                    </div>
+                )}
+            </div>
+
+            {/* Modal Selector Ejercicios */}
+            {showExerciseSelector && (
+                <div className="fixed inset-0 bg-[#0A0A0C] z-[70] flex flex-col">
+                    <div className="p-4 border-b border-white/10 flex items-center gap-3">
+                        <button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24}/></button>
+                        <div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={16} className="text-gray-400"/><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}/></div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                        {filteredExercises.map(ex => (
+                            <button key={ex.id} onClick={() => handleAddExercise(ex)} className="w-full bg-[#151518] p-3 rounded-xl flex justify-between items-center text-left hover:bg-white/5">
+                                <div><div className="font-bold text-sm text-white">{ex.name}</div><div className="text-[10px] text-gray-500">{ex.muscleGroup}</div></div>
+                                <Plus size={16} className="text-gray-500"/>
+                            </button>
                         ))}
                     </div>
                 </div>
             )}
+
+            {/* Modal Configuración Método (Tabata/EMOM) */}
+            {configMethodIdx !== null && (
+                <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4">
+                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 relative">
+                        <button onClick={() => setConfigMethodIdx(null)} className="absolute top-4 right-4 text-gray-400"><X size={20}/></button>
+                        <h3 className="text-lg font-bold text-white mb-4 uppercase">Configuración {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method}</h3>
+                        
+                        {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method === 'tabata' && editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="text-[9px] uppercase font-bold text-cyan-500">Trabajo (s)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig.workTimeSec} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig!.workTimeSec = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
+                                    <div><label className="text-[9px] uppercase font-bold text-gray-500">Descanso (s)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig.restTimeSec} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig!.restTimeSec = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
+                                    <div><label className="text-[9px] uppercase font-bold text-gray-500">Rounds</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig.rounds} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig!.rounds = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method === 'emom' && editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig && (
+                            <div className="space-y-4">
+                                <div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración (min)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig.durationMin} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].emomConfig!.durationMin = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
+                                <div><label className="text-[9px] uppercase font-bold text-gray-500">Tipo</label><select className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig.type} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].emomConfig!.type = e.target.value; setEditedPlan({...editedPlan, workouts: nw})}}><option value="simple">Simple</option><option value="alternado">Alternado</option></select></div>
+                            </div>
+                        )}
+                        
+                        <button onClick={() => setConfigMethodIdx(null)} className="w-full mt-4 py-3 bg-red-600 rounded-xl font-bold text-white text-xs uppercase">Listo</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
-const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([{role: 'ai', text: 'Hola, soy tu asistente técnico. ¿Dudas con algún ejercicio?', timestamp: Date.now()}]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+const RoutinesView = ({ onAssign }: { onAssign: (template: Plan) => void }) => {
+    const [templates, setTemplates] = useState<Plan[]>(DataEngine.getTemplates());
+    const [editingTemplate, setEditingTemplate] = useState<Plan | null>(null);
 
-  useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages]);
+    const refresh = () => setTemplates(DataEngine.getTemplates());
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    const userMsg: ChatMessage = { role: 'user', text: input, timestamp: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setLoading(true);
-    try {
-      const response = await getTechnicalAdvice(userMsg.text, DataEngine.getExercises());
-      setMessages(prev => [...prev, { role: 'ai', text: response, timestamp: Date.now() }]);
-    } catch {
-      setMessages(prev => [...prev, { role: 'ai', text: "Error de conexión.", timestamp: Date.now() }]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed bottom-24 right-4 md:bottom-24 md:right-8 w-80 md:w-96 bg-[#1A1A1D] border border-white/10 rounded-2xl shadow-2xl flex flex-col z-50 max-h-[60vh]">
-      <div className="p-4 border-b border-white/10 flex justify-between items-center bg-blue-600/10 rounded-t-2xl">
-        <h3 className="font-bold text-blue-400 flex items-center gap-2 text-sm"><BrainCircuit size={16}/> Asistente Kinetix</h3>
-        <button onClick={onClose}><X size={16} className="text-gray-400 hover:text-white"/></button>
-      </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] p-3 rounded-xl text-xs ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-200'}`}>
-              {m.text}
-            </div>
-          </div>
-        ))}
-        {loading && <div className="text-gray-500 text-[10px] animate-pulse">Escribiendo...</div>}
-      </div>
-      <div className="p-3 border-t border-white/10 flex gap-2">
-        <input 
-            value={input} 
-            onChange={(e) => setInput(e.target.value)} 
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Pregunta algo..." 
-            className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500" 
-        />
-        <button onClick={handleSend} disabled={loading} className="p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 disabled:opacity-50"><Send size={16}/></button>
-      </div>
-    </div>
-  );
-};
-
-const WorkoutsView = ({ user }: { user: User }) => {
-    const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
-    const [filter, setFilter] = useState('');
-    const [showVideo, setShowVideo] = useState<string | null>(null);
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [activeTab, setActiveTab] = useState<'exercises' | 'routines'>('exercises');
-    
-    // Asignación de rutinas (Wizard)
-    const [assigningTemplate, setAssigningTemplate] = useState<Plan | null>(null);
-
-    const filtered = exercises.filter(e => e.name.toLowerCase().includes(filter.toLowerCase()) || e.muscleGroup.toLowerCase().includes(filter.toLowerCase()));
-    
-    const handleAddExercise = (e: React.FormEvent) => {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const formData = new FormData(form);
-        const newEx: Exercise = { id: generateUUID(), name: formData.get('name') as string, muscleGroup: formData.get('muscle') as string, videoUrl: formData.get('video') as string, technique: '', commonErrors: [] };
-        DataEngine.addExercise(newEx);
-        setExercises(DataEngine.getExercises());
-        setShowAddModal(false);
+    const handleCreate = () => {
+        const newTemplate: Plan = {
+            id: generateUUID(),
+            title: 'Nueva Rutina',
+            userId: 'TEMPLATE',
+            workouts: [],
+            updatedAt: new Date().toISOString()
+        };
+        setEditingTemplate(newTemplate);
     };
 
-    const executeAssignment = (finalPlan: Plan, targetClientId: string) => {
-        const newPlan = { ...finalPlan, userId: targetClientId, updatedAt: new Date().toISOString() };
-        DataEngine.savePlan(newPlan);
-        alert("Rutina asignada correctamente.");
-        setAssigningTemplate(null);
+    const handleSave = (tpl: Plan) => {
+        DataEngine.saveTemplate(tpl);
+        refresh();
+        setEditingTemplate(null);
+    };
+
+    const deleteTemplate = (id: string) => {
+        if(confirm("¿Borrar plantilla?")) {
+            DataEngine.deleteTemplate(id);
+            refresh();
+        }
+    };
+
+    if (editingTemplate) return <ManualPlanBuilder plan={editingTemplate} onSave={handleSave} onCancel={() => setEditingTemplate(null)} />;
+
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                 <h3 className="text-xl font-bold text-white uppercase italic">Plantillas Disponibles</h3>
+                 <button onClick={handleCreate} className="bg-white text-black px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 flex items-center gap-2"><Plus size={16}/> Crear</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {templates.map(t => (
+                    <div key={t.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-col justify-between group hover:border-white/20 transition-all">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h4 className="font-bold text-white">{t.title}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{t.workouts.length} sesiones</p>
+                            </div>
+                            <div className="flex gap-1">
+                                <button onClick={() => setEditingTemplate(t)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white"><Edit3 size={14}/></button>
+                                <button onClick={() => deleteTemplate(t.id)} className="p-2 bg-red-900/10 rounded-lg text-red-500 hover:bg-red-900/30"><Trash2 size={14}/></button>
+                            </div>
+                        </div>
+                        <button onClick={() => onAssign(t)} className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-xs font-bold uppercase transition-colors">Asignar</button>
+                    </div>
+                ))}
+                {templates.length === 0 && <p className="text-gray-500 text-sm col-span-2 text-center py-8">No hay plantillas creadas.</p>}
+            </div>
+        </div>
+    );
+};
+
+// --- MISSING COMPONENTS IMPLEMENTATION ---
+
+const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
+    const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'ai', text: 'Hola, soy tu coach IA. ¿En qué te ayudo hoy?', timestamp: Date.now() }]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSend = async () => {
+        if (!input.trim()) return;
+        const userMsg: ChatMessage = { role: 'user', text: input, timestamp: Date.now() };
+        setMessages(prev => [...prev, userMsg]);
+        setInput('');
+        setLoading(true);
+        try {
+            const exercises = DataEngine.getExercises();
+            const reply = await getTechnicalAdvice(userMsg.text, exercises);
+            setMessages(prev => [...prev, { role: 'ai', text: reply || 'No pude procesar eso.', timestamp: Date.now() }]);
+        } catch (e) {
+            setMessages(prev => [...prev, { role: 'ai', text: 'Error de conexión con el coach.', timestamp: Date.now() }]);
+        }
+        setLoading(false);
     };
 
     return (
-        <div className="space-y-6 animate-fade-in">
-             <div className="flex items-center justify-between">
-                 <h2 className="text-3xl font-display font-black italic text-white uppercase">BIBLIOTECA</h2>
-             </div>
-             
-             {(user.role === 'coach' || user.role === 'admin') && (
-                 <div className="flex gap-4 border-b border-white/5">
-                     <button onClick={() => setActiveTab('exercises')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'exercises' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Ejercicios</button>
-                     <button onClick={() => setActiveTab('routines')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'routines' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Rutinas (Plantillas)</button>
-                 </div>
-             )}
-
-             {activeTab === 'exercises' && (
-                 <>
-                     <div className="flex justify-between items-center">
-                         <div className="relative w-full"><Search className="absolute left-4 top-3.5 text-gray-500" size={18} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar ejercicio o músculo..." className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none" /></div>
-                         {(user.role === 'coach' || user.role === 'admin') && <button onClick={() => setShowAddModal(true)} className="ml-3 text-xs font-bold bg-white text-black px-4 py-3 rounded-xl flex items-center gap-2 hover:bg-gray-200 shrink-0"><Plus size={16}/> Nuevo</button>}
-                     </div>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">{filtered.map(ex => (<div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/20 transition-colors"><div><h4 className="font-bold text-white uppercase text-sm">{ex.name}</h4><span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block uppercase font-bold">{ex.muscleGroup}</span></div><button onClick={() => setShowVideo(ex.name)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-red-500 transition-colors"><Play size={16} /></button></div>))}</div>
-                 </>
-             )}
-
-             {activeTab === 'routines' && (user.role === 'coach' || user.role === 'admin') && (
-                 <RoutinesView onAssign={setAssigningTemplate} />
-             )}
-             
-             {showVideo && (<div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}><div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]"><h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3><button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button></div><div className="aspect-video bg-black flex items-center justify-center relative group"><a href={exercises.find(e => e.name === showVideo)?.videoUrl || '#'} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40"><Play size={32} fill="white" className="ml-1" /></div><span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span></a></div></div></div>)}
-             
-             {showAddModal && (
-                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddModal(false)}>
-                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-xl font-bold text-white mb-4">Agregar Ejercicio</h3>
-                        <form onSubmit={handleAddExercise} className="space-y-4">
-                            <input name="name" required placeholder="Nombre del Ejercicio" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
-                            <select name="muscle" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none"><option value="Pecho">Pecho</option><option value="Espalda">Espalda</option><option value="Pierna">Pierna</option><option value="Hombro">Hombro</option><option value="Brazo">Brazo</option><option value="Funcional">Funcional</option></select>
-                            <input name="video" placeholder="URL Video (YouTube)" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
-                            <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button><button type="submit" className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500">Guardar</button></div>
-                        </form>
+        <div className="fixed bottom-24 right-4 md:bottom-24 md:right-8 w-80 h-96 bg-[#1A1A1D] rounded-2xl border border-white/10 shadow-2xl flex flex-col z-50 overflow-hidden">
+            <div className="p-4 bg-blue-900/20 border-b border-white/10 flex justify-between items-center">
+                <div className="flex items-center gap-2"><Sparkles size={16} className="text-blue-400"/><span className="font-bold text-xs text-white">Coach IA</span></div>
+                <button onClick={onClose}><X size={16} className="text-gray-400 hover:text-white"/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.map((m, i) => (
+                    <div key={i} className={`p-3 rounded-xl text-xs ${m.role === 'user' ? 'bg-white/10 ml-8 text-white' : 'bg-blue-600/20 mr-8 text-blue-100'}`}>
+                        {m.text}
                     </div>
-                </div>
-            )}
+                ))}
+                {loading && <div className="text-xs text-gray-500 animate-pulse">Pensando...</div>}
+            </div>
+            <div className="p-3 border-t border-white/10 flex gap-2">
+                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} className="flex-1 bg-black border border-white/10 rounded-lg px-3 text-xs text-white" placeholder="Pregunta algo..." />
+                <button onClick={handleSend} className="p-2 bg-blue-600 rounded-lg text-white"><Send size={14}/></button>
+            </div>
+        </div>
+    );
+};
 
-            {/* Nuevo Wizard de Asignación */}
-            {assigningTemplate && (
-                <AssignmentWizard 
-                    template={assigningTemplate} 
-                    onClose={() => setAssigningTemplate(null)} 
-                    onConfirm={executeAssignment} 
-                />
+const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: string) => void }) => {
+    const clients = DataEngine.getUsers().filter(u => u.role === 'client');
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-3xl font-display font-black italic text-white uppercase">Hola, {user.name.split(' ')[0]}</h2>
+                    <p className="text-xs text-gray-500 font-bold tracking-widest uppercase mt-1">Bienvenido al Centro de Comando</p>
+                </div>
+                <div className="text-right hidden md:block">
+                    <p className="text-2xl font-bold text-white">{new Date().toLocaleDateString('es-ES', { weekday: 'long' })}</p>
+                    <p className="text-xs text-gray-500 uppercase">{new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatCard label="Racha Actual" value={`${user.streak} Días`} icon={<Flame size={16} className="text-orange-500"/>} />
+                <StatCard label="Nivel" value={user.level} icon={<Trophy size={16} className="text-yellow-500"/>} />
+                {user.role === 'coach' && <StatCard label="Atletas Activos" value={clients.length} icon={<Users size={16} className="text-blue-500"/>} />}
+                <StatCard label="Estado" value="ACTIVO" icon={<Activity size={16} className="text-green-500"/>} />
+            </div>
+
+            {user.role === 'client' && (
+                <div className="bg-gradient-to-r from-red-900/20 to-black border border-red-500/20 rounded-3xl p-8 relative overflow-hidden group cursor-pointer hover:border-red-500/40 transition-all" onClick={() => onNavigate('workouts')}>
+                    <div className="relative z-10">
+                        <h3 className="text-2xl font-display font-black italic text-white mb-2">TU ENTRENAMIENTO DE HOY</h3>
+                        <p className="text-sm text-gray-400 max-w-md">Tu plan personalizado está listo. Supera tus límites.</p>
+                        <button className="mt-6 bg-white text-black px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-colors flex items-center gap-2">Comenzar <ArrowRight size={16}/></button>
+                    </div>
+                    <Dumbbell className="absolute -bottom-4 -right-4 w-48 h-48 text-red-600/10 rotate-12 group-hover:scale-110 transition-transform"/>
+                </div>
             )}
         </div>
     );
 };
 
 const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
-    const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
+    const clients = DataEngine.getUsers().filter(u => u.role === 'client');
     const [search, setSearch] = useState('');
-    const [showInviteModal, setShowInviteModal] = useState(false);
-    useEffect(() => { setUsers(DataEngine.getUsers().filter(u => u.role === 'client')); }, [showInviteModal]);
-    const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
+    const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+
     return (
-        <div className="space-y-6 animate-fade-in pb-20">
-             <div className="flex justify-between items-center"><h2 className="text-3xl font-display font-black italic text-white uppercase">ATLETAS</h2>{(user.role === 'coach' || user.role === 'admin') && (<button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors"><UserPlus size={16} /> Alta</button>)}</div>
-             <div className="relative"><Search className="absolute left-3 top-2.5 text-gray-500" size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-full md:w-64" /></div>
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-32">
-                 {filtered.map(client => {
-                     const plan = DataEngine.getPlan(client.id);
-                     return (
-                         <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 cursor-pointer transition-all group relative overflow-hidden shadow-xl">
-                             <div className="flex items-center gap-4 relative z-10">
-                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center font-bold text-white shadow-lg border border-white/5 group-hover:scale-110 transition-transform">{client.name[0]}</div>
-                                 <div><h4 className="font-bold text-white group-hover:text-red-500 transition-colors uppercase text-sm">{client.name}</h4><p className="text-xs text-gray-500">{client.email}</p><div className="flex gap-2 mt-2"><span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/5 uppercase font-bold">{client.goal}</span>{plan && <span className="text-[9px] bg-green-900/20 text-green-500 px-2 py-0.5 rounded border border-green-500/20 flex items-center gap-1 font-bold uppercase"><CheckCircle2 size={10}/> Plan</span>}</div></div>
-                             </div>
-                         </div>
-                     );
-                 })}
-                 {filtered.length === 0 && (<div className="col-span-full text-center py-10 text-gray-500">No se encontraron atletas.</div>)}
-             </div>
-             {showInviteModal && (<UserInviteModal currentUser={user} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers().filter(u => u.role === 'client'))} />)}
+        <div className="space-y-6">
+             <div className="flex justify-between items-center">
+                 <h3 className="text-xl font-bold text-white uppercase italic">Atletas ({filtered.length})</h3>
+                 <div className="bg-white/5 border border-white/10 rounded-xl flex items-center px-3 py-2 w-64">
+                     <Search size={16} className="text-gray-500 mr-2"/>
+                     <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-transparent border-none outline-none text-xs text-white w-full"/>
+                 </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {filtered.map(client => (
+                    <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#151518] p-4 rounded-xl border border-white/5 hover:border-white/20 cursor-pointer transition-all group">
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-900/20">{client.name.charAt(0)}</div>
+                            {client.isActive ? <div className="px-2 py-1 bg-green-500/10 text-green-500 rounded text-[9px] font-bold uppercase border border-green-500/20">Activo</div> : <div className="px-2 py-1 bg-red-500/10 text-red-500 rounded text-[9px] font-bold uppercase border border-red-500/20">Inactivo</div>}
+                        </div>
+                        <h4 className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">{client.name}</h4>
+                        <p className="text-xs text-gray-500">{client.email}</p>
+                        <div className="mt-4 flex gap-2">
+                             <span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.goal}</span>
+                             <span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.level}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
 
 const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () => void }) => {
-  const [client, setClient] = useState<User | undefined>(DataEngine.getUserById(clientId));
-  const [plan, setPlan] = useState<Plan | null>(DataEngine.getPlan(clientId));
-  const [history, setHistory] = useState<any[]>(DataEngine.getClientHistory(clientId));
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showManualBuilder, setShowManualBuilder] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'plan' | 'history'>('plan');
+    const client = DataEngine.getUserById(clientId);
+    const plan = DataEngine.getPlan(clientId);
+    const history = DataEngine.getClientHistory(clientId);
+    const [showWizard, setShowWizard] = useState(false);
+    const [selectedTemplate, setSelectedTemplate] = useState<Plan | null>(null);
 
-  if (!client) return <div className="p-8 text-center text-gray-500">Atleta no encontrado.</div>;
+    const handleAssign = (finalPlan: Plan, targetId: string) => {
+        finalPlan.userId = targetId;
+        DataEngine.savePlan(finalPlan);
+        setShowWizard(false);
+    };
 
-  const handleGenerateAI = async () => {
-    setIsGenerating(true);
-    try {
-      const generatedPlan = await generateSmartRoutine(client, history);
-      const newPlan: Plan = { id: generateUUID(), title: generatedPlan.title || "Plan IA", userId: client.id, workouts: generatedPlan.workouts || [], updatedAt: new Date().toISOString() };
-      DataEngine.savePlan(newPlan);
-      setPlan(newPlan);
-    } catch (e: any) { alert(e.message); } finally { setIsGenerating(false); }
-  };
+    if (!client) return <div>Cliente no encontrado</div>;
 
-  const handleDeleteClient = () => { if (confirm("¿Eliminar este atleta permanentemente?")) { DataEngine.deleteUser(clientId); onBack(); } };
-  const handleSavePlan = (updatedPlan: Plan) => { DataEngine.savePlan(updatedPlan); setPlan(updatedPlan); setShowManualBuilder(false); };
-
-  if (showManualBuilder && plan) { return <ManualPlanBuilder plan={plan} onSave={handleSavePlan} onCancel={() => setShowManualBuilder(false)} />; }
-
-  return (
-    <div className="space-y-6 animate-fade-in pb-32">
-       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-2"><ChevronLeft size={20} /> <span className="font-bold text-xs uppercase">Volver</span></button>
-       <div className="bg-[#0F0F11] p-6 rounded-3xl border border-white/5 relative overflow-hidden shadow-2xl">
-          <div className="relative z-10 flex flex-col md:flex-row md:justify-between md:items-start gap-6">
-            <div className="flex items-start gap-5">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center text-3xl font-bold text-gray-500 shadow-xl">{client.name[0]}</div>
-                <div><h1 className="text-3xl font-display font-black italic text-white uppercase tracking-tighter">{client.name}</h1><div className="flex flex-wrap gap-3 mt-2"><span className="text-[10px] font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 uppercase">{client.goal}</span><span className="text-[10px] font-bold text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/5 uppercase">{client.level}</span></div></div>
+    return (
+        <div className="space-y-6">
+            <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-white text-xs font-bold uppercase"><ChevronLeft size={16}/> Volver a lista</button>
+            <div className="flex justify-between items-start bg-[#151518] p-6 rounded-2xl border border-white/5">
+                <div>
+                    <h2 className="text-2xl font-bold text-white uppercase italic">{client.name}</h2>
+                    <p className="text-sm text-gray-500">{client.email}</p>
+                    <div className="flex gap-2 mt-4">
+                        <div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">OBJETIVO:</span> <span className="font-bold text-white">{client.goal}</span></div>
+                        <div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">NIVEL:</span> <span className="font-bold text-white">{client.level}</span></div>
+                    </div>
+                </div>
+                <button onClick={() => setShowWizard(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase flex items-center gap-2 shadow-lg shadow-blue-900/20"><CalendarDays size={16}/> Asignar Rutina</button>
             </div>
-            <button onClick={handleDeleteClient} className="text-[10px] font-bold text-red-500 hover:text-red-400 border border-red-900/30 px-3 py-1.5 rounded-lg bg-red-900/10 transition-colors flex items-center gap-1 uppercase tracking-widest"><Trash2 size={12}/> Eliminar</button>
-          </div>
-       </div>
-       <div className="flex border-b border-white/5 gap-6 mb-8"><button onClick={() => setActiveSubTab('plan')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeSubTab === 'plan' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Protocolo Activo</button><button onClick={() => setActiveSubTab('history')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeSubTab === 'history' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Historial ({history.length})</button></div>
-       {activeSubTab === 'plan' && (
-           plan ? (
-             <div className="space-y-4 animate-fade-in">
-                <div className="flex justify-between items-center px-2 mb-4"><h3 className="text-lg font-bold flex items-center gap-2 text-white uppercase italic font-display">Plan Asignado</h3><div className="flex gap-2"><button onClick={() => setShowManualBuilder(true)} className="text-[10px] font-bold bg-white/10 text-white border border-white/20 px-4 py-2 rounded-full hover:bg-white/20 flex items-center gap-2 uppercase tracking-widest"><Edit3 size={12}/> Editar</button><button onClick={handleGenerateAI} disabled={isGenerating} className="text-[10px] font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 flex items-center gap-2 uppercase tracking-widest">{isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} IA</button></div></div>
-                <PlanViewer plan={plan} mode="coach" />
-             </div>
-           ) : (
-             <div className="py-24 text-center text-gray-500 flex flex-col items-center border-2 border-dashed border-white/5 rounded-3xl"><p className="mb-6 font-bold uppercase tracking-widest text-[10px]">Sin plan activo para este atleta.</p><div className="flex gap-3"><button onClick={() => { const newP = { id: generateUUID(), title: 'Nuevo Plan', userId: client.id, workouts: [], updatedAt: new Date().toISOString() }; setPlan(newP); setShowManualBuilder(true); }} className="text-[10px] font-bold bg-white text-black px-6 py-3 rounded-xl hover:bg-gray-200 uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"><Plus size={16}/> CREAR MANUAL</button><button onClick={handleGenerateAI} disabled={isGenerating} className="text-[10px] font-bold bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-500 uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95">{isGenerating ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16} />} GENERAR IA</button></div></div>
-           )
-       )}
-       {activeSubTab === 'history' && (
-           <div className="space-y-4 animate-fade-in pb-32">
-               {history.length === 0 ? <div className="text-center py-20 text-gray-500 uppercase font-bold text-[10px] tracking-widest">No hay sesiones registradas.</div> : history.map((s, i) => (
-                   <div key={i} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl shadow-lg">
-                       <div className="flex justify-between items-center mb-2"><div><div className="font-bold text-white uppercase text-sm">{s.workoutName}</div><div className="text-[10px] text-gray-500 font-bold uppercase">{formatDate(s.date)}</div></div><div className="text-right"><div className="font-bold text-white uppercase text-xs">{(s.summary.totalVolume/1000).toFixed(1)}k <span className="text-[10px] text-gray-500 font-bold">VOL</span></div><div className="text-[10px] text-gray-500 font-bold uppercase">{s.summary.durationMinutes}m</div></div></div>
-                       <div className="mt-2 pt-2 border-t border-white/5 grid grid-cols-2 gap-2"><div className="text-[9px] text-gray-500 font-bold uppercase">Ejercicios: <span className="text-white">{s.summary.exercisesCompleted}</span></div><div className="text-[9px] text-gray-500 font-bold uppercase text-right">Racha: <span className="text-white">Active</span></div></div>
-                   </div>
-               ))}
-           </div>
-       )}
-    </div>
-  );
+
+            {/* Historial o Plan Actual */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                    <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Plan Actual</h4>
+                    {plan ? (
+                        <div className="bg-[#151518] p-4 rounded-xl border border-white/5">
+                            <h5 className="font-bold text-white mb-2">{plan.title}</h5>
+                            <p className="text-xs text-gray-500 mb-4">{plan.workouts.length} sesiones programadas</p>
+                            <div className="space-y-2">
+                                {plan.workouts.map((w, i) => (
+                                    <div key={i} className="text-xs text-gray-400 flex justify-between border-b border-white/5 pb-1"><span>{w.name}</span> {w.scheduledDate && <span className="text-blue-400">{formatDate(w.scheduledDate)}</span>}</div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : <p className="text-gray-500 text-xs italic">Sin plan asignado actualmente.</p>}
+                </div>
+                
+                <div className="space-y-4">
+                    <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Historial Reciente</h4>
+                    {history.length > 0 ? (
+                        <div className="space-y-2">
+                            {history.slice(0, 5).map((h: any, i: number) => (
+                                <div key={i} className="bg-[#151518] p-3 rounded-lg border border-white/5 flex justify-between items-center">
+                                    <div><div className="text-xs font-bold text-white">{h.workoutName}</div><div className="text-[10px] text-gray-500">{formatDate(h.date)}</div></div>
+                                    <div className="text-right"><div className="text-[10px] text-gray-400">{h.summary.durationMinutes} min</div><div className="text-[10px] text-gray-400">{h.summary.totalVolume} kg</div></div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : <p className="text-gray-500 text-xs italic">No hay historial registrado.</p>}
+                </div>
+            </div>
+
+            {showWizard && (
+                <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+                    <div className="bg-[#1A1A1D] w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/10 overflow-hidden flex flex-col">
+                         <div className="p-4 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Seleccionar Plantilla</h3><button onClick={() => setShowWizard(false)}><X size={20}/></button></div>
+                         <div className="flex-1 overflow-y-auto p-4">
+                            <RoutinesView onAssign={(tpl) => setSelectedTemplate(tpl)}/>
+                         </div>
+                    </div>
+                    {selectedTemplate && <AssignmentWizard template={selectedTemplate} onClose={() => setSelectedTemplate(null)} onConfirm={(p, uid) => { handleAssign(p, clientId); setSelectedTemplate(null); setShowWizard(false); }} />}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const WorkoutsView = ({ user }: { user: User }) => {
+    // Para clientes, mostrar su plan actual. Para coaches, mostrar la biblioteca de rutinas.
+    if (user.role === 'coach' || user.role === 'admin') {
+        return <RoutinesView onAssign={() => {}} />;
+    }
+
+    const plan = DataEngine.getPlan(user.id);
+    const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+
+    // Estado para la ejecución del workout
+    const [timer, setTimer] = useState(0);
+    const [isTimerRunning, setIsTimerRunning] = useState(false);
+    const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
+    const [logData, setLogData] = useState<WorkoutProgress>({});
+
+    useEffect(() => {
+        let interval: any;
+        if (isTimerRunning) interval = setInterval(() => setTimer(t => t + 1), 1000);
+        return () => clearInterval(interval);
+    }, [isTimerRunning]);
+
+    const formatTime = (sec: number) => {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+
+    const handleStart = (workout: Workout) => {
+        setActiveWorkout(workout);
+        setIsTimerRunning(true);
+        // Cargar logs previos si existen
+        const existingLogs = DataEngine.getWorkoutLog(user.id, workout.id);
+        setLogData(existingLogs);
+    };
+
+    const handleFinish = async () => {
+        if (!activeWorkout) return;
+        setIsTimerRunning(false);
+        await DataEngine.archiveWorkout(user.id, activeWorkout, logData, Date.now() - (timer * 1000));
+        setActiveWorkout(null);
+        setTimer(0);
+        alert("¡Entrenamiento completado!");
+    };
+
+    const toggleSet = (exIdx: number, setNum: number, weight: string, reps: string) => {
+        if (!activeWorkout) return;
+        const entry: SetEntry = { setNumber: setNum, weight, reps, completed: true, timestamp: Date.now() };
+        // Lógica simplificada de toggle
+        const currentSets = logData[exIdx] || [];
+        const exists = currentSets.find(s => s.setNumber === setNum);
+        let newSets = [...currentSets];
+        if (exists) {
+            newSets = newSets.filter(s => s.setNumber !== setNum);
+        } else {
+            newSets.push(entry);
+        }
+        const newLogData = { ...logData, [exIdx]: newSets };
+        setLogData(newLogData);
+        DataEngine.saveSetLog(user.id, activeWorkout.id, exIdx, entry);
+    };
+
+    if (activeWorkout) {
+        return (
+            <div className="fixed inset-0 bg-[#050507] z-50 flex flex-col">
+                <div className="p-4 bg-[#0F0F11] border-b border-white/5 flex justify-between items-center sticky top-0 z-10">
+                    <div>
+                        <h3 className="font-bold text-white text-sm">{activeWorkout.name}</h3>
+                        <p className="text-xs text-red-500 font-mono">{formatTime(timer)}</p>
+                    </div>
+                    <button onClick={handleFinish} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase">Finalizar</button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    {activeWorkout.exercises.map((ex, i) => (
+                         <div key={i} className="bg-[#151518] p-4 rounded-xl border border-white/5">
+                            <div className="flex justify-between items-start mb-4">
+                                <h4 className="font-bold text-white">{ex.name}</h4>
+                                {ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-blue-500"><Youtube size={20}/></a>}
+                            </div>
+                            {ex.coachCue && <p className="text-xs text-gray-500 mb-4 bg-white/5 p-2 rounded italic">"{ex.coachCue}"</p>}
+                            <div className="space-y-2">
+                                <div className="grid grid-cols-4 text-[10px] text-gray-500 font-bold uppercase text-center mb-1">
+                                    <div>Set</div><div>Kg</div><div>Reps</div><div>Check</div>
+                                </div>
+                                {Array.from({ length: ex.targetSets }).map((_, sIdx) => {
+                                    const setNum = sIdx + 1;
+                                    const isDone = logData[i]?.some(l => l.setNumber === setNum);
+                                    return (
+                                        <div key={sIdx} className={`grid grid-cols-4 gap-2 items-center ${isDone ? 'opacity-50' : ''}`}>
+                                            <div className="text-center text-xs text-gray-400 bg-black/50 py-2 rounded">{setNum}</div>
+                                            <input className="bg-black border border-white/10 rounded text-center text-xs text-white py-2" placeholder={ex.targetLoad} />
+                                            <input className="bg-black border border-white/10 rounded text-center text-xs text-white py-2" placeholder={ex.targetReps} />
+                                            <button onClick={() => toggleSet(i, setNum, ex.targetLoad || '0', ex.targetReps)} className={`flex items-center justify-center py-2 rounded ${isDone ? 'bg-green-500 text-black' : 'bg-white/10 text-gray-400'}`}>
+                                                <Check size={14}/>
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                         </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <h3 className="text-xl font-bold text-white uppercase italic">Mi Plan Actual</h3>
+            {plan ? (
+                <div className="space-y-4">
+                    {plan.workouts.map(w => (
+                        <div key={w.id} className="bg-[#151518] p-5 rounded-xl border border-white/5 flex justify-between items-center group hover:border-red-500/30 transition-all">
+                            <div>
+                                <h4 className="font-bold text-white">{w.name}</h4>
+                                <p className="text-xs text-gray-500">{w.exercises.length} Ejercicios {w.scheduledDate && `• ${formatDate(w.scheduledDate)}`}</p>
+                            </div>
+                            <button onClick={() => handleStart(w)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs uppercase hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2">
+                                <Play size={16}/> Entrenar
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="text-center py-10 bg-white/5 rounded-2xl border border-dashed border-white/10">
+                    <p className="text-gray-500 text-sm">No tienes un plan asignado. Contacta a tu coach.</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+    return (
+        <div className="space-y-6 max-w-2xl">
+            <h3 className="text-xl font-bold text-white uppercase italic">Mi Perfil</h3>
+            <div className="bg-[#151518] p-6 rounded-2xl border border-white/5 space-y-4">
+                 <div className="flex items-center gap-4">
+                     <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-2xl font-bold text-white">{user.name.charAt(0)}</div>
+                     <div>
+                         <h4 className="text-lg font-bold text-white">{user.name}</h4>
+                         <p className="text-sm text-gray-500">{user.email}</p>
+                     </div>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+                     <div><label className="text-[10px] text-gray-500 uppercase font-bold">Objetivo</label><p className="text-white text-sm">{user.goal}</p></div>
+                     <div><label className="text-[10px] text-gray-500 uppercase font-bold">Nivel</label><p className="text-white text-sm">{user.level}</p></div>
+                 </div>
+            </div>
+        </div>
+    );
+};
+
+const AdminView = () => {
+    const users = DataEngine.getUsers();
+    const [refresh, setRefresh] = useState(0);
+    const toggleStatus = (u: User) => {
+        u.isActive = !u.isActive;
+        DataEngine.saveUser(u);
+        setRefresh(r => r + 1);
+    };
+
+    return (
+        <div className="space-y-6">
+            <h3 className="text-xl font-bold text-white uppercase italic">Consola de Administración</h3>
+            <div className="bg-[#151518] rounded-xl border border-white/5 overflow-hidden">
+                <table className="w-full text-left text-sm text-gray-400">
+                    <thead className="bg-black/50 text-xs uppercase font-bold text-gray-500">
+                        <tr>
+                            <th className="p-4">Usuario</th>
+                            <th className="p-4">Rol</th>
+                            <th className="p-4">Estado</th>
+                            <th className="p-4">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {users.map(u => (
+                            <tr key={u.id} className="border-t border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="p-4 text-white font-bold">{u.name}<br/><span className="text-gray-600 text-xs font-normal">{u.email}</span></td>
+                                <td className="p-4"><span className="bg-white/10 px-2 py-1 rounded text-xs uppercase">{u.role}</span></td>
+                                <td className="p-4">{u.isActive ? <span className="text-green-500 text-xs uppercase font-bold">Activo</span> : <span className="text-red-500 text-xs uppercase font-bold">Inactivo</span>}</td>
+                                <td className="p-4">
+                                    <button onClick={() => toggleStatus(u)} className="text-xs font-bold underline hover:text-white">{u.isActive ? 'Desactivar' : 'Activar'}</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
 };
 
 const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
@@ -950,134 +1087,67 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     );
 };
 
-const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: string) => void }) => {
-    if (user.role === 'coach' || user.role === 'admin') {
-        const allUsers = DataEngine.getUsers();
-        const clients = allUsers.filter(u => u.role === 'client');
-        const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
-        const exercises = DataEngine.getExercises();
-        return (
-            <div className="space-y-8 animate-fade-in pb-20">
-                <div className="flex justify-between items-center"><div><h2 className="text-4xl font-display font-black italic text-white uppercase tracking-tighter">COMMAND CENTER</h2><p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Gestión de Alto Rendimiento</p></div></div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><StatCard label="Atletas" value={clients.length} icon={<Users className="text-blue-500" size={16} />} /><StatCard label="Protocolos" value={activePlans} icon={<Activity className="text-green-500" size={16} />} /><StatCard label="Librería" value={exercises.length} icon={<Dumbbell className="text-orange-500" size={16} />} /><StatCard label="Status" value="OK" icon={<Shield className="text-red-500" size={16} />} /></div>
-                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-[2.5rem] shadow-xl"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white uppercase font-display italic">Acciones Rápidas</h3></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                         <button onClick={() => onNavigate('clients')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group"><div className="bg-red-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-red-500 mb-4 group-hover:scale-110 transition-transform"><UserPlus size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Gestionar Atletas</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Ver lista, crear planes, asignar rutinas.</p></button>
-                         <button onClick={() => onNavigate('workouts')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group"><div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform"><Dumbbell size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Biblioteca</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Gestionar ejercicios y videos tutoriales.</p></button>
-                         {user.role === 'admin' && (<button onClick={() => onNavigate('admin')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group"><div className="bg-yellow-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-yellow-500 mb-4 group-hover:scale-110 transition-transform"><Briefcase size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Ajustes Admin</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Configuración total del sistema.</p></button>)}
-                    </div></div>
-            </div>
-        );
-    }
-    const plan = DataEngine.getPlan(user.id);
-    const history = DataEngine.getClientHistory(user.id);
-    const totalVol = history.reduce((acc, curr) => acc + curr.summary.totalVolume, 0);
-    const workoutsDone = history.length;
-    return (
-        <div className="space-y-10 animate-fade-in pb-32">
-            <div className="flex justify-between items-start"><div><h2 className="text-4xl font-display font-black italic text-white uppercase tracking-tighter">HOLA, {user.name.split(' ')[0]} 👋</h2><p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-1">Status: {user.level} • {user.role}</p></div><div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center font-bold text-white shadow-lg">{user.name[0]}</div></div>
-            <div className="grid grid-cols-2 gap-4"><StatCard label="Carga Total" value={(totalVol/1000).toFixed(1) + 'k'} icon={<Dumbbell size={16} className="text-blue-500"/>} /><StatCard label="Sesiones" value={workoutsDone} icon={<Activity size={16} className="text-green-500"/>} /><StatCard label="Racha" value={user.streak} icon={<Flame size={16} className="text-red-500"/>} /><StatCard label="Nivel" value={user.level === UserLevel.ADVANCED ? 'Elite' : 'Pro'} icon={<Sparkles size={16} className="text-yellow-500"/>} /></div>
-            {plan ? (<div><h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2 uppercase italic font-display"><Flame size={18} className="text-red-500"/> Protocolo Activo</h3><PlanViewer plan={plan} mode="athlete" /></div>) : (<div className="py-24 text-center border-2 border-dashed border-white/5 rounded-[2.5rem] flex flex-col items-center gap-4"><Dumbbell size={48} className="text-gray-800" /><div><p className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Sin Protocolo Activo</p><p className="text-[9px] text-gray-700 font-bold mt-1 uppercase tracking-tighter">Contacta a tu coach para recibir tu programación</p></div></div>)}
-        </div>
-    );
-};
+const App = () => {
+    const [user, setUser] = useState<User | null>(null);
+    const [view, setView] = useState('dashboard');
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+    const [chatbotOpen, setChatbotOpen] = useState(false);
 
-const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
-    const history = DataEngine.getClientHistory(user.id);
-    const [analyzing, setAnalyzing] = useState(false);
-    const chartData = history.slice(0, 10).reverse().map(h => ({ date: new Date(h.date).toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}), vol: h.summary.totalVolume }));
-    const handleAnalyze = async () => { setAnalyzing(true); try { const advice = await analyzeProgress(user, history); alert(advice); } catch(e) { alert("No se pudo analizar el progreso."); } finally { setAnalyzing(false); } }
-    return (
-        <div className="space-y-10 animate-fade-in pb-32">
-            <div className="flex items-center gap-6"><div className="w-24 h-24 rounded-[2rem] bg-red-600 flex items-center justify-center text-4xl font-black italic font-display text-white shadow-2xl shadow-red-900/40">{user.name[0]}</div><div><h2 className="text-3xl font-display font-black italic text-white uppercase tracking-tighter">{user.name}</h2><p className="text-gray-400 font-bold uppercase text-xs">{user.email}</p><span className="inline-block mt-3 px-3 py-1 bg-red-500/10 rounded-lg text-[9px] font-bold text-red-500 uppercase border border-red-500/20">{user.role}</span></div></div>
-            {user.role === 'client' && (
-                <div className="space-y-6">
-                    <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-5 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-2xl flex items-center justify-center gap-3 shadow-lg relative overflow-hidden group transition-all active:scale-95">{analyzing ? <Loader2 className="animate-spin text-blue-200" /> : <BrainCircuit size={24} className="text-blue-300" />}<span className="font-bold text-blue-100 z-10 uppercase tracking-widest text-xs">Analizar mi Progreso (IA)</span></button>
-                    <div className="bg-[#0F0F11] border border-white/5 rounded-[2rem] p-6 shadow-xl"><h3 className="font-bold text-white mb-6 flex items-center gap-2 uppercase text-xs tracking-widest"><TrendingUp size={16} className="text-green-500"/> Proyección de Carga</h3><div className="h-48 w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" vertical={false} /><XAxis dataKey="date" tick={{fontSize: 9, fill: '#666', fontWeight: 'bold'}} axisLine={false} tickLine={false} /><Tooltip contentStyle={{backgroundColor: '#0F0F11', border: '1px solid #1F1F1F', borderRadius: '12px'}} /><Area type="monotone" dataKey="vol" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={3} /></AreaChart></ResponsiveContainer></div></div>
-                </div>
-            )}
-            <div className="bg-[#0F0F11] border border-white/5 rounded-[2rem] p-6 space-y-4 shadow-xl"><div className="flex justify-between items-center py-2 border-b border-white/5"><span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Meta de Atleta</span><span className="text-white font-bold text-xs uppercase">{user.goal}</span></div><div className="flex justify-between items-center py-2 border-b border-white/5"><span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Nivel Actual</span><span className="text-white font-bold text-xs uppercase">{user.level}</span></div><div className="flex justify-between items-center py-2"><span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Días / Semana</span><span className="text-white font-bold text-xs uppercase">{user.daysPerWeek}</span></div></div>
-            <button onClick={onLogout} className="w-full py-5 bg-white/5 text-red-500 font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-red-500/10 transition-colors uppercase tracking-widest text-xs"><LogOut size={20}/> Cerrar Sesión</button>
-        </div>
-    );
-};
-
-const AdminView = () => {
-  const [config, setConfig] = useState(DataEngine.getConfig());
-  const [activeTab, setActiveTab] = useState<'branding' | 'users'>('branding');
-  const [users, setUsers] = useState<User[]>(DataEngine.getUsers());
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const adminUserMock: User = { ...MOCK_USER, role: 'admin' as UserRole, id: ADMIN_UUID };
-  const handleSaveConfig = () => { DataEngine.saveConfig(config); alert("Configuración guardada."); }
-  const toggleUserStatus = (u: User) => { const updated = { ...u, isActive: !u.isActive }; DataEngine.saveUser(updated); setUsers(DataEngine.getUsers()); }
-  return (
-      <div className="space-y-8 animate-fade-in pb-20">
-          <div className="flex justify-between items-center mb-6"><h2 className="text-3xl font-display font-black italic text-white uppercase tracking-tighter">COMMAND CENTER</h2><div className="flex gap-2 bg-white/5 p-1 rounded-xl"><button onClick={() => setActiveTab('branding')} className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-widest ${activeTab === 'branding' ? 'bg-white text-black shadow-lg' : 'text-gray-500'}`}>MARCA</button><button onClick={() => setActiveTab('users')} className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-widest ${activeTab === 'users' ? 'bg-white text-black shadow-lg' : 'text-gray-500'}`}>USUARIOS</button></div></div>
-          {activeTab === 'branding' && (<div className="bg-[#0F0F11] border border-white/5 p-8 rounded-[2.5rem] space-y-6 shadow-xl"><h3 className="font-bold text-white uppercase font-display italic text-lg">Personalización de Marca</h3><div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest ml-1">Nombre de la Plataforma</label><input value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} className="w-full bg-black border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-all" /></div><div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest ml-1">URL del Logo Oficial</label><input value={config.logoUrl} onChange={e => setConfig({...config, logoUrl: e.target.value})} className="w-full bg-black border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-all" placeholder="https://..." /></div><button onClick={handleSaveConfig} className="bg-red-600 text-white px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-900/20 active:scale-95 transition-all">Guardar Cambios</button></div>)}
-          {activeTab === 'users' && (<div className="space-y-4 pb-32"><div className="flex justify-end"><button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-gray-200 transition-colors shadow-xl"><UserPlus size={16}/> Alta de Usuario</button></div>{users.map(u => (<div key={u.id} className="bg-[#0F0F11] border border-white/5 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-lg"><div className="flex items-center gap-4 w-full"><div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white shadow-inner ${u.isActive !== false ? 'bg-green-600' : 'bg-red-600'}`}>{u.name[0]}</div><div className="flex-1"><div><div className="font-bold text-white uppercase text-sm">{u.name} <span className="text-[9px] text-gray-500 bg-white/5 border border-white/5 px-2 py-0.5 rounded ml-2 uppercase">{u.role}</span></div><div className="text-xs text-gray-500">{u.email}</div></div></div></div><div className="flex gap-2 w-full md:w-auto"><button onClick={() => toggleUserStatus(u)} className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${u.isActive !== false ? 'bg-red-900/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-green-900/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white'}`}>{u.isActive !== false ? <><UserX size={14}/> Bloquear</> : <><UserCheck size={14}/> Activar</>}</button></div></div>))}</div>)}
-          {showInviteModal && (<UserInviteModal currentUser={adminUserMock} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers())} />)}
-      </div>
-  );
-};
-
-export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState('dashboard');
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [chatbotOpen, setChatbotOpen] = useState(false);
-
-  useEffect(() => {
+    useEffect(() => {
      DataEngine.init();
      const session = localStorage.getItem(SESSION_KEY);
      if(session) { const u = DataEngine.getUserById(session); if(u) setUser(u); }
-  }, []);
+    }, []);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [view]);
+    useEffect(() => { window.scrollTo(0, 0); }, [view]);
 
-  const login = (u: User) => { localStorage.setItem(SESSION_KEY, u.id); setUser(u); setView('dashboard'); };
-  const logout = () => { localStorage.removeItem(SESSION_KEY); setUser(null); };
+    const login = (u: User) => { localStorage.setItem(SESSION_KEY, u.id); setUser(u); setView('dashboard'); };
+    const logout = () => { localStorage.removeItem(SESSION_KEY); setUser(null); };
 
-  if (!user) return <LoginPage onLogin={login} />;
+    if (!user) return <LoginPage onLogin={login} />;
 
-  return (
-    <div className="min-h-[100dvh] bg-[#050507] text-gray-200 font-sans selection:bg-red-500/30">
-        <aside className="fixed left-0 top-0 h-full w-64 bg-[#0F0F11] border-r border-white/5 p-6 hidden md:flex flex-col z-40">
-            <BrandingLogo />
-            <nav className="flex-1 space-y-2 mt-10">
-                {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Dashboard" />}
-                {user.role === 'client' && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
-                {user.role === 'coach' && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Gestión Atletas" />}
-                {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}
-                {user.role === 'admin' && <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={<Shield size={20} />} label="Admin Console" />}
-                <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Mi Perfil" />
-            </nav>
-            <div className="mt-auto pb-6 border-t border-white/5 pt-6">
-                <p className="text-[10px] text-gray-600 uppercase font-bold text-center mb-4">Redes Sociales</p>
-                <SocialLinks className="justify-center" />
-                <button onClick={logout} className="flex items-center gap-3 text-gray-500 hover:text-red-500 transition-colors px-4 mt-8 w-full"><LogOut size={20} /> <span className="font-bold text-sm uppercase tracking-widest">Salir</span></button>
+    return (
+        <div className="min-h-[100dvh] bg-[#050507] text-gray-200 font-sans selection:bg-red-500/30">
+            <aside className="fixed left-0 top-0 h-full w-64 bg-[#0F0F11] border-r border-white/5 p-6 hidden md:flex flex-col z-40">
+                <BrandingLogo />
+                <nav className="flex-1 space-y-2 mt-10">
+                    {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Dashboard" />}
+                    {user.role === 'client' && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
+                    {user.role === 'coach' && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Gestión Atletas" />}
+                    {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}
+                    {user.role === 'admin' && <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={<Shield size={20} />} label="Admin Console" />}
+                    <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Mi Perfil" />
+                </nav>
+                <div className="mt-auto pb-6 border-t border-white/5 pt-6">
+                    <p className="text-[10px] text-gray-600 uppercase font-bold text-center mb-4">Redes Sociales</p>
+                    <SocialLinks className="justify-center" />
+                    <button onClick={logout} className="flex items-center gap-3 text-gray-500 hover:text-red-500 transition-colors px-4 mt-8 w-full"><LogOut size={20} /> <span className="font-bold text-sm uppercase tracking-widest">Salir</span></button>
+                </div>
+            </aside>
+
+            <div className="md:hidden fixed top-0 left-0 right-0 bg-[#050507]/90 backdrop-blur-xl border-b border-white/5 p-4 z-40 flex justify-between items-center"><BrandingLogo textSize="text-lg" /><div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-bold text-xs shadow-lg">{user.name[0]}</div></div>
+            
+            <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
+                {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
+                {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
+                {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
+                {view === 'workouts' && <WorkoutsView user={user} />}
+                {view === 'profile' && <ProfileView user={user} onLogout={logout} />}
+                {view === 'admin' && <AdminView />}
+            </main>
+
+            <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F11]/95 backdrop-blur-xl border-t border-white/5 px-6 py-2 flex justify-between items-center z-40 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                <MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />
+                {(user.role === 'coach' || user.role === 'admin') && <MobileNavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
+                {(user.role === 'coach' || user.role === 'admin') && <MobileNavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Lib" />}
+                <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
             </div>
-        </aside>
 
-        <div className="md:hidden fixed top-0 left-0 right-0 bg-[#050507]/90 backdrop-blur-xl border-b border-white/5 p-4 z-40 flex justify-between items-center"><BrandingLogo textSize="text-lg" /><div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-bold text-xs shadow-lg">{user.name[0]}</div></div>
-        
-        <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
-            {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
-            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
-            {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
-            {view === 'workouts' && <WorkoutsView user={user} />}
-            {view === 'profile' && <ProfileView user={user} onLogout={logout} />}
-            {view === 'admin' && <AdminView />}
-        </main>
-
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F11]/95 backdrop-blur-xl border-t border-white/5 px-6 py-2 flex justify-between items-center z-40 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-            <MobileNavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />
-            {(user.role === 'coach' || user.role === 'admin') && <MobileNavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Atletas" />}
-            {(user.role === 'coach' || user.role === 'admin') && <MobileNavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Lib" />}
-            <MobileNavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Perfil" />
+            {user.role === 'client' && (<><button onClick={() => setChatbotOpen(!chatbotOpen)} className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform hover:scale-110 active:scale-95"><MessageCircle size={24} /></button>{chatbotOpen && <TechnicalChatbot onClose={() => setChatbotOpen(false)} />}</>)}
+            
+            <ConnectionStatus />
         </div>
+    );
+};
 
-        {user.role === 'client' && (<><button onClick={() => setChatbotOpen(!chatbotOpen)} className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform hover:scale-110 active:scale-95"><MessageCircle size={24} /></button>{chatbotOpen && <TechnicalChatbot onClose={() => setChatbotOpen(false)} />}</>)}
-        
-        <ConnectionStatus />
-    </div>
-  );
-}
+export default App;
