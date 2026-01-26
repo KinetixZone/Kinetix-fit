@@ -46,8 +46,8 @@ export interface TabataConfig {
   workTimeSec: number;
   restTimeSec: number;
   rounds: number;
-  sets: number;
-  restBetweenSetsSec: number;
+  sets: number; // Requerido por prompt
+  restBetweenSetsSec: number; // Requerido por prompt
   structure: 'simple' | 'alternado' | 'lista';
   exercises: { id: string; name: string; videoUrl?: string }[]; 
 }
@@ -55,6 +55,8 @@ export interface TabataConfig {
 export interface EmomConfig {
   durationMin: number;
   type: 'simple' | 'alternado' | 'complejo';
+  // Configuración de visualización
+  mode?: 'REPS' | 'TIME'; // Nuevo para cumplir regla EMOM
   // Simple
   simpleConfig?: { exercise: string; reps?: string; durationSec?: number };
   // Alternado
@@ -75,29 +77,44 @@ export interface WorkoutExercise {
   videoUrl?: string;
   method?: TrainingMethod;
   
-  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
+  // CAMPOS ESPECÍFICOS POR MÉTODO (UI MAPPING)
   
-  // Para BISERIE
+  // FUERZA
+  tempo?: string; 
+
+  // BISERIE
   pair?: {
     exerciseId: string;
     name: string;
     targetReps: string;
     targetLoad?: string;
+    targetRest?: number; // Agregado para cumplir "Para CADA ejercicio... Descanso"
     videoUrl?: string;
+    coachCue?: string; // Notas para el par
   };
 
-  // Para AHAP
+  // AHAP
   targetWeights?: string[];
+  ahapConfig?: {
+      rounds?: number; // Opcional
+      targetReps?: string; // Opcional
+  };
 
-  // Para DROP SET
+  // DROP SET
   dropsetPatternMode?: 'FIXED' | 'PER_SERIES'; 
   drops?: { weight: string; reps: string }[]; 
   dropsetSeriesPatterns?: { [setIndex: number]: { weight: string; reps: string }[] };
+  // Configuración UI estricta Dropset
+  dropConfig?: {
+      initialLoad: string;
+      mode: 'PERCENT' | 'KG';
+      value: number; // El valor del drop (ej: 20% o 5kg)
+  };
 
-  // Para TABATA (Nuevo)
+  // TABATA
   tabataConfig?: TabataConfig;
 
-  // Para EMOM (Nuevo)
+  // EMOM
   emomConfig?: EmomConfig;
 }
 

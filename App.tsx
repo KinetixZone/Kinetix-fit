@@ -15,7 +15,7 @@ import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES, INITIAL_TEMPLATES } from 
 import { getTechnicalAdvice, generateEditionSchema } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE + LIBRARY MANAGER + ADVANCED ASSIGNMENT) ---
+// --- CONFIGURACIÓN DE VERSIÓN ---
 const STORAGE_KEY = 'KINETIX_DATA_V1_CLASSIC';
 const SESSION_KEY = 'KINETIX_SESSION_V1';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
@@ -272,13 +272,21 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
         const exercise = newPlan.workouts[wIdx].exercises[eIdx] as any;
 
         if (subObject) {
-            // Ejemplo: tabataConfig.rounds
+            // Manejo de objetos anidados (tabataConfig, ahapConfig, etc)
             if (!exercise[subObject]) exercise[subObject] = {};
             exercise[subObject][field] = value;
         } else {
-            // Campo directo: targetLoad, targetReps
+            // Campo directo
             exercise[field] = value;
         }
+        setCustomizedPlan(newPlan);
+    };
+
+    const updateExerciseMethod = (wIdx: number, eIdx: number, method: TrainingMethod) => {
+        if (!customizedPlan) return;
+        const newPlan = { ...customizedPlan };
+        const ex = newPlan.workouts[wIdx].exercises[eIdx];
+        ex.method = method;
         setCustomizedPlan(newPlan);
     };
 
@@ -286,54 +294,138 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     const renderMethodInputs = (exercise: WorkoutExercise, wIdx: number, eIdx: number) => {
         const method = exercise.method || 'standard';
 
-        // Común para casi todos
-        const CommonInputs = () => (
-            <div className="grid grid-cols-3 gap-2 mb-2">
-               <div><label className="text-[9px] text-gray-500 uppercase">Kg</label><input type="text" value={exercise.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value)} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="--"/></div>
-               <div><label className="text-[9px] text-gray-500 uppercase">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center"/></div>
-               <div><label className="text-[9px] text-gray-500 uppercase">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value))} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1 rounded text-center"/></div>
-            </div>
-        );
+        // 1. FUERZA (STANDARD)
+        if (method === 'standard') {
+            return (
+                <div className="space-y-2">
+                    <div className="grid grid-cols-4 gap-2">
+                         <div><label className="text-[9px] text-gray-500 uppercase font-bold">Kg</label><input type="text" value={exercise.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value)} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1.5 rounded text-center"/></div>
+                         <div><label className="text-[9px] text-gray-500 uppercase font-bold">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
+                         <div><label className="text-[9px] text-gray-500 uppercase font-bold">Sets</label><input type="number" value={exercise.targetSets || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetSets', Number(e.target.value))} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
+                         <div><label className="text-[9px] text-gray-500 uppercase font-bold">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value))} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1.5 rounded text-center"/></div>
+                    </div>
+                    <div>
+                         <label className="text-[9px] text-gray-500 uppercase font-bold">Tempo (Opcional)</label>
+                         <input type="text" value={exercise.tempo || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'tempo', e.target.value)} className="w-full bg-black border border-white/10 text-gray-300 text-xs p-1.5 rounded" placeholder="Ej: 3-1-1-0"/>
+                    </div>
+                </div>
+            );
+        }
 
-        switch (method) {
-            case 'tabata':
-                return (
-                    <div className="bg-purple-900/10 p-2 rounded border border-purple-500/20 mb-2 space-y-2">
-                        <div className="text-[9px] text-purple-400 font-bold uppercase">Configuración Tabata</div>
+        // 2. AHAP (As Heavy As Possible)
+        if (method === 'ahap') {
+            return (
+                <div className="bg-red-900/10 p-2 rounded border border-red-500/20 space-y-2">
+                    <div className="text-[9px] text-red-400 font-bold uppercase mb-1">Configuración AHAP</div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <div><label className="text-[9px] text-gray-500 uppercase">Kg</label><input type="text" value={exercise.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value)} className="w-full bg-black border border-red-500/30 text-red-400 text-xs p-1.5 rounded text-center"/></div>
+                        <div><label className="text-[9px] text-gray-500 uppercase">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
+                        <div><label className="text-[9px] text-gray-500 uppercase">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value))} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1.5 rounded text-center"/></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                         <div><label className="text-[9px] text-gray-500 uppercase">Rounds (Opcional)</label><input type="number" value={exercise.ahapConfig?.rounds || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'rounds', Number(e.target.value), 'ahapConfig')} className="w-full bg-black border border-white/10 text-white text-xs p-1.5 rounded"/></div>
+                         <div><label className="text-[9px] text-gray-500 uppercase">Reps Objetivo</label><input type="text" value={exercise.ahapConfig?.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value, 'ahapConfig')} className="w-full bg-black border border-white/10 text-white text-xs p-1.5 rounded" placeholder="Meta"/></div>
+                    </div>
+                </div>
+            );
+        }
+
+        // 3. BISERIE
+        if (method === 'biserie') {
+            return (
+                <div className="space-y-3">
+                    <div className="bg-white/5 p-2 rounded border-l-2 border-blue-500">
+                        <div className="text-[9px] text-gray-400 uppercase mb-1 font-bold">1. {exercise.name}</div>
                         <div className="grid grid-cols-3 gap-2">
-                             <div><label className="text-[9px] text-gray-500">Trabajo (s)</label><input type="number" value={exercise.tabataConfig?.workTimeSec || 20} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'workTimeSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
-                             <div><label className="text-[9px] text-gray-500">Descanso (s)</label><input type="number" value={exercise.tabataConfig?.restTimeSec || 10} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'restTimeSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
-                             <div><label className="text-[9px] text-gray-500">Rounds</label><input type="number" value={exercise.tabataConfig?.rounds || 8} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'rounds', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
+                             <input type="text" value={exercise.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value)} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="Kg"/>
+                             <input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center" placeholder="Reps"/>
+                             <input type="number" value={exercise.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value))} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1 rounded text-center" placeholder="Rest"/>
                         </div>
                     </div>
-                );
-            case 'emom':
-                return (
-                     <div className="bg-orange-900/10 p-2 rounded border border-orange-500/20 mb-2 space-y-2">
-                        <div className="text-[9px] text-orange-400 font-bold uppercase">Configuración EMOM</div>
-                        <div className="grid grid-cols-2 gap-2">
-                             <div><label className="text-[9px] text-gray-500">Minutos Totales</label><input type="number" value={exercise.emomConfig?.durationMin || 10} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'durationMin', Number(e.target.value), 'emomConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
-                             <div><label className="text-[9px] text-gray-500">Reps x Min</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
-                        </div>
-                    </div>
-                );
-            case 'biserie':
-                return (
-                    <div className="space-y-2">
-                        <CommonInputs />
-                        {exercise.pair && (
-                            <div className="bg-white/5 p-2 rounded border-l-2 border-red-500">
-                                <div className="text-[9px] text-gray-400 uppercase mb-1">Pair: {exercise.pair.name}</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <input type="text" value={exercise.pair.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value, 'pair')} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="Kg Pair"/>
-                                    <input type="text" value={exercise.pair.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value, 'pair')} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center" placeholder="Reps Pair"/>
-                                </div>
+                    {exercise.pair ? (
+                        <div className="bg-white/5 p-2 rounded border-l-2 border-red-500">
+                            <div className="text-[9px] text-gray-400 uppercase mb-1 font-bold">2. {exercise.pair.name}</div>
+                            <div className="grid grid-cols-3 gap-2">
+                                <input type="text" value={exercise.pair.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value, 'pair')} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="Kg"/>
+                                <input type="text" value={exercise.pair.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value, 'pair')} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center" placeholder="Reps"/>
+                                <input type="number" value={exercise.pair.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value), 'pair')} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1 rounded text-center" placeholder="Rest"/>
                             </div>
-                        )}
+                        </div>
+                    ) : (
+                        <div className="text-[10px] text-red-500 italic px-2">⚠️ Falta configurar ejercicio par en plantilla.</div>
+                    )}
+                </div>
+            );
+        }
+
+        // 4. DROPSET
+        if (method === 'dropset') {
+            const dropMode = exercise.dropConfig?.mode || 'PERCENT';
+            return (
+                <div className="bg-purple-900/10 p-2 rounded border border-purple-500/20 space-y-2">
+                    <div className="text-[9px] text-purple-400 font-bold uppercase mb-1">Configuración Drop Set</div>
+                    <div className="grid grid-cols-2 gap-2">
+                         <div><label className="text-[9px] text-gray-500 uppercase">Carga Inicial</label><input type="text" value={exercise.dropConfig?.initialLoad || exercise.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'initialLoad', e.target.value, 'dropConfig')} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1.5 rounded text-center"/></div>
+                         <div>
+                            <label className="text-[9px] text-gray-500 uppercase">Modo Drop</label>
+                            <div className="flex bg-black rounded border border-white/10 p-0.5">
+                                <button onClick={() => updateExerciseOverride(wIdx, eIdx, 'mode', 'PERCENT', 'dropConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${dropMode === 'PERCENT' ? 'bg-purple-600 text-white' : 'text-gray-500'}`}>%</button>
+                                <button onClick={() => updateExerciseOverride(wIdx, eIdx, 'mode', 'KG', 'dropConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${dropMode === 'KG' ? 'bg-purple-600 text-white' : 'text-gray-500'}`}>KG</button>
+                            </div>
+                         </div>
                     </div>
-                );
-            default: // Standard, AHAP, Dropset (usan campos base)
-                return <CommonInputs />;
+                    <div>
+                         <label className="text-[9px] text-gray-500 uppercase">Valor del Drop ({dropMode === 'PERCENT' ? '%' : 'Kg'})</label>
+                         <input type="number" value={exercise.dropConfig?.value || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'value', Number(e.target.value), 'dropConfig')} className="w-full bg-black border border-purple-500/30 text-purple-300 text-xs p-1.5 rounded" placeholder={dropMode === 'PERCENT' ? "Ej: 20" : "Ej: 5"}/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                         <div><label className="text-[9px] text-gray-500 uppercase">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
+                         <div><label className="text-[9px] text-gray-500 uppercase">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value))} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1.5 rounded text-center"/></div>
+                    </div>
+                </div>
+            );
+        }
+
+        // 5. TABATA
+        if (method === 'tabata') {
+             return (
+                <div className="bg-indigo-900/10 p-2 rounded border border-indigo-500/20 mb-2 space-y-2">
+                    <div className="text-[9px] text-indigo-400 font-bold uppercase">Protocolo Tabata</div>
+                    <div className="grid grid-cols-3 gap-2">
+                         <div><label className="text-[9px] text-gray-500">Trabajo (s)</label><input type="number" value={exercise.tabataConfig?.workTimeSec || 20} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'workTimeSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
+                         <div><label className="text-[9px] text-gray-500">Descanso (s)</label><input type="number" value={exercise.tabataConfig?.restTimeSec || 10} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'restTimeSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
+                         <div><label className="text-[9px] text-gray-500">Rounds</label><input type="number" value={exercise.tabataConfig?.rounds || 8} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'rounds', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-2">
+                         <div><label className="text-[9px] text-gray-500">Sets</label><input type="number" value={exercise.tabataConfig?.sets || 1} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'sets', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
+                         <div><label className="text-[9px] text-gray-500">Rest/Set (s)</label><input type="number" value={exercise.tabataConfig?.restBetweenSetsSec || 60} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'restBetweenSetsSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
+                    </div>
+                </div>
+            );
+        }
+
+        // 6. EMOM
+        if (method === 'emom') {
+            const emomMode = exercise.emomConfig?.mode || 'REPS';
+            return (
+                 <div className="bg-orange-900/10 p-2 rounded border border-orange-500/20 mb-2 space-y-2">
+                    <div className="text-[9px] text-orange-400 font-bold uppercase">Protocolo EMOM</div>
+                    <div className="flex bg-black rounded border border-white/10 p-0.5 mb-2">
+                        <button onClick={() => updateExerciseOverride(wIdx, eIdx, 'mode', 'REPS', 'emomConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${emomMode === 'REPS' ? 'bg-orange-600 text-white' : 'text-gray-500'}`}>Reps</button>
+                        <button onClick={() => updateExerciseOverride(wIdx, eIdx, 'mode', 'TIME', 'emomConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${emomMode === 'TIME' ? 'bg-orange-600 text-white' : 'text-gray-500'}`}>Tiempo</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                         <div>
+                             <label className="text-[9px] text-gray-500">{emomMode === 'REPS' ? 'Reps/Min' : 'Seg/Min'}</label>
+                             {emomMode === 'REPS' 
+                                ? <input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black text-white text-xs p-1.5 rounded"/>
+                                : <input type="number" value={exercise.emomConfig?.simpleConfig?.durationSec || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'durationSec', Number(e.target.value), 'emomConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/>
+                             }
+                         </div>
+                         <div><label className="text-[9px] text-gray-500">Minutos Totales</label><input type="number" value={exercise.emomConfig?.durationMin || 10} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'durationMin', Number(e.target.value), 'emomConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
+                    </div>
+                </div>
+            );
         }
     };
 
@@ -417,19 +509,30 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         {workout.exercises.map((ex, eIdx) => (
                                             <div key={eIdx} className="bg-white/5 p-3 rounded-xl border border-white/5 relative group hover:border-white/20 transition-colors">
-                                                <div className="flex justify-between items-start mb-2">
+                                                <div className="flex justify-between items-center mb-2">
                                                     <span className="text-xs font-bold text-gray-300 truncate pr-2">{ex.name}</span>
-                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-400 uppercase font-bold tracking-wider">{ex.method || 'STD'}</span>
+                                                    <select 
+                                                        value={ex.method || 'standard'} 
+                                                        onChange={(e) => updateExerciseMethod(wIdx, eIdx, e.target.value as TrainingMethod)}
+                                                        className="text-[9px] bg-black border border-white/10 rounded px-1 py-0.5 text-gray-400 uppercase font-bold tracking-wider outline-none focus:border-red-500"
+                                                    >
+                                                        <option value="standard">Standard</option>
+                                                        <option value="ahap">AHAP</option>
+                                                        <option value="biserie">Biserie</option>
+                                                        <option value="dropset">Drop Set</option>
+                                                        <option value="tabata">Tabata</option>
+                                                        <option value="emom">EMOM</option>
+                                                    </select>
                                                 </div>
                                                 
-                                                {/* DYNAMIC INPUTS BASED ON METHOD */}
+                                                {/* DYNAMIC INPUTS BASED ON METHOD - ESTRICTO */}
                                                 {renderMethodInputs(ex, wIdx, eIdx)}
 
                                                 <textarea 
                                                     value={ex.coachCue || ''} 
                                                     onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'coachCue', e.target.value)}
                                                     placeholder="Nota técnica..."
-                                                    className="w-full bg-black/50 border border-transparent focus:border-white/20 rounded text-[10px] text-gray-400 p-2 outline-none resize-none h-12"
+                                                    className="w-full bg-black/50 border border-transparent focus:border-white/20 rounded text-[10px] text-gray-400 p-2 outline-none resize-none h-12 mt-2"
                                                 />
                                             </div>
                                         ))}
