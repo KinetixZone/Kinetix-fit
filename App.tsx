@@ -8,14 +8,14 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database
+  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database, Copy, Settings2
 } from 'lucide-react';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES, INITIAL_TEMPLATES } from './constants';
 import { getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE + LIBRARY MANAGER) ---
+// --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE + LIBRARY MANAGER + ADVANCED ASSIGNMENT) ---
 const STORAGE_KEY = 'KINETIX_DATA_V1_CLASSIC';
 const SESSION_KEY = 'KINETIX_SESSION_V1';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
@@ -218,41 +218,203 @@ const ConnectionStatus = () => (
 
 // --- COMPONENTES LÓGICOS PRINCIPALES ---
 
+/**
+ * Módulo de Asignación Avanzada (AssignmentWizard)
+ * Permite seleccionar atleta y personalizar (hacer overrides) sobre la plantilla
+ * sin modificar la plantilla original.
+ */
 const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, onClose: () => void, onConfirm: (finalPlan: Plan, userId: string) => void }) => {
+    // ESTADOS DEL WIZARD: 'select' -> 'mode' -> 'customize' (opcional)
+    const [step, setStep] = useState<'select' | 'mode' | 'customize'>('select');
     const [targetClient, setTargetClient] = useState<string>('');
     const [customizedPlan, setCustomizedPlan] = useState<Plan | null>(null);
     const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
-
+    
+    // Al montar, clonamos la plantilla para no afectar la original (Principio de Inmutabilidad)
     useEffect(() => {
         if (template) {
             const clone = JSON.parse(JSON.stringify(template));
-            clone.id = generateUUID(); 
+            clone.id = generateUUID(); // Nuevo ID para la asignación
             setCustomizedPlan(clone);
         }
     }, [template]);
 
-    const handleConfirm = () => {
+    const getClientName = () => clients.find(c => c.id === targetClient)?.name || 'Atleta';
+
+    const handleConfirmDirect = () => {
         if (!targetClient || !customizedPlan) return;
         onConfirm(customizedPlan, targetClient);
     };
 
+    // --- LOGICA DE PERSONALIZACIÓN (OVERRIDES) ---
+    const updateExerciseOverride = (wIdx: number, eIdx: number, field: string, value: any, subObject?: string) => {
+        if (!customizedPlan) return;
+        const newPlan = { ...customizedPlan };
+        const exercise = newPlan.workouts[wIdx].exercises[eIdx] as any;
+
+        if (subObject) {
+            // Ejemplo: tabataConfig.rounds
+            if (!exercise[subObject]) exercise[subObject] = {};
+            exercise[subObject][field] = value;
+        } else {
+            // Campo directo: targetLoad, targetReps
+            exercise[field] = value;
+        }
+        setCustomizedPlan(newPlan);
+    };
+
+    // Renderizador de inputs según el método (Pattern Matching UI)
+    const renderMethodInputs = (exercise: WorkoutExercise, wIdx: number, eIdx: number) => {
+        const method = exercise.method || 'standard';
+
+        // Común para casi todos
+        const CommonInputs = () => (
+            <div className="grid grid-cols-3 gap-2 mb-2">
+               <div><label className="text-[9px] text-gray-500 uppercase">Kg</label><input type="text" value={exercise.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value)} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="--"/></div>
+               <div><label className="text-[9px] text-gray-500 uppercase">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center"/></div>
+               <div><label className="text-[9px] text-gray-500 uppercase">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetRest', Number(e.target.value))} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1 rounded text-center"/></div>
+            </div>
+        );
+
+        switch (method) {
+            case 'tabata':
+                return (
+                    <div className="bg-purple-900/10 p-2 rounded border border-purple-500/20 mb-2 space-y-2">
+                        <div className="text-[9px] text-purple-400 font-bold uppercase">Configuración Tabata</div>
+                        <div className="grid grid-cols-3 gap-2">
+                             <div><label className="text-[9px] text-gray-500">Trabajo (s)</label><input type="number" value={exercise.tabataConfig?.workTimeSec || 20} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'workTimeSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
+                             <div><label className="text-[9px] text-gray-500">Descanso (s)</label><input type="number" value={exercise.tabataConfig?.restTimeSec || 10} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'restTimeSec', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
+                             <div><label className="text-[9px] text-gray-500">Rounds</label><input type="number" value={exercise.tabataConfig?.rounds || 8} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'rounds', Number(e.target.value), 'tabataConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
+                        </div>
+                    </div>
+                );
+            case 'emom':
+                return (
+                     <div className="bg-orange-900/10 p-2 rounded border border-orange-500/20 mb-2 space-y-2">
+                        <div className="text-[9px] text-orange-400 font-bold uppercase">Configuración EMOM</div>
+                        <div className="grid grid-cols-2 gap-2">
+                             <div><label className="text-[9px] text-gray-500">Minutos Totales</label><input type="number" value={exercise.emomConfig?.durationMin || 10} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'durationMin', Number(e.target.value), 'emomConfig')} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
+                             <div><label className="text-[9px] text-gray-500">Reps x Min</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value)} className="w-full bg-black text-white text-xs p-1 rounded"/></div>
+                        </div>
+                    </div>
+                );
+            case 'biserie':
+                return (
+                    <div className="space-y-2">
+                        <CommonInputs />
+                        {exercise.pair && (
+                            <div className="bg-white/5 p-2 rounded border-l-2 border-red-500">
+                                <div className="text-[9px] text-gray-400 uppercase mb-1">Pair: {exercise.pair.name}</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input type="text" value={exercise.pair.targetLoad || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetLoad', e.target.value, 'pair')} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="Kg Pair"/>
+                                    <input type="text" value={exercise.pair.targetReps || ''} onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'targetReps', e.target.value, 'pair')} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center" placeholder="Reps Pair"/>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            default: // Standard, AHAP, Dropset (usan campos base)
+                return <CommonInputs />;
+        }
+    };
+
     return (
-        <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-[#1A1A1D] w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl flex flex-col p-6 space-y-6">
-                <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                    <h3 className="text-xl font-bold text-white uppercase italic">Asignar: {template.title}</h3>
+        <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4 backdrop-blur-md">
+            <div className="bg-[#1A1A1D] w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+                
+                {/* HEADER */}
+                <div className="flex justify-between items-center border-b border-white/10 p-5">
+                    <div>
+                        <h3 className="text-xl font-bold text-white uppercase italic">Asignar Rutina</h3>
+                        <p className="text-xs text-gray-500">Plantilla: <span className="text-red-500">{template.title}</span></p>
+                    </div>
                     <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-white"/></button>
                 </div>
                 
-                <div className="space-y-4">
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Seleccionar Atleta</label>
-                        <select className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 text-sm" value={targetClient} onChange={(e) => setTargetClient(e.target.value)}>
-                            <option value="">-- Atleta --</option>
-                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                    </div>
-                    <button onClick={handleConfirm} disabled={!targetClient} className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 disabled:opacity-50 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Confirmar Asignación</button>
+                {/* BODY CONTENT BASED ON STEP */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    
+                    {step === 'select' && (
+                        <div className="space-y-4 animate-fade-in">
+                            <label className="text-xs font-bold text-gray-500 uppercase block">1. Seleccionar Atleta</label>
+                            <select className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-red-500 text-sm" value={targetClient} onChange={(e) => setTargetClient(e.target.value)}>
+                                <option value="">-- Seleccionar --</option>
+                                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    )}
+
+                    {step === 'mode' && (
+                         <div className="space-y-6 animate-fade-in text-center py-4">
+                            <div className="w-16 h-16 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/50"><Settings2 size={32}/></div>
+                            <h4 className="text-lg font-bold text-white">¿Deseas personalizar esta rutina para <span className="text-blue-400">{getClientName()}</span>?</h4>
+                            <p className="text-sm text-gray-400 px-8">Puedes asignar la plantilla tal cual o ajustar cargas, reps y tiempos específicos para este atleta sin modificar la original.</p>
+                            
+                            <div className="grid grid-cols-2 gap-4 mt-8">
+                                <button onClick={handleConfirmDirect} className="p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/30 transition-all group">
+                                    <Copy size={24} className="text-gray-500 mb-2 group-hover:text-white mx-auto"/>
+                                    <div className="font-bold text-white text-sm">Asignar Tal Cual</div>
+                                    <div className="text-[10px] text-gray-500 mt-1">Copia exacta de la plantilla</div>
+                                </button>
+                                <button onClick={() => setStep('customize')} className="p-4 bg-red-600/10 border border-red-600/30 rounded-xl hover:bg-red-600/20 hover:border-red-500 transition-all group relative overflow-hidden">
+                                    <div className="absolute top-2 right-2 text-[9px] bg-red-600 text-white px-2 rounded-full font-bold">RECOMENDADO</div>
+                                    <Edit3 size={24} className="text-red-500 mb-2 group-hover:text-white mx-auto"/>
+                                    <div className="font-bold text-white text-sm">Personalizar</div>
+                                    <div className="text-[10px] text-red-400 mt-1">Ajustar cargas y tiempos</div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 'customize' && customizedPlan && (
+                        <div className="space-y-8 animate-fade-in">
+                            <div className="flex items-center gap-2 mb-4 bg-blue-900/20 p-3 rounded-xl border border-blue-500/20">
+                                <Info size={16} className="text-blue-400"/>
+                                <p className="text-xs text-blue-200">Estás editando la copia para <strong>{getClientName()}</strong>. La plantilla original no cambiará.</p>
+                            </div>
+
+                            {customizedPlan.workouts.map((workout, wIdx) => (
+                                <div key={workout.id} className="space-y-3">
+                                    <h5 className="text-sm font-bold text-white border-b border-white/10 pb-1">{workout.name}</h5>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {workout.exercises.map((ex, eIdx) => (
+                                            <div key={eIdx} className="bg-white/5 p-3 rounded-xl border border-white/5 relative group hover:border-white/20 transition-colors">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-xs font-bold text-gray-300 truncate pr-2">{ex.name}</span>
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-400 uppercase font-bold tracking-wider">{ex.method || 'STD'}</span>
+                                                </div>
+                                                
+                                                {/* DYNAMIC INPUTS BASED ON METHOD */}
+                                                {renderMethodInputs(ex, wIdx, eIdx)}
+
+                                                <textarea 
+                                                    value={ex.coachCue || ''} 
+                                                    onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'coachCue', e.target.value)}
+                                                    placeholder="Nota técnica..."
+                                                    className="w-full bg-black/50 border border-transparent focus:border-white/20 rounded text-[10px] text-gray-400 p-2 outline-none resize-none h-12"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* FOOTER ACTIONS */}
+                <div className="p-5 border-t border-white/10 flex justify-between items-center bg-[#151518] rounded-b-2xl">
+                    {step === 'select' && <button onClick={onClose} className="text-gray-500 text-xs font-bold hover:text-white">CANCELAR</button>}
+                    {step === 'select' && <button onClick={() => { if(targetClient) setStep('mode'); }} disabled={!targetClient} className="px-6 py-3 bg-white text-black font-bold rounded-xl text-xs hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2">CONTINUAR <ArrowRight size={14}/></button>}
+                    
+                    {step === 'mode' && <button onClick={() => setStep('select')} className="text-gray-500 text-xs font-bold hover:text-white flex items-center gap-1"><ChevronLeft size={14}/> VOLVER</button>}
+                    
+                    {step === 'customize' && (
+                        <>
+                            <button onClick={() => setStep('mode')} className="text-gray-500 text-xs font-bold hover:text-white flex items-center gap-1"><ChevronLeft size={14}/> VOLVER</button>
+                            <button onClick={handleConfirmDirect} className="px-6 py-3 bg-red-600 text-white font-bold rounded-xl text-xs hover:bg-red-500 flex items-center gap-2 shadow-lg shadow-red-900/20">CONFIRMAR ASIGNACIÓN <CheckCircle2 size={14}/></button>
+                        </>
+                    )}
                 </div>
             </div>
         </div>
