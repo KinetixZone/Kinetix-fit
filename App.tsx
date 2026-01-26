@@ -7,11 +7,11 @@ import {
   CalendarDays, Trophy, Pencil, Menu, Youtube, Info, UserMinus, UserCog, Circle, CheckCircle,
   MoreVertical, Flame, StopCircle, ClipboardList, Disc, MessageSquare, Send, TrendingUp, Shield, Palette, MapPin,
   Briefcase, BarChart4, AlertOctagon, MessageCircle, Power, UserX, UserCheck, KeyRound, Mail, Minus,
-  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database, Copy, Settings2, FileJson
+  Instagram, Facebook, Linkedin, Phone, Sliders, Calendar, List, Database
 } from 'lucide-react';
-import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod, OverrideSchemaResponse } from './types';
+import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole, TrainingMethod } from './types';
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES, INITIAL_TEMPLATES } from './constants';
-import { getTechnicalAdvice, generateEditionSchema } from './services/geminiService';
+import { getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
 // --- CONFIGURACIÓN DE VERSIÓN ---
@@ -217,357 +217,6 @@ const ConnectionStatus = () => (
 
 // --- COMPONENTES LÓGICOS PRINCIPALES ---
 
-// COMPONENTE REUTILIZABLE PARA INPUTS POR MÉTODO
-const ExerciseConfigInputs = ({ exercise, onChange }: { exercise: WorkoutExercise, onChange: (field: string, value: any, subObject?: string) => void }) => {
-    const method = exercise.method || 'standard';
-
-    // 1. FUERZA (STANDARD)
-    if (method === 'standard') {
-        return (
-            <div className="space-y-2">
-                <div className="grid grid-cols-4 gap-2">
-                     <div><label className="text-[9px] text-gray-500 uppercase font-bold">Kg</label><input type="text" value={exercise.targetLoad || ''} onChange={(e) => onChange('targetLoad', e.target.value)} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1.5 rounded text-center"/></div>
-                     <div><label className="text-[9px] text-gray-500 uppercase font-bold">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
-                     <div><label className="text-[9px] text-gray-500 uppercase font-bold">Sets</label><input type="number" value={exercise.targetSets || ''} onChange={(e) => onChange('targetSets', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
-                     <div><label className="text-[9px] text-gray-500 uppercase font-bold">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => onChange('targetRest', e.target.value)} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1.5 rounded text-center"/></div>
-                </div>
-                <div>
-                     <label className="text-[9px] text-gray-500 uppercase font-bold">Tempo (Opcional)</label>
-                     <input type="text" value={exercise.tempo || ''} onChange={(e) => onChange('tempo', e.target.value)} className="w-full bg-black border border-white/10 text-gray-300 text-xs p-1.5 rounded" placeholder="Ej: 3-1-1-0"/>
-                </div>
-            </div>
-        );
-    }
-
-    // 2. AHAP (As Heavy As Possible)
-    if (method === 'ahap') {
-        return (
-            <div className="bg-red-900/10 p-2 rounded border border-red-500/20 space-y-2">
-                <div className="text-[9px] text-red-400 font-bold uppercase mb-1">Configuración AHAP</div>
-                <div className="grid grid-cols-3 gap-2">
-                    <div><label className="text-[9px] text-gray-500 uppercase">Kg</label><input type="text" value={exercise.targetLoad || ''} onChange={(e) => onChange('targetLoad', e.target.value)} className="w-full bg-black border border-red-500/30 text-red-400 text-xs p-1.5 rounded text-center"/></div>
-                    <div><label className="text-[9px] text-gray-500 uppercase">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
-                    <div><label className="text-[9px] text-gray-500 uppercase">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => onChange('targetRest', e.target.value)} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1.5 rounded text-center"/></div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                     <div><label className="text-[9px] text-gray-500 uppercase">Rounds (Opcional)</label><input type="number" value={exercise.ahapConfig?.rounds || ''} onChange={(e) => onChange('rounds', e.target.value, 'ahapConfig')} className="w-full bg-black border border-white/10 text-white text-xs p-1.5 rounded"/></div>
-                     <div><label className="text-[9px] text-gray-500 uppercase">Reps Objetivo</label><input type="text" value={exercise.ahapConfig?.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value, 'ahapConfig')} className="w-full bg-black border border-white/10 text-white text-xs p-1.5 rounded" placeholder="Meta"/></div>
-                </div>
-            </div>
-        );
-    }
-
-    // 3. BISERIE
-    if (method === 'biserie') {
-        return (
-            <div className="space-y-3">
-                <div className="bg-white/5 p-2 rounded border-l-2 border-blue-500">
-                    <div className="text-[9px] text-gray-400 uppercase mb-1 font-bold">1. {exercise.name}</div>
-                    <div className="grid grid-cols-3 gap-2">
-                         <input type="text" value={exercise.targetLoad || ''} onChange={(e) => onChange('targetLoad', e.target.value)} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="Kg"/>
-                         <input type="text" value={exercise.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center" placeholder="Reps"/>
-                         <input type="number" value={exercise.targetRest || ''} onChange={(e) => onChange('targetRest', e.target.value)} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1 rounded text-center" placeholder="Rest"/>
-                    </div>
-                </div>
-                {exercise.pair ? (
-                    <div className="bg-white/5 p-2 rounded border-l-2 border-red-500">
-                        <div className="text-[9px] text-gray-400 uppercase mb-1 font-bold">2. {exercise.pair.name}</div>
-                        <div className="grid grid-cols-3 gap-2">
-                            <input type="text" value={exercise.pair.targetLoad || ''} onChange={(e) => onChange('targetLoad', e.target.value, 'pair')} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1 rounded text-center" placeholder="Kg"/>
-                            <input type="text" value={exercise.pair.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value, 'pair')} className="w-full bg-black border border-white/20 text-white text-xs p-1 rounded text-center" placeholder="Reps"/>
-                            <input type="number" value={exercise.pair.targetRest || ''} onChange={(e) => onChange('targetRest', e.target.value, 'pair')} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1 rounded text-center" placeholder="Rest"/>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="text-[10px] text-red-500 italic px-2">⚠️ Falta configurar ejercicio par. Agrega notas.</div>
-                )}
-            </div>
-        );
-    }
-
-    // 4. DROPSET
-    if (method === 'dropset') {
-        const dropMode = exercise.dropConfig?.mode || 'PERCENT';
-        return (
-            <div className="bg-purple-900/10 p-2 rounded border border-purple-500/20 space-y-2">
-                <div className="text-[9px] text-purple-400 font-bold uppercase mb-1">Configuración Drop Set</div>
-                <div className="grid grid-cols-2 gap-2">
-                     <div><label className="text-[9px] text-gray-500 uppercase">Carga Inicial</label><input type="text" value={exercise.dropConfig?.initialLoad || exercise.targetLoad || ''} onChange={(e) => onChange('initialLoad', e.target.value, 'dropConfig')} className="w-full bg-black border border-yellow-500/30 text-yellow-500 text-xs p-1.5 rounded text-center"/></div>
-                     <div>
-                        <label className="text-[9px] text-gray-500 uppercase">Modo Drop</label>
-                        <div className="flex bg-black rounded border border-white/10 p-0.5">
-                            <button onClick={() => onChange('mode', 'PERCENT', 'dropConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${dropMode === 'PERCENT' ? 'bg-purple-600 text-white' : 'text-gray-500'}`}>%</button>
-                            <button onClick={() => onChange('mode', 'KG', 'dropConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${dropMode === 'KG' ? 'bg-purple-600 text-white' : 'text-gray-500'}`}>KG</button>
-                        </div>
-                     </div>
-                </div>
-                <div>
-                     <label className="text-[9px] text-gray-500 uppercase">Valor del Drop ({dropMode === 'PERCENT' ? '%' : 'Kg'})</label>
-                     <input type="number" value={exercise.dropConfig?.value || ''} onChange={(e) => onChange('value', e.target.value, 'dropConfig')} className="w-full bg-black border border-purple-500/30 text-purple-300 text-xs p-1.5 rounded" placeholder={dropMode === 'PERCENT' ? "Ej: 20" : "Ej: 5"}/>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                     <div><label className="text-[9px] text-gray-500 uppercase">Reps</label><input type="text" value={exercise.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value)} className="w-full bg-black border border-white/20 text-white text-xs p-1.5 rounded text-center"/></div>
-                     <div><label className="text-[9px] text-gray-500 uppercase">Rest(s)</label><input type="number" value={exercise.targetRest || ''} onChange={(e) => onChange('targetRest', e.target.value)} className="w-full bg-black border border-blue-500/30 text-blue-400 text-xs p-1.5 rounded text-center"/></div>
-                </div>
-            </div>
-        );
-    }
-
-    // 5. TABATA
-    if (method === 'tabata') {
-         return (
-            <div className="bg-indigo-900/10 p-2 rounded border border-indigo-500/20 mb-2 space-y-2">
-                <div className="text-[9px] text-indigo-400 font-bold uppercase">Protocolo Tabata</div>
-                <div className="grid grid-cols-3 gap-2">
-                     <div><label className="text-[9px] text-gray-500">Trabajo (s)</label><input type="number" value={exercise.tabataConfig?.workTimeSec || 20} onChange={(e) => onChange('workTimeSec', e.target.value, 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
-                     <div><label className="text-[9px] text-gray-500">Descanso (s)</label><input type="number" value={exercise.tabataConfig?.restTimeSec || 10} onChange={(e) => onChange('restTimeSec', e.target.value, 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
-                     <div><label className="text-[9px] text-gray-500">Rounds</label><input type="number" value={exercise.tabataConfig?.rounds || 8} onChange={(e) => onChange('rounds', e.target.value, 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-2">
-                     <div><label className="text-[9px] text-gray-500">Sets</label><input type="number" value={exercise.tabataConfig?.sets || 1} onChange={(e) => onChange('sets', e.target.value, 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
-                     <div><label className="text-[9px] text-gray-500">Rest/Set (s)</label><input type="number" value={exercise.tabataConfig?.restBetweenSetsSec || 60} onChange={(e) => onChange('restBetweenSetsSec', e.target.value, 'tabataConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
-                </div>
-            </div>
-        );
-    }
-
-    // 6. EMOM
-    if (method === 'emom') {
-        const emomMode = exercise.emomConfig?.mode || 'REPS';
-        return (
-             <div className="bg-orange-900/10 p-2 rounded border border-orange-500/20 mb-2 space-y-2">
-                <div className="text-[9px] text-orange-400 font-bold uppercase">Protocolo EMOM</div>
-                <div className="flex bg-black rounded border border-white/10 p-0.5 mb-2">
-                    <button onClick={() => onChange('mode', 'REPS', 'emomConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${emomMode === 'REPS' ? 'bg-orange-600 text-white' : 'text-gray-500'}`}>Reps</button>
-                    <button onClick={() => onChange('mode', 'TIME', 'emomConfig')} className={`flex-1 text-[9px] rounded py-0.5 ${emomMode === 'TIME' ? 'bg-orange-600 text-white' : 'text-gray-500'}`}>Tiempo</button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                     <div>
-                         <label className="text-[9px] text-gray-500">{emomMode === 'REPS' ? 'Reps/Min' : 'Seg/Min'}</label>
-                         {emomMode === 'REPS' 
-                            ? <input type="text" value={exercise.targetReps || ''} onChange={(e) => onChange('targetReps', e.target.value)} className="w-full bg-black text-white text-xs p-1.5 rounded"/>
-                            : <input type="number" value={exercise.emomConfig?.simpleConfig?.durationSec || ''} onChange={(e) => onChange('durationSec', e.target.value, 'emomConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/>
-                         }
-                     </div>
-                     <div><label className="text-[9px] text-gray-500">Minutos Totales</label><input type="number" value={exercise.emomConfig?.durationMin || 10} onChange={(e) => onChange('durationMin', e.target.value, 'emomConfig')} className="w-full bg-black text-white text-xs p-1.5 rounded"/></div>
-                </div>
-            </div>
-        );
-    }
-    return null;
-};
-
-/**
- * Módulo de Asignación Avanzada (AssignmentWizard)
- * Permite seleccionar atleta y personalizar (hacer overrides) sobre la plantilla
- * sin modificar la plantilla original.
- */
-const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, onClose: () => void, onConfirm: (finalPlan: Plan, userId: string) => void }) => {
-    // ESTADOS DEL WIZARD: 'select' -> 'mode' -> 'customize' (opcional)
-    const [step, setStep] = useState<'select' | 'mode' | 'customize'>('select');
-    const [targetClient, setTargetClient] = useState<string>('');
-    const [customizedPlan, setCustomizedPlan] = useState<Plan | null>(null);
-    const [generatedSchema, setGeneratedSchema] = useState<OverrideSchemaResponse | null>(null);
-    const [loadingSchema, setLoadingSchema] = useState(false);
-    const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
-    
-    // Al montar, clonamos la plantilla para no afectar la original (Principio de Inmutabilidad)
-    useEffect(() => {
-        if (template) {
-            const clone = JSON.parse(JSON.stringify(template));
-            clone.id = generateUUID(); // Nuevo ID para la asignación
-            setCustomizedPlan(clone);
-        }
-    }, [template]);
-
-    const getClientName = () => clients.find(c => c.id === targetClient)?.name || 'Atleta';
-    const getClientObj = () => clients.find(c => c.id === targetClient);
-
-    const handleConfirmDirect = () => {
-        if (!targetClient || !customizedPlan) return;
-        onConfirm(customizedPlan, targetClient);
-    };
-
-    const handleGenerateSchema = async () => {
-        const athlete = getClientObj();
-        if (!athlete || !customizedPlan) return;
-        
-        setLoadingSchema(true);
-        try {
-            const schema = await generateEditionSchema(customizedPlan, athlete);
-            setGeneratedSchema(schema);
-        } catch (e) {
-            console.error("Error generando schema", e);
-        } finally {
-            setLoadingSchema(false);
-        }
-    };
-
-    // --- LOGICA DE PERSONALIZACIÓN (OVERRIDES) ---
-    // FIX: Usar Deep Clone (JSON) para asegurar inmutabilidad y re-render en objetos anidados
-    const updateExerciseOverride = (wIdx: number, eIdx: number, field: string, value: any, subObject?: string) => {
-        if (!customizedPlan) return;
-        
-        // Clonación profunda para evitar referencias compartidas y asegurar que React detecte el cambio
-        const newPlan = JSON.parse(JSON.stringify(customizedPlan));
-        const exercise = newPlan.workouts[wIdx].exercises[eIdx];
-
-        if (subObject) {
-            // Manejo de objetos anidados (tabataConfig, ahapConfig, etc)
-            if (!exercise[subObject]) exercise[subObject] = {};
-            exercise[subObject][field] = value;
-        } else {
-            // Campo directo
-            exercise[field] = value;
-        }
-        setCustomizedPlan(newPlan);
-    };
-
-    const updateExerciseMethod = (wIdx: number, eIdx: number, method: TrainingMethod) => {
-        if (!customizedPlan) return;
-        // Clonación profunda
-        const newPlan = JSON.parse(JSON.stringify(customizedPlan));
-        const ex = newPlan.workouts[wIdx].exercises[eIdx];
-        ex.method = method;
-        setCustomizedPlan(newPlan);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4 backdrop-blur-md">
-            <div className="bg-[#1A1A1D] w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-                
-                {/* HEADER */}
-                <div className="flex justify-between items-center border-b border-white/10 p-5">
-                    <div>
-                        <h3 className="text-xl font-bold text-white uppercase italic">Asignar Rutina</h3>
-                        <p className="text-xs text-gray-500">Plantilla: <span className="text-red-500">{template.title}</span></p>
-                    </div>
-                    <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-white"/></button>
-                </div>
-                
-                {/* BODY CONTENT BASED ON STEP */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    
-                    {step === 'select' && (
-                        <div className="space-y-4 animate-fade-in">
-                            <label className="text-xs font-bold text-gray-500 uppercase block">1. Seleccionar Atleta</label>
-                            <select className="w-full bg-black border border-white/10 rounded-xl p-4 text-white outline-none focus:border-red-500 text-sm" value={targetClient} onChange={(e) => setTargetClient(e.target.value)}>
-                                <option value="">-- Seleccionar --</option>
-                                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                        </div>
-                    )}
-
-                    {step === 'mode' && (
-                         <div className="space-y-6 animate-fade-in text-center py-4">
-                            <div className="w-16 h-16 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/50"><Settings2 size={32}/></div>
-                            <h4 className="text-lg font-bold text-white">¿Deseas personalizar esta rutina para <span className="text-blue-400">{getClientName()}</span>?</h4>
-                            <p className="text-sm text-gray-400 px-8">Puedes asignar la plantilla tal cual o ajustar cargas, reps y tiempos específicos para este atleta sin modificar la original.</p>
-                            
-                            <div className="grid grid-cols-2 gap-4 mt-8">
-                                <button onClick={handleConfirmDirect} className="p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/30 transition-all group">
-                                    <Copy size={24} className="text-gray-500 mb-2 group-hover:text-white mx-auto"/>
-                                    <div className="font-bold text-white text-sm">Asignar Tal Cual</div>
-                                    <div className="text-[10px] text-gray-500 mt-1">Copia exacta de la plantilla</div>
-                                </button>
-                                <button onClick={() => setStep('customize')} className="p-4 bg-red-600/10 border border-red-600/30 rounded-xl hover:bg-red-600/20 hover:border-red-500 transition-all group relative overflow-hidden">
-                                    <div className="absolute top-2 right-2 text-[9px] bg-red-600 text-white px-2 rounded-full font-bold">RECOMENDADO</div>
-                                    <Edit3 size={24} className="text-red-500 mb-2 group-hover:text-white mx-auto"/>
-                                    <div className="font-bold text-white text-sm">Personalizar</div>
-                                    <div className="text-[10px] text-red-400 mt-1">Ajustar cargas y tiempos</div>
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {step === 'customize' && customizedPlan && (
-                        <div className="space-y-8 animate-fade-in">
-                            <div className="flex items-center justify-between mb-4 bg-blue-900/20 p-3 rounded-xl border border-blue-500/20">
-                                <div className="flex items-center gap-2">
-                                    <Info size={16} className="text-blue-400"/>
-                                    <p className="text-xs text-blue-200">Estás editando la copia para <strong>{getClientName()}</strong>.</p>
-                                </div>
-                                <button 
-                                    onClick={handleGenerateSchema} 
-                                    disabled={loadingSchema}
-                                    className="px-3 py-1 bg-blue-600/20 border border-blue-500/50 rounded-lg text-[10px] font-bold text-blue-300 hover:bg-blue-600/40 flex items-center gap-2 disabled:opacity-50"
-                                >
-                                    {loadingSchema ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                                    IA ANALYZE (Fase 1)
-                                </button>
-                            </div>
-                            
-                            {generatedSchema && (
-                                <div className="mb-4 bg-green-900/20 border border-green-500/20 p-3 rounded-xl">
-                                    <div className="flex items-center gap-2 mb-2 text-green-400 font-bold text-xs"><FileJson size={14}/> Schema Generado (Ready for Phase 2)</div>
-                                    <pre className="text-[9px] text-green-300 overflow-x-auto p-2 bg-black/50 rounded max-h-32">
-                                        {JSON.stringify(generatedSchema, null, 2)}
-                                    </pre>
-                                </div>
-                            )}
-
-                            {customizedPlan.workouts.map((workout, wIdx) => (
-                                <div key={workout.id} className="space-y-3">
-                                    <h5 className="text-sm font-bold text-white border-b border-white/10 pb-1">{workout.name}</h5>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {workout.exercises.map((ex, eIdx) => (
-                                            <div key={eIdx} className="bg-white/5 p-3 rounded-xl border border-white/5 relative group hover:border-white/20 transition-colors">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="text-xs font-bold text-gray-300 truncate pr-2">{ex.name}</span>
-                                                    <select 
-                                                        value={ex.method || 'standard'} 
-                                                        onChange={(e) => updateExerciseMethod(wIdx, eIdx, e.target.value as TrainingMethod)}
-                                                        className="text-[9px] bg-black border border-white/10 rounded px-1 py-0.5 text-gray-400 uppercase font-bold tracking-wider outline-none focus:border-red-500"
-                                                    >
-                                                        <option value="standard">Standard</option>
-                                                        <option value="ahap">AHAP</option>
-                                                        <option value="biserie">Biserie</option>
-                                                        <option value="dropset">Drop Set</option>
-                                                        <option value="tabata">Tabata</option>
-                                                        <option value="emom">EMOM</option>
-                                                    </select>
-                                                </div>
-                                                
-                                                {/* DYNAMIC INPUTS BASED ON METHOD */}
-                                                <ExerciseConfigInputs 
-                                                    exercise={ex} 
-                                                    onChange={(f, v, s) => updateExerciseOverride(wIdx, eIdx, f, v, s)} 
-                                                />
-
-                                                <textarea 
-                                                    value={ex.coachCue || ''} 
-                                                    onChange={(e) => updateExerciseOverride(wIdx, eIdx, 'coachCue', e.target.value)}
-                                                    placeholder="Nota técnica..."
-                                                    className="w-full bg-black/50 border border-transparent focus:border-white/20 rounded text-[10px] text-gray-400 p-2 outline-none resize-none h-12 mt-2"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* FOOTER ACTIONS */}
-                <div className="p-5 border-t border-white/10 flex justify-between items-center bg-[#151518] rounded-b-2xl">
-                    {step === 'select' && <button onClick={onClose} className="text-gray-500 text-xs font-bold hover:text-white">CANCELAR</button>}
-                    {step === 'select' && <button onClick={() => { if(targetClient) setStep('mode'); }} disabled={!targetClient} className="px-6 py-3 bg-white text-black font-bold rounded-xl text-xs hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2">CONTINUAR <ArrowRight size={14}/></button>}
-                    
-                    {step === 'mode' && <button onClick={() => setStep('select')} className="text-gray-500 text-xs font-bold hover:text-white flex items-center gap-1"><ChevronLeft size={14}/> VOLVER</button>}
-                    
-                    {step === 'customize' && (
-                        <>
-                            <button onClick={() => setStep('mode')} className="text-gray-500 text-xs font-bold hover:text-white flex items-center gap-1"><ChevronLeft size={14}/> VOLVER</button>
-                            <button onClick={handleConfirmDirect} className="px-6 py-3 bg-red-600 text-white font-bold rounded-xl text-xs hover:bg-red-500 flex items-center gap-2 shadow-lg shadow-red-900/20">CONFIRMAR ASIGNACIÓN <CheckCircle2 size={14}/></button>
-                        </>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
 const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p: Plan) => void, onCancel: () => void }) => {
     const [editedPlan, setEditedPlan] = useState<Plan>(plan);
     const [showExerciseSelector, setShowExerciseSelector] = useState(false);
@@ -584,32 +233,17 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     };
 
     const handleAddExercise = (ex: Exercise) => {
-        const newEx: WorkoutExercise = { 
-            exerciseId: ex.id, 
-            name: ex.name, 
-            targetSets: 4, 
-            targetReps: '10', 
-            targetRest: 60, 
-            coachCue: '', 
-            method: 'standard', // Por defecto standard
-            videoUrl: ex.videoUrl 
-        };
+        const newEx: WorkoutExercise = { exerciseId: ex.id, name: ex.name, targetSets: 4, targetReps: '10', targetLoad: '', targetRest: 60, coachCue: '', videoUrl: ex.videoUrl };
         const newWorkouts = [...editedPlan.workouts];
         newWorkouts[currentWorkoutIndex].exercises.push(newEx);
         setEditedPlan({...editedPlan, workouts: newWorkouts});
         setShowExerciseSelector(false);
     };
 
-    const updateExercise = (wIdx: number, eIdx: number, field: string, value: any, subObject?: string) => {
+    const updateExercise = (wIdx: number, eIdx: number, field: string, value: any) => {
         const newWorkouts = [...editedPlan.workouts];
-        const exercise = newWorkouts[wIdx].exercises[eIdx] as any;
-        
-        if (subObject) {
-            if (!exercise[subObject]) exercise[subObject] = {};
-            exercise[subObject][field] = value;
-        } else {
-            exercise[field] = value;
-        }
+        const ex = newWorkouts[wIdx].exercises[eIdx] as any;
+        ex[field] = value;
         setEditedPlan({...editedPlan, workouts: newWorkouts});
     };
 
@@ -648,25 +282,13 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                     <span className="font-bold text-white">{ex.name}</span>
                                     <button onClick={() => removeExercise(currentWorkoutIndex, idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={16}/></button>
                                 </div>
-
-                                <div className="mb-3">
-                                    <label className="text-[10px] text-gray-500 uppercase font-bold">Modo de Entrenamiento</label>
-                                    <select value={ex.method || 'standard'} onChange={(e) => updateExercise(currentWorkoutIndex, idx, 'method', e.target.value as TrainingMethod)} className="w-full bg-black border border-white/10 rounded p-2 text-xs text-blue-400 outline-none mt-1 uppercase font-bold">
-                                        <option value="standard">Standard</option>
-                                        <option value="biserie">Biserie</option>
-                                        <option value="ahap">AHAP (As Heavy As Possible)</option>
-                                        <option value="dropset">Drop Set</option>
-                                        <option value="tabata">Tabata</option>
-                                        <option value="emom">EMOM</option>
-                                    </select>
+                                <div className="grid grid-cols-4 gap-2 mb-2">
+                                    <div className="bg-black border border-white/10 rounded p-2 text-center"><label className="text-[10px] text-gray-500 block">SETS</label><input type="number" value={ex.targetSets} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetSets', e.target.value)} className="bg-transparent text-white text-xs w-full text-center outline-none"/></div>
+                                    <div className="bg-black border border-white/10 rounded p-2 text-center"><label className="text-[10px] text-gray-500 block">REPS</label><input type="text" value={ex.targetReps} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetReps', e.target.value)} className="bg-transparent text-white text-xs w-full text-center outline-none"/></div>
+                                    <div className="bg-black border border-white/10 rounded p-2 text-center"><label className="text-[10px] text-gray-500 block">CARGA</label><input type="text" value={ex.targetLoad || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetLoad', e.target.value)} className="bg-transparent text-white text-xs w-full text-center outline-none" placeholder="Kg"/></div>
+                                    <div className="bg-black border border-white/10 rounded p-2 text-center"><label className="text-[10px] text-gray-500 block">REST</label><input type="number" value={ex.targetRest || 60} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetRest', e.target.value)} className="bg-transparent text-white text-xs w-full text-center outline-none" placeholder="Sec"/></div>
                                 </div>
-                                
-                                <ExerciseConfigInputs 
-                                    exercise={ex} 
-                                    onChange={(f, v, s) => updateExercise(currentWorkoutIndex, idx, f, v, s)} 
-                                />
-
-                                <input placeholder="Notas técnicas..." value={ex.coachCue || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'coachCue', e.target.value)} className="w-full bg-black border border-white/10 rounded p-2 text-xs text-gray-300 outline-none mt-2"/>
+                                <input placeholder="Notas técnicas..." value={ex.coachCue || ''} onChange={e => updateExercise(currentWorkoutIndex, idx, 'coachCue', e.target.value)} className="w-full bg-black border border-white/10 rounded p-2 text-xs text-gray-300 outline-none"/>
                             </div>
                         ))}
                         <button onClick={() => setShowExerciseSelector(true)} className="w-full py-3 border border-dashed border-white/20 rounded-xl text-gray-500 font-bold text-xs hover:text-white flex items-center justify-center gap-2"><Plus size={16}/> AÑADIR EJERCICIO</button>
@@ -926,14 +548,13 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
     const client = DataEngine.getUserById(clientId);
     const plan = DataEngine.getPlan(clientId);
     const history = DataEngine.getClientHistory(clientId);
-    const [showWizard, setShowWizard] = useState(false);
-    const [selectedTemplate, setSelectedTemplate] = useState<Plan | null>(null);
+    const [showRoutineSelector, setShowRoutineSelector] = useState(false);
 
-    const handleAssign = (finalPlan: Plan, targetId: string) => {
-        finalPlan.userId = targetId;
-        DataEngine.savePlan(finalPlan);
-        setShowWizard(false);
-        setRefresh(prev => prev + 1); // Force Update
+    const handleAssign = (tpl: Plan) => {
+        const newPlan = { ...tpl, id: generateUUID(), userId: clientId, updatedAt: new Date().toISOString() };
+        DataEngine.savePlan(newPlan);
+        setShowRoutineSelector(false);
+        setRefresh(prev => prev + 1);
     };
 
     if (!client) return <div>Cliente no encontrado</div>;
@@ -943,7 +564,7 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
             <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-white text-xs font-bold uppercase"><ChevronLeft size={16}/> Volver a lista</button>
             <div className="flex justify-between items-start bg-[#151518] p-6 rounded-2xl border border-white/5">
                 <div><h2 className="text-2xl font-bold text-white uppercase italic">{client.name}</h2><p className="text-sm text-gray-500">{client.email}</p><div className="flex gap-2 mt-4"><div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">OBJETIVO:</span> <span className="font-bold text-white">{client.goal}</span></div><div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">NIVEL:</span> <span className="font-bold text-white">{client.level}</span></div></div></div>
-                <button onClick={() => setShowWizard(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase flex items-center gap-2 shadow-lg shadow-blue-900/20"><CalendarDays size={16}/> Asignar Rutina</button>
+                <button onClick={() => setShowRoutineSelector(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase flex items-center gap-2 shadow-lg shadow-blue-900/20"><CalendarDays size={16}/> Asignar Rutina</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
@@ -955,13 +576,12 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                     {history.length > 0 ? (<div className="space-y-2">{history.slice(0, 5).map((h: any, i: number) => (<div key={i} className="bg-[#151518] p-3 rounded-lg border border-white/5 flex justify-between items-center"><div><div className="text-xs font-bold text-white">{h.workoutName}</div><div className="text-[10px] text-gray-500">{formatDate(h.date)}</div></div><div className="text-right"><div className="text-[10px] text-gray-400">{h.summary.durationMinutes} min</div><div className="text-[10px] text-gray-400">{h.summary.totalVolume} kg</div></div></div>))}</div>) : <p className="text-gray-500 text-xs italic">No hay historial registrado.</p>}
                 </div>
             </div>
-            {showWizard && (
+            {showRoutineSelector && (
                 <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
                     <div className="bg-[#1A1A1D] w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/10 overflow-hidden flex flex-col">
-                         <div className="p-4 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Seleccionar Plantilla</h3><button onClick={() => setShowWizard(false)}><X size={20}/></button></div>
-                         <div className="flex-1 overflow-y-auto p-4"><RoutinesView onAssign={(tpl) => setSelectedTemplate(tpl)}/></div>
+                         <div className="p-4 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Seleccionar Plantilla</h3><button onClick={() => setShowRoutineSelector(false)}><X size={20}/></button></div>
+                         <div className="flex-1 overflow-y-auto p-4"><RoutinesView onAssign={handleAssign}/></div>
                     </div>
-                    {selectedTemplate && <AssignmentWizard template={selectedTemplate} onClose={() => setSelectedTemplate(null)} onConfirm={(p, uid) => { handleAssign(p, clientId); setSelectedTemplate(null); setShowWizard(false); }} />}
                 </div>
             )}
         </div>
