@@ -293,7 +293,6 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     const handleConfirm = () => {
         if (!targetClient || !customizedPlan) return;
         const finalPlan = generateScheduledWorkouts(customizedPlan);
-        // Si no se generaron fechas (por error o legacy), usamos el plan base
         const planToSave = (finalPlan.workouts.length > 0) ? finalPlan : customizedPlan;
         onConfirm(planToSave, targetClient);
     };
@@ -648,6 +647,24 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: strin
     const nextWorkout = plan?.workouts.filter(w => w.scheduledDate && w.scheduledDate >= today).sort((a,b) => a.scheduledDate!.localeCompare(b.scheduledDate!))[0];
     const displayPlan = hasScheduledWorkouts ? (todaysWorkout ? { ...plan, workouts: [todaysWorkout] } : (nextWorkout ? { ...plan, workouts: [nextWorkout] } : null)) : plan;
 
+    if (user.role === 'coach' || user.role === 'admin') {
+        const allUsers = DataEngine.getUsers();
+        const clients = allUsers.filter(u => u.role === 'client');
+        const activePlans = clients.filter(c => DataEngine.getPlan(c.id)).length;
+        const exercises = DataEngine.getExercises();
+        return (
+            <div className="space-y-8 animate-fade-in pb-20">
+                <div className="flex justify-between items-center"><div><h2 className="text-4xl font-display font-black italic text-white uppercase tracking-tighter">COMMAND CENTER</h2><p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Gestión de Alto Rendimiento</p></div></div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><StatCard label="Atletas" value={clients.length} icon={<Users className="text-blue-500" size={16} />} /><StatCard label="Protocolos" value={activePlans} icon={<Activity className="text-green-500" size={16} />} /><StatCard label="Librería" value={exercises.length} icon={<Dumbbell className="text-orange-500" size={16} />} /><StatCard label="Status" value="OK" icon={<Shield className="text-red-500" size={16} />} /></div>
+                <div className="bg-[#0F0F11] border border-white/5 p-6 rounded-[2.5rem] shadow-xl"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white uppercase font-display italic">Acciones Rápidas</h3></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <button onClick={() => onNavigate('clients')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-red-500/30 transition-all text-left group"><div className="bg-red-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-red-500 mb-4 group-hover:scale-110 transition-transform"><UserPlus size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Gestionar Atletas</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Ver lista, crear planes, asignar rutinas.</p></button>
+                         <button onClick={() => onNavigate('workouts')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-blue-500/30 transition-all text-left group"><div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform"><Dumbbell size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Biblioteca</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Gestionar ejercicios y videos tutoriales.</p></button>
+                         {user.role === 'admin' && (<button onClick={() => onNavigate('admin')} className="p-5 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 hover:border-yellow-500/30 transition-all text-left group"><div className="bg-yellow-500/10 w-12 h-12 rounded-xl flex items-center justify-center text-yellow-500 mb-4 group-hover:scale-110 transition-transform"><Briefcase size={24}/></div><h4 className="font-bold text-white uppercase text-sm">Ajustes Admin</h4><p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">Configuración total del sistema.</p></button>)}
+                    </div></div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-8">
             <div className="flex justify-between items-end">
@@ -657,7 +674,6 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: strin
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard label="Racha Actual" value={`${user.streak} Días`} icon={<Flame size={16} className="text-orange-500"/>} />
                 <StatCard label="Nivel" value={user.level} icon={<Trophy size={16} className="text-yellow-500"/>} />
-                {user.role === 'coach' && <StatCard label="Atletas Activos" value={clients.length} icon={<Users size={16} className="text-blue-500"/>} />}
                 <StatCard label="Estado" value="ACTIVO" icon={<Activity size={16} className="text-green-500"/>} />
             </div>
             {user.role === 'client' && (
@@ -672,12 +688,57 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: strin
 const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
     const clients = DataEngine.getUsers().filter(u => u.role === 'client');
     const [search, setSearch] = useState('');
-    const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+    const [showAdd, setShowAdd] = useState(false);
+    
+    // Refresh hack
+    const [refresh, setRefresh] = useState(0);
+    const filtered = DataEngine.getUsers().filter(u => u.role === 'client' && u.name.toLowerCase().includes(search.toLowerCase()));
+
+    const handleAdd = (e: React.FormEvent) => {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        const formData = new FormData(form);
+        const newUser: User = {
+            id: generateUUID(),
+            name: formData.get('name') as string,
+            email: formData.get('email') as string,
+            goal: Goal.LOSE_FAT,
+            level: UserLevel.BEGINNER,
+            role: 'client',
+            daysPerWeek: 3,
+            equipment: [],
+            streak: 0,
+            createdAt: new Date().toISOString(),
+            isActive: true
+        };
+        DataEngine.saveUser(newUser);
+        setRefresh(prev => prev + 1);
+        setShowAdd(false);
+    };
 
     return (
         <div className="space-y-6">
-             <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-white uppercase italic">Atletas ({filtered.length})</h3><div className="bg-white/5 border border-white/10 rounded-xl flex items-center px-3 py-2 w-64"><Search size={16} className="text-gray-500 mr-2"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-transparent border-none outline-none text-xs text-white w-full"/></div></div>
+             <div className="flex justify-between items-center">
+                 <h3 className="text-xl font-bold text-white uppercase italic">Atletas ({filtered.length})</h3>
+                 <div className="flex gap-2">
+                     <div className="bg-white/5 border border-white/10 rounded-xl flex items-center px-3 py-2 w-48 md:w-64"><Search size={16} className="text-gray-500 mr-2"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-transparent border-none outline-none text-xs text-white w-full"/></div>
+                     <button onClick={() => setShowAdd(true)} className="bg-white text-black px-4 py-2 rounded-xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-200"><UserPlus size={16}/> <span className="hidden md:inline">Nuevo</span></button>
+                 </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{filtered.map(client => (<div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#151518] p-4 rounded-xl border border-white/5 hover:border-white/20 cursor-pointer transition-all group"><div className="flex justify-between items-start mb-4"><div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-900/20">{client.name.charAt(0)}</div>{client.isActive ? <div className="px-2 py-1 bg-green-500/10 text-green-500 rounded text-[9px] font-bold uppercase border border-green-500/20">Activo</div> : <div className="px-2 py-1 bg-red-500/10 text-red-500 rounded text-[9px] font-bold uppercase border border-red-500/20">Inactivo</div>}</div><h4 className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">{client.name}</h4><p className="text-xs text-gray-500">{client.email}</p><div className="mt-4 flex gap-2"><span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.goal}</span><span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.level}</span></div></div>))}</div>
+            {showAdd && (
+                <div className="fixed inset-0 bg-black/80 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <form onSubmit={handleAdd} className="bg-[#1A1A1D] w-full max-w-sm rounded-2xl p-6 border border-white/10 shadow-2xl space-y-4">
+                        <h3 className="text-lg font-bold text-white uppercase">Registrar Atleta</h3>
+                        <input name="name" required placeholder="Nombre Completo" className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-white/30 outline-none" />
+                        <input name="email" type="email" required placeholder="Correo Electrónico" className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-white/30 outline-none" />
+                        <div className="flex gap-3 pt-2">
+                            <button type="button" onClick={() => setShowAdd(false)} className="flex-1 py-3 bg-white/5 text-gray-400 rounded-xl font-bold text-xs uppercase">Cancelar</button>
+                            <button type="submit" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-red-500">Guardar</button>
+                        </div>
+                    </form>
+                </div>
+            )}
         </div>
     );
 };
@@ -934,7 +995,7 @@ const App = () => {
                 <nav className="flex-1 space-y-2 mt-10">
                     {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Dashboard" />}
                     {user.role === 'client' && <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20} />} label="Inicio" />}
-                    {user.role === 'coach' && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Gestión Atletas" />}
+                    {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'clients' || view === 'client-detail'} onClick={() => setView('clients')} icon={<Users size={20} />} label="Gestión Atletas" />}
                     {(user.role === 'coach' || user.role === 'admin') && <NavButton active={view === 'workouts'} onClick={() => setView('workouts')} icon={<Dumbbell size={20} />} label="Biblioteca" />}
                     {user.role === 'admin' && <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={<Shield size={20} />} label="Admin Console" />}
                     <NavButton active={view === 'profile'} onClick={() => setView('profile')} icon={<UserIcon size={20} />} label="Mi Perfil" />
