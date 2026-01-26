@@ -25,51 +25,9 @@ const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-const RESCUE_WORKOUT: WorkoutExercise[] = [
-    { exerciseId: 'res1', name: 'Burpees', targetSets: 4, targetReps: '15', targetRest: 60, coachCue: 'Mantén ritmo constante.', method: 'standard' },
-    { exerciseId: 'res2', name: 'Sentadillas Air', targetSets: 4, targetReps: '20', targetRest: 60, coachCue: 'Rompe paralelo.', method: 'standard' },
-    { exerciseId: 'res3', name: 'Push Ups', targetSets: 4, targetReps: 'Max', targetRest: 60, coachCue: 'Pecho al suelo.', method: 'standard' },
-    { exerciseId: 'res4', name: 'Plancha Abdominal', targetSets: 4, targetReps: '45s', targetRest: 60, coachCue: 'Aprieta abdomen.', method: 'standard' },
-];
-
 const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 };
-
-// --- UTILIDAD VIDEO (MEJORADA PARA SOPORTE TOTAL) ---
-const getYoutubeId = (url: string | undefined) => {
-    if (!url) return null;
-    let id = '';
-    try {
-        const urlObj = new URL(url);
-        if (urlObj.hostname.includes('youtube.com')) {
-            if (urlObj.pathname.startsWith('/shorts/')) {
-                id = urlObj.pathname.split('/shorts/')[1];
-            } else if (urlObj.searchParams.has('v')) {
-                id = urlObj.searchParams.get('v') || '';
-            }
-        } else if (urlObj.hostname.includes('youtu.be')) {
-            id = urlObj.pathname.slice(1);
-        }
-        if (id.includes('?')) id = id.split('?')[0];
-        if (id.includes('&')) id = id.split('&')[0];
-    } catch (e) {
-        if (url.includes('shorts/')) id = url.split('shorts/')[1].split('?')[0];
-        else if (url.includes('youtu.be/')) id = url.split('youtu.be/')[1].split('?')[0];
-        else if (url.includes('watch?v=')) id = url.split('watch?v=')[1].split('&')[0];
-    }
-    return id;
-};
-
-const getEmbedUrl = (url: string | undefined) => {
-    const id = getYoutubeId(url);
-    return id ? `https://www.youtube.com/embed/${id}?autoplay=1&rel=0` : null;
-};
-
-const getThumbnailUrl = (url: string | undefined) => {
-    const id = getYoutubeId(url);
-    return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
-}
 
 // --- MOTOR DE DATOS ---
 const DataEngine = {
@@ -267,7 +225,7 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     
     // Configuración de Calendario
     const [scheduleType, setScheduleType] = useState<'weekly' | 'specific' | 'range'>('weekly');
-    const [selectedDays, setSelectedDays] = useState<number[]>([]); // 1=Mon, 2=Tue...
+    const [selectedDays, setSelectedDays] = useState<number[]>([]); 
     const [durationWeeks, setDurationWeeks] = useState(4);
     const [specificDates, setSpecificDates] = useState<string[]>([]);
     
@@ -335,11 +293,9 @@ const AssignmentWizard = ({ template, onClose, onConfirm }: { template: Plan, on
     const handleConfirm = () => {
         if (!targetClient || !customizedPlan) return;
         const finalPlan = generateScheduledWorkouts(customizedPlan);
-        if (finalPlan.workouts.length === 0 && customizedPlan.workouts.length > 0) {
-             onConfirm(customizedPlan, targetClient);
-        } else {
-             onConfirm(finalPlan, targetClient);
-        }
+        // Si no se generaron fechas (por error o legacy), usamos el plan base
+        const planToSave = (finalPlan.workouts.length > 0) ? finalPlan : customizedPlan;
+        onConfirm(planToSave, targetClient);
     };
 
     const toggleDay = (d: number) => {
@@ -448,7 +404,7 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     const [editedPlan, setEditedPlan] = useState<Plan>(plan);
     const [showExerciseSelector, setShowExerciseSelector] = useState(false);
     const [currentWorkoutIndex, setCurrentWorkoutIndex] = useState(0);
-    const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null); // Index of exercise being configured
+    const [configMethodIdx, setConfigMethodIdx] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const exercises = DataEngine.getExercises();
 
@@ -471,8 +427,6 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
     const updateExercise = (wIdx: number, eIdx: number, field: keyof WorkoutExercise, value: any) => {
         const newWorkouts = [...editedPlan.workouts];
         const ex = newWorkouts[wIdx].exercises[eIdx];
-        
-        // Handle method switch defaults
         if (field === 'method') {
             if (value === 'tabata' && !ex.tabataConfig) {
                 ex.tabataConfig = { workTimeSec: 20, restTimeSec: 10, rounds: 8, sets: 1, restBetweenSetsSec: 60, structure: 'simple', exercises: [{id: ex.exerciseId, name: ex.name}] };
@@ -480,7 +434,6 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                 ex.emomConfig = { durationMin: 10, type: 'simple', simpleConfig: { exercise: ex.name, reps: '10' } };
             }
         }
-        
         (ex as any)[field] = value;
         setEditedPlan({...editedPlan, workouts: newWorkouts});
     };
@@ -514,33 +467,21 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                 {editedPlan.workouts[currentWorkoutIndex] && (
                     <div className="space-y-4">
                         <input value={editedPlan.workouts[currentWorkoutIndex].name} onChange={e => {const nw = [...editedPlan.workouts]; nw[currentWorkoutIndex].name = e.target.value; setEditedPlan({...editedPlan, workouts: nw})}} className="bg-transparent text-lg font-bold text-red-500 outline-none w-full border-b border-white/10 pb-1 mb-2" />
-                        
                         {editedPlan.workouts[currentWorkoutIndex].exercises.map((ex, idx) => (
                             <div key={idx} className="bg-[#151518] p-4 rounded-xl border border-white/5 relative">
                                 <div className="flex justify-between items-start mb-3">
                                     <span className="font-bold text-white">{ex.name}</span>
                                     <button onClick={() => removeExercise(currentWorkoutIndex, idx)} className="text-gray-600 hover:text-red-500"><Trash2 size={16}/></button>
                                 </div>
-                                
                                 <div className="mb-3">
                                     <label className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Método</label>
                                     <div className="flex gap-2">
-                                        <select value={ex.method || 'standard'} onChange={(e) => updateExercise(currentWorkoutIndex, idx, 'method', e.target.value)} className="flex-1 bg-black border border-white/10 rounded-lg p-2 text-xs text-white outline-none">
-                                            <option value="standard">Standard</option>
-                                            <option value="biserie">Bi-serie</option>
-                                            <option value="ahap">AHAP</option>
-                                            <option value="dropset">Drop Set</option>
-                                            <option value="tabata">TABATA</option>
-                                            <option value="emom">EMOM</option>
-                                        </select>
-                                        {['tabata', 'emom'].includes(ex.method || '') && (
-                                            <button onClick={() => setConfigMethodIdx(idx)} className="bg-white/10 px-3 rounded-lg text-white hover:bg-white/20 font-bold text-xs flex items-center gap-1 border border-white/10"><Edit3 size={12}/> Config</button>
-                                        )}
+                                        <select value={ex.method || 'standard'} onChange={(e) => updateExercise(currentWorkoutIndex, idx, 'method', e.target.value)} className="flex-1 bg-black border border-white/10 rounded-lg p-2 text-xs text-white outline-none"><option value="standard">Standard</option><option value="biserie">Bi-serie</option><option value="ahap">AHAP</option><option value="dropset">Drop Set</option><option value="tabata">TABATA</option><option value="emom">EMOM</option></select>
+                                        {['tabata', 'emom'].includes(ex.method || '') && (<button onClick={() => setConfigMethodIdx(idx)} className="bg-white/10 px-3 rounded-lg text-white hover:bg-white/20 font-bold text-xs flex items-center gap-1 border border-white/10"><Edit3 size={12}/> Config</button>)}
                                     </div>
                                     {ex.method === 'tabata' && ex.tabataConfig && <div className="mt-2 text-[10px] text-cyan-400 font-bold bg-cyan-900/10 p-2 rounded border border-cyan-500/20">{ex.tabataConfig.rounds} Rounds | {ex.tabataConfig.workTimeSec}/{ex.tabataConfig.restTimeSec}</div>}
                                     {ex.method === 'emom' && ex.emomConfig && <div className="mt-2 text-[10px] text-yellow-400 font-bold bg-yellow-900/10 p-2 rounded border border-yellow-500/20">{ex.emomConfig.durationMin}' | {ex.emomConfig.type}</div>}
                                 </div>
-
                                 <div className="grid grid-cols-4 gap-2 mb-3">
                                     <input type="number" placeholder="Sets" value={ex.targetSets} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetSets', parseInt(e.target.value))} className="bg-black border border-white/10 rounded p-2 text-xs text-white text-center"/>
                                     <input placeholder="Reps" value={ex.targetReps} onChange={e => updateExercise(currentWorkoutIndex, idx, 'targetReps', e.target.value)} className="bg-black border border-white/10 rounded p-2 text-xs text-white text-center"/>
@@ -555,31 +496,22 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                 )}
             </div>
 
-            {/* Modal Selector Ejercicios */}
             {showExerciseSelector && (
                 <div className="fixed inset-0 bg-[#0A0A0C] z-[70] flex flex-col">
-                    <div className="p-4 border-b border-white/10 flex items-center gap-3">
-                        <button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24}/></button>
-                        <div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={16} className="text-gray-400"/><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}/></div>
-                    </div>
+                    <div className="p-4 border-b border-white/10 flex items-center gap-3"><button onClick={() => setShowExerciseSelector(false)}><ChevronLeft size={24}/></button><div className="flex-1 bg-white/10 rounded-lg flex items-center px-3 py-2"><Search size={16} className="text-gray-400"/><input autoFocus className="bg-transparent border-none outline-none text-sm ml-2 w-full text-white" placeholder="Buscar..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}/></div></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
                         {filteredExercises.map(ex => (
-                            <button key={ex.id} onClick={() => handleAddExercise(ex)} className="w-full bg-[#151518] p-3 rounded-xl flex justify-between items-center text-left hover:bg-white/5">
-                                <div><div className="font-bold text-sm text-white">{ex.name}</div><div className="text-[10px] text-gray-500">{ex.muscleGroup}</div></div>
-                                <Plus size={16} className="text-gray-500"/>
-                            </button>
+                            <button key={ex.id} onClick={() => handleAddExercise(ex)} className="w-full bg-[#151518] p-3 rounded-xl flex justify-between items-center text-left hover:bg-white/5"><div><div className="font-bold text-sm text-white">{ex.name}</div><div className="text-[10px] text-gray-500">{ex.muscleGroup}</div></div><Plus size={16} className="text-gray-500"/></button>
                         ))}
                     </div>
                 </div>
             )}
 
-            {/* Modal Configuración Método (Tabata/EMOM) */}
             {configMethodIdx !== null && (
                 <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4">
                     <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 relative">
                         <button onClick={() => setConfigMethodIdx(null)} className="absolute top-4 right-4 text-gray-400"><X size={20}/></button>
                         <h3 className="text-lg font-bold text-white mb-4 uppercase">Configuración {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method}</h3>
-                        
                         {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method === 'tabata' && editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].tabataConfig && (
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
@@ -589,14 +521,12 @@ const ManualPlanBuilder = ({ plan, onSave, onCancel }: { plan: Plan, onSave: (p:
                                 </div>
                             </div>
                         )}
-
                         {editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].method === 'emom' && editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig && (
                             <div className="space-y-4">
                                 <div><label className="text-[9px] uppercase font-bold text-yellow-500">Duración (min)</label><input type="number" className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig.durationMin} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].emomConfig!.durationMin = parseInt(e.target.value); setEditedPlan({...editedPlan, workouts: nw})}}/></div>
                                 <div><label className="text-[9px] uppercase font-bold text-gray-500">Tipo</label><select className="w-full bg-black border border-white/10 rounded p-2 text-white" value={editedPlan.workouts[currentWorkoutIndex].exercises[configMethodIdx].emomConfig.type} onChange={e => {const nw=[...editedPlan.workouts]; nw[currentWorkoutIndex].exercises[configMethodIdx].emomConfig!.type = e.target.value; setEditedPlan({...editedPlan, workouts: nw})}}><option value="simple">Simple</option><option value="alternado">Alternado</option></select></div>
                             </div>
                         )}
-                        
                         <button onClick={() => setConfigMethodIdx(null)} className="w-full mt-4 py-3 bg-red-600 rounded-xl font-bold text-white text-xs uppercase">Listo</button>
                     </div>
                 </div>
@@ -666,8 +596,6 @@ const RoutinesView = ({ onAssign }: { onAssign: (template: Plan) => void }) => {
     );
 };
 
-// --- MISSING COMPONENTS IMPLEMENTATION ---
-
 const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'ai', text: 'Hola, soy tu coach IA. ¿En qué te ayudo hoy?', timestamp: Date.now() }]);
     const [input, setInput] = useState('');
@@ -713,34 +641,28 @@ const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
 
 const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (v: string) => void }) => {
     const clients = DataEngine.getUsers().filter(u => u.role === 'client');
+    const plan = DataEngine.getPlan(user.id);
+    const hasScheduledWorkouts = plan?.workouts.some(w => w.scheduledDate);
+    const today = new Date().toISOString().split('T')[0];
+    const todaysWorkout = plan?.workouts.find(w => w.scheduledDate === today);
+    const nextWorkout = plan?.workouts.filter(w => w.scheduledDate && w.scheduledDate >= today).sort((a,b) => a.scheduledDate!.localeCompare(b.scheduledDate!))[0];
+    const displayPlan = hasScheduledWorkouts ? (todaysWorkout ? { ...plan, workouts: [todaysWorkout] } : (nextWorkout ? { ...plan, workouts: [nextWorkout] } : null)) : plan;
+
     return (
         <div className="space-y-8">
             <div className="flex justify-between items-end">
-                <div>
-                    <h2 className="text-3xl font-display font-black italic text-white uppercase">Hola, {user.name.split(' ')[0]}</h2>
-                    <p className="text-xs text-gray-500 font-bold tracking-widest uppercase mt-1">Bienvenido al Centro de Comando</p>
-                </div>
-                <div className="text-right hidden md:block">
-                    <p className="text-2xl font-bold text-white">{new Date().toLocaleDateString('es-ES', { weekday: 'long' })}</p>
-                    <p className="text-xs text-gray-500 uppercase">{new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</p>
-                </div>
+                <div><h2 className="text-3xl font-display font-black italic text-white uppercase">Hola, {user.name.split(' ')[0]}</h2><p className="text-xs text-gray-500 font-bold tracking-widest uppercase mt-1">Bienvenido al Centro de Comando</p></div>
+                <div className="text-right hidden md:block"><p className="text-2xl font-bold text-white">{new Date().toLocaleDateString('es-ES', { weekday: 'long' })}</p><p className="text-xs text-gray-500 uppercase">{new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</p></div>
             </div>
-
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard label="Racha Actual" value={`${user.streak} Días`} icon={<Flame size={16} className="text-orange-500"/>} />
                 <StatCard label="Nivel" value={user.level} icon={<Trophy size={16} className="text-yellow-500"/>} />
                 {user.role === 'coach' && <StatCard label="Atletas Activos" value={clients.length} icon={<Users size={16} className="text-blue-500"/>} />}
                 <StatCard label="Estado" value="ACTIVO" icon={<Activity size={16} className="text-green-500"/>} />
             </div>
-
             {user.role === 'client' && (
                 <div className="bg-gradient-to-r from-red-900/20 to-black border border-red-500/20 rounded-3xl p-8 relative overflow-hidden group cursor-pointer hover:border-red-500/40 transition-all" onClick={() => onNavigate('workouts')}>
-                    <div className="relative z-10">
-                        <h3 className="text-2xl font-display font-black italic text-white mb-2">TU ENTRENAMIENTO DE HOY</h3>
-                        <p className="text-sm text-gray-400 max-w-md">Tu plan personalizado está listo. Supera tus límites.</p>
-                        <button className="mt-6 bg-white text-black px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-colors flex items-center gap-2">Comenzar <ArrowRight size={16}/></button>
-                    </div>
-                    <Dumbbell className="absolute -bottom-4 -right-4 w-48 h-48 text-red-600/10 rotate-12 group-hover:scale-110 transition-transform"/>
+                    <div className="relative z-10"><h3 className="text-2xl font-display font-black italic text-white mb-2">{hasScheduledWorkouts ? 'TU AGENDA' : 'TU ENTRENAMIENTO'}</h3><p className="text-sm text-gray-400 max-w-md">{todaysWorkout ? 'Tu sesión de hoy está lista.' : (nextWorkout ? 'Próxima sesión programada.' : 'Accede a tu plan.')}</p><button className="mt-6 bg-white text-black px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-colors flex items-center gap-2">Comenzar <ArrowRight size={16}/></button></div><Dumbbell className="absolute -bottom-4 -right-4 w-48 h-48 text-red-600/10 rotate-12 group-hover:scale-110 transition-transform"/>
                 </div>
             )}
         </div>
@@ -754,29 +676,8 @@ const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user:
 
     return (
         <div className="space-y-6">
-             <div className="flex justify-between items-center">
-                 <h3 className="text-xl font-bold text-white uppercase italic">Atletas ({filtered.length})</h3>
-                 <div className="bg-white/5 border border-white/10 rounded-xl flex items-center px-3 py-2 w-64">
-                     <Search size={16} className="text-gray-500 mr-2"/>
-                     <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-transparent border-none outline-none text-xs text-white w-full"/>
-                 </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {filtered.map(client => (
-                    <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#151518] p-4 rounded-xl border border-white/5 hover:border-white/20 cursor-pointer transition-all group">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-900/20">{client.name.charAt(0)}</div>
-                            {client.isActive ? <div className="px-2 py-1 bg-green-500/10 text-green-500 rounded text-[9px] font-bold uppercase border border-green-500/20">Activo</div> : <div className="px-2 py-1 bg-red-500/10 text-red-500 rounded text-[9px] font-bold uppercase border border-red-500/20">Inactivo</div>}
-                        </div>
-                        <h4 className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">{client.name}</h4>
-                        <p className="text-xs text-gray-500">{client.email}</p>
-                        <div className="mt-4 flex gap-2">
-                             <span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.goal}</span>
-                             <span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.level}</span>
-                        </div>
-                    </div>
-                ))}
-            </div>
+             <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-white uppercase italic">Atletas ({filtered.length})</h3><div className="bg-white/5 border border-white/10 rounded-xl flex items-center px-3 py-2 w-64"><Search size={16} className="text-gray-500 mr-2"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-transparent border-none outline-none text-xs text-white w-full"/></div></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{filtered.map(client => (<div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#151518] p-4 rounded-xl border border-white/5 hover:border-white/20 cursor-pointer transition-all group"><div className="flex justify-between items-start mb-4"><div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-900/20">{client.name.charAt(0)}</div>{client.isActive ? <div className="px-2 py-1 bg-green-500/10 text-green-500 rounded text-[9px] font-bold uppercase border border-green-500/20">Activo</div> : <div className="px-2 py-1 bg-red-500/10 text-red-500 rounded text-[9px] font-bold uppercase border border-red-500/20">Inactivo</div>}</div><h4 className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors">{client.name}</h4><p className="text-xs text-gray-500">{client.email}</p><div className="mt-4 flex gap-2"><span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.goal}</span><span className="px-2 py-1 bg-white/5 rounded text-[9px] text-gray-400 uppercase font-bold">{client.level}</span></div></div>))}</div>
         </div>
     );
 };
@@ -800,56 +701,24 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
         <div className="space-y-6">
             <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-white text-xs font-bold uppercase"><ChevronLeft size={16}/> Volver a lista</button>
             <div className="flex justify-between items-start bg-[#151518] p-6 rounded-2xl border border-white/5">
-                <div>
-                    <h2 className="text-2xl font-bold text-white uppercase italic">{client.name}</h2>
-                    <p className="text-sm text-gray-500">{client.email}</p>
-                    <div className="flex gap-2 mt-4">
-                        <div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">OBJETIVO:</span> <span className="font-bold text-white">{client.goal}</span></div>
-                        <div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">NIVEL:</span> <span className="font-bold text-white">{client.level}</span></div>
-                    </div>
-                </div>
+                <div><h2 className="text-2xl font-bold text-white uppercase italic">{client.name}</h2><p className="text-sm text-gray-500">{client.email}</p><div className="flex gap-2 mt-4"><div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">OBJETIVO:</span> <span className="font-bold text-white">{client.goal}</span></div><div className="text-xs bg-white/5 px-3 py-1 rounded-lg border border-white/10"><span className="text-gray-500">NIVEL:</span> <span className="font-bold text-white">{client.level}</span></div></div></div>
                 <button onClick={() => setShowWizard(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase flex items-center gap-2 shadow-lg shadow-blue-900/20"><CalendarDays size={16}/> Asignar Rutina</button>
             </div>
-
-            {/* Historial o Plan Actual */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Plan Actual</h4>
-                    {plan ? (
-                        <div className="bg-[#151518] p-4 rounded-xl border border-white/5">
-                            <h5 className="font-bold text-white mb-2">{plan.title}</h5>
-                            <p className="text-xs text-gray-500 mb-4">{plan.workouts.length} sesiones programadas</p>
-                            <div className="space-y-2">
-                                {plan.workouts.map((w, i) => (
-                                    <div key={i} className="text-xs text-gray-400 flex justify-between border-b border-white/5 pb-1"><span>{w.name}</span> {w.scheduledDate && <span className="text-blue-400">{formatDate(w.scheduledDate)}</span>}</div>
-                                ))}
-                            </div>
-                        </div>
-                    ) : <p className="text-gray-500 text-xs italic">Sin plan asignado actualmente.</p>}
+                    {plan ? (<div className="bg-[#151518] p-4 rounded-xl border border-white/5"><h5 className="font-bold text-white mb-2">{plan.title}</h5><p className="text-xs text-gray-500 mb-4">{plan.workouts.length} sesiones programadas</p><div className="space-y-2">{plan.workouts.map((w, i) => (<div key={i} className="text-xs text-gray-400 flex justify-between border-b border-white/5 pb-1"><span>{w.name}</span> {w.scheduledDate && <span className="text-blue-400">{formatDate(w.scheduledDate)}</span>}</div>))}</div></div>) : <p className="text-gray-500 text-xs italic">Sin plan asignado actualmente.</p>}
                 </div>
-                
                 <div className="space-y-4">
                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Historial Reciente</h4>
-                    {history.length > 0 ? (
-                        <div className="space-y-2">
-                            {history.slice(0, 5).map((h: any, i: number) => (
-                                <div key={i} className="bg-[#151518] p-3 rounded-lg border border-white/5 flex justify-between items-center">
-                                    <div><div className="text-xs font-bold text-white">{h.workoutName}</div><div className="text-[10px] text-gray-500">{formatDate(h.date)}</div></div>
-                                    <div className="text-right"><div className="text-[10px] text-gray-400">{h.summary.durationMinutes} min</div><div className="text-[10px] text-gray-400">{h.summary.totalVolume} kg</div></div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : <p className="text-gray-500 text-xs italic">No hay historial registrado.</p>}
+                    {history.length > 0 ? (<div className="space-y-2">{history.slice(0, 5).map((h: any, i: number) => (<div key={i} className="bg-[#151518] p-3 rounded-lg border border-white/5 flex justify-between items-center"><div><div className="text-xs font-bold text-white">{h.workoutName}</div><div className="text-[10px] text-gray-500">{formatDate(h.date)}</div></div><div className="text-right"><div className="text-[10px] text-gray-400">{h.summary.durationMinutes} min</div><div className="text-[10px] text-gray-400">{h.summary.totalVolume} kg</div></div></div>))}</div>) : <p className="text-gray-500 text-xs italic">No hay historial registrado.</p>}
                 </div>
             </div>
-
             {showWizard && (
                 <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
                     <div className="bg-[#1A1A1D] w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/10 overflow-hidden flex flex-col">
                          <div className="p-4 border-b border-white/10 flex justify-between items-center"><h3 className="font-bold text-white">Seleccionar Plantilla</h3><button onClick={() => setShowWizard(false)}><X size={20}/></button></div>
-                         <div className="flex-1 overflow-y-auto p-4">
-                            <RoutinesView onAssign={(tpl) => setSelectedTemplate(tpl)}/>
-                         </div>
+                         <div className="flex-1 overflow-y-auto p-4"><RoutinesView onAssign={(tpl) => setSelectedTemplate(tpl)}/></div>
                     </div>
                     {selectedTemplate && <AssignmentWizard template={selectedTemplate} onClose={() => setSelectedTemplate(null)} onConfirm={(p, uid) => { handleAssign(p, clientId); setSelectedTemplate(null); setShowWizard(false); }} />}
                 </div>
@@ -859,19 +728,20 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
 };
 
 const WorkoutsView = ({ user }: { user: User }) => {
-    // Para clientes, mostrar su plan actual. Para coaches, mostrar la biblioteca de rutinas.
     if (user.role === 'coach' || user.role === 'admin') {
         return <RoutinesView onAssign={() => {}} />;
     }
 
     const plan = DataEngine.getPlan(user.id);
     const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
-
-    // Estado para la ejecución del workout
     const [timer, setTimer] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
-    const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
     const [logData, setLogData] = useState<WorkoutProgress>({});
+
+    // Calendar logic for athlete view
+    const today = new Date().toISOString().split('T')[0];
+    const hasScheduledWorkouts = plan?.workouts.some(w => w.scheduledDate);
+    const displayWorkouts = hasScheduledWorkouts ? plan?.workouts.filter(w => w.scheduledDate === today || (w.scheduledDate && w.scheduledDate >= today)).slice(0, 1) : plan?.workouts;
 
     useEffect(() => {
         let interval: any;
@@ -888,7 +758,6 @@ const WorkoutsView = ({ user }: { user: User }) => {
     const handleStart = (workout: Workout) => {
         setActiveWorkout(workout);
         setIsTimerRunning(true);
-        // Cargar logs previos si existen
         const existingLogs = DataEngine.getWorkoutLog(user.id, workout.id);
         setLogData(existingLogs);
     };
@@ -905,15 +774,11 @@ const WorkoutsView = ({ user }: { user: User }) => {
     const toggleSet = (exIdx: number, setNum: number, weight: string, reps: string) => {
         if (!activeWorkout) return;
         const entry: SetEntry = { setNumber: setNum, weight, reps, completed: true, timestamp: Date.now() };
-        // Lógica simplificada de toggle
         const currentSets = logData[exIdx] || [];
         const exists = currentSets.find(s => s.setNumber === setNum);
         let newSets = [...currentSets];
-        if (exists) {
-            newSets = newSets.filter(s => s.setNumber !== setNum);
-        } else {
-            newSets.push(entry);
-        }
+        if (exists) newSets = newSets.filter(s => s.setNumber !== setNum);
+        else newSets.push(entry);
         const newLogData = { ...logData, [exIdx]: newSets };
         setLogData(newLogData);
         DataEngine.saveSetLog(user.id, activeWorkout.id, exIdx, entry);
@@ -922,37 +787,19 @@ const WorkoutsView = ({ user }: { user: User }) => {
     if (activeWorkout) {
         return (
             <div className="fixed inset-0 bg-[#050507] z-50 flex flex-col">
-                <div className="p-4 bg-[#0F0F11] border-b border-white/5 flex justify-between items-center sticky top-0 z-10">
-                    <div>
-                        <h3 className="font-bold text-white text-sm">{activeWorkout.name}</h3>
-                        <p className="text-xs text-red-500 font-mono">{formatTime(timer)}</p>
-                    </div>
-                    <button onClick={handleFinish} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase">Finalizar</button>
-                </div>
+                <div className="p-4 bg-[#0F0F11] border-b border-white/5 flex justify-between items-center sticky top-0 z-10"><div><h3 className="font-bold text-white text-sm">{activeWorkout.name}</h3><p className="text-xs text-red-500 font-mono">{formatTime(timer)}</p></div><button onClick={handleFinish} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase">Finalizar</button></div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
                     {activeWorkout.exercises.map((ex, i) => (
                          <div key={i} className="bg-[#151518] p-4 rounded-xl border border-white/5">
-                            <div className="flex justify-between items-start mb-4">
-                                <h4 className="font-bold text-white">{ex.name}</h4>
-                                {ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-blue-500"><Youtube size={20}/></a>}
-                            </div>
+                            <div className="flex justify-between items-start mb-4"><h4 className="font-bold text-white">{ex.name}</h4>{ex.videoUrl && <a href={ex.videoUrl} target="_blank" rel="noreferrer" className="text-blue-500"><Youtube size={20}/></a>}</div>
                             {ex.coachCue && <p className="text-xs text-gray-500 mb-4 bg-white/5 p-2 rounded italic">"{ex.coachCue}"</p>}
                             <div className="space-y-2">
-                                <div className="grid grid-cols-4 text-[10px] text-gray-500 font-bold uppercase text-center mb-1">
-                                    <div>Set</div><div>Kg</div><div>Reps</div><div>Check</div>
-                                </div>
+                                <div className="grid grid-cols-4 text-[10px] text-gray-500 font-bold uppercase text-center mb-1"><div>Set</div><div>Kg</div><div>Reps</div><div>Check</div></div>
                                 {Array.from({ length: ex.targetSets }).map((_, sIdx) => {
                                     const setNum = sIdx + 1;
                                     const isDone = logData[i]?.some(l => l.setNumber === setNum);
                                     return (
-                                        <div key={sIdx} className={`grid grid-cols-4 gap-2 items-center ${isDone ? 'opacity-50' : ''}`}>
-                                            <div className="text-center text-xs text-gray-400 bg-black/50 py-2 rounded">{setNum}</div>
-                                            <input className="bg-black border border-white/10 rounded text-center text-xs text-white py-2" placeholder={ex.targetLoad} />
-                                            <input className="bg-black border border-white/10 rounded text-center text-xs text-white py-2" placeholder={ex.targetReps} />
-                                            <button onClick={() => toggleSet(i, setNum, ex.targetLoad || '0', ex.targetReps)} className={`flex items-center justify-center py-2 rounded ${isDone ? 'bg-green-500 text-black' : 'bg-white/10 text-gray-400'}`}>
-                                                <Check size={14}/>
-                                            </button>
-                                        </div>
+                                        <div key={sIdx} className={`grid grid-cols-4 gap-2 items-center ${isDone ? 'opacity-50' : ''}`}><div className="text-center text-xs text-gray-400 bg-black/50 py-2 rounded">{setNum}</div><input className="bg-black border border-white/10 rounded text-center text-xs text-white py-2" placeholder={ex.targetLoad} /><input className="bg-black border border-white/10 rounded text-center text-xs text-white py-2" placeholder={ex.targetReps} /><button onClick={() => toggleSet(i, setNum, ex.targetLoad || '0', ex.targetReps)} className={`flex items-center justify-center py-2 rounded ${isDone ? 'bg-green-500 text-black' : 'bg-white/10 text-gray-400'}`}><Check size={14}/></button></div>
                                     );
                                 })}
                             </div>
@@ -966,25 +813,29 @@ const WorkoutsView = ({ user }: { user: User }) => {
     return (
         <div className="space-y-6">
             <h3 className="text-xl font-bold text-white uppercase italic">Mi Plan Actual</h3>
+            {hasScheduledWorkouts && (
+                <div className="flex overflow-x-auto gap-2 pb-4 no-scrollbar mb-4">
+                    {plan?.workouts.filter(w => w.scheduledDate).sort((a,b) => a.scheduledDate!.localeCompare(b.scheduledDate!)).map(w => {
+                        const isToday = w.scheduledDate === today;
+                        return (
+                            <div key={w.id} className={`flex-shrink-0 w-20 p-2 rounded-xl text-center border ${isToday ? 'bg-red-600 border-red-600 text-white' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+                                <div className="text-[10px] font-bold uppercase">{new Date(w.scheduledDate!).toLocaleDateString('es-ES', {weekday: 'short'})}</div>
+                                <div className="text-xl font-bold">{new Date(w.scheduledDate!).getDate()}</div>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
             {plan ? (
                 <div className="space-y-4">
-                    {plan.workouts.map(w => (
+                    {displayWorkouts?.map(w => (
                         <div key={w.id} className="bg-[#151518] p-5 rounded-xl border border-white/5 flex justify-between items-center group hover:border-red-500/30 transition-all">
-                            <div>
-                                <h4 className="font-bold text-white">{w.name}</h4>
-                                <p className="text-xs text-gray-500">{w.exercises.length} Ejercicios {w.scheduledDate && `• ${formatDate(w.scheduledDate)}`}</p>
-                            </div>
-                            <button onClick={() => handleStart(w)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs uppercase hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2">
-                                <Play size={16}/> Entrenar
-                            </button>
+                            <div><h4 className="font-bold text-white">{w.name}</h4><p className="text-xs text-gray-500">{w.exercises.length} Ejercicios {w.scheduledDate && `• ${formatDate(w.scheduledDate)}`}</p></div>
+                            <button onClick={() => handleStart(w)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs uppercase hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2"><Play size={16}/> Entrenar</button>
                         </div>
                     ))}
                 </div>
-            ) : (
-                <div className="text-center py-10 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                    <p className="text-gray-500 text-sm">No tienes un plan asignado. Contacta a tu coach.</p>
-                </div>
-            )}
+            ) : <div className="text-center py-10 bg-white/5 rounded-2xl border border-dashed border-white/10"><p className="text-gray-500 text-sm">No tienes un plan asignado. Contacta a tu coach.</p></div>}
         </div>
     );
 };
@@ -994,18 +845,10 @@ const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) =
         <div className="space-y-6 max-w-2xl">
             <h3 className="text-xl font-bold text-white uppercase italic">Mi Perfil</h3>
             <div className="bg-[#151518] p-6 rounded-2xl border border-white/5 space-y-4">
-                 <div className="flex items-center gap-4">
-                     <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-2xl font-bold text-white">{user.name.charAt(0)}</div>
-                     <div>
-                         <h4 className="text-lg font-bold text-white">{user.name}</h4>
-                         <p className="text-sm text-gray-500">{user.email}</p>
-                     </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
-                     <div><label className="text-[10px] text-gray-500 uppercase font-bold">Objetivo</label><p className="text-white text-sm">{user.goal}</p></div>
-                     <div><label className="text-[10px] text-gray-500 uppercase font-bold">Nivel</label><p className="text-white text-sm">{user.level}</p></div>
-                 </div>
+                 <div className="flex items-center gap-4"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-2xl font-bold text-white">{user.name.charAt(0)}</div><div><h4 className="text-lg font-bold text-white">{user.name}</h4><p className="text-sm text-gray-500">{user.email}</p></div></div>
+                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5"><div><label className="text-[10px] text-gray-500 uppercase font-bold">Objetivo</label><p className="text-white text-sm">{user.goal}</p></div><div><label className="text-[10px] text-gray-500 uppercase font-bold">Nivel</label><p className="text-white text-sm">{user.level}</p></div></div>
             </div>
+            <button onClick={onLogout} className="w-full py-4 bg-white/5 text-red-500 font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-red-500/10 transition-colors uppercase tracking-widest text-xs"><LogOut size={20}/> Cerrar Sesión</button>
         </div>
     );
 };
@@ -1024,26 +867,8 @@ const AdminView = () => {
             <h3 className="text-xl font-bold text-white uppercase italic">Consola de Administración</h3>
             <div className="bg-[#151518] rounded-xl border border-white/5 overflow-hidden">
                 <table className="w-full text-left text-sm text-gray-400">
-                    <thead className="bg-black/50 text-xs uppercase font-bold text-gray-500">
-                        <tr>
-                            <th className="p-4">Usuario</th>
-                            <th className="p-4">Rol</th>
-                            <th className="p-4">Estado</th>
-                            <th className="p-4">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {users.map(u => (
-                            <tr key={u.id} className="border-t border-white/5 hover:bg-white/5 transition-colors">
-                                <td className="p-4 text-white font-bold">{u.name}<br/><span className="text-gray-600 text-xs font-normal">{u.email}</span></td>
-                                <td className="p-4"><span className="bg-white/10 px-2 py-1 rounded text-xs uppercase">{u.role}</span></td>
-                                <td className="p-4">{u.isActive ? <span className="text-green-500 text-xs uppercase font-bold">Activo</span> : <span className="text-red-500 text-xs uppercase font-bold">Inactivo</span>}</td>
-                                <td className="p-4">
-                                    <button onClick={() => toggleStatus(u)} className="text-xs font-bold underline hover:text-white">{u.isActive ? 'Desactivar' : 'Activar'}</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
+                    <thead className="bg-black/50 text-xs uppercase font-bold text-gray-500"><tr><th className="p-4">Usuario</th><th className="p-4">Rol</th><th className="p-4">Estado</th><th className="p-4">Acciones</th></tr></thead>
+                    <tbody>{users.map(u => (<tr key={u.id} className="border-t border-white/5 hover:bg-white/5 transition-colors"><td className="p-4 text-white font-bold">{u.name}<br/><span className="text-gray-600 text-xs font-normal">{u.email}</span></td><td className="p-4"><span className="bg-white/10 px-2 py-1 rounded text-xs uppercase">{u.role}</span></td><td className="p-4">{u.isActive ? <span className="text-green-500 text-xs uppercase font-bold">Activo</span> : <span className="text-red-500 text-xs uppercase font-bold">Inactivo</span>}</td><td className="p-4"><button onClick={() => toggleStatus(u)} className="text-xs font-bold underline hover:text-white">{u.isActive ? 'Desactivar' : 'Activar'}</button></td></tr>))}</tbody>
                 </table>
             </div>
         </div>
@@ -1067,7 +892,6 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                     {error && <div className="text-red-500 text-[10px] font-bold bg-red-500/10 p-3 rounded-xl flex items-center gap-2 uppercase"><AlertTriangle size={14}/> {error}</div>}
                     <button type="submit" className="w-full bg-red-600 text-white font-bold py-5 rounded-2xl hover:bg-red-500 transition-all shadow-lg shadow-red-900/30 uppercase tracking-widest text-xs">Ingresar al Sistema</button>
                  </form>
-                 
                  <div className="mt-8 space-y-4 w-full">
                      <div className="border-t border-white/5 pt-4 w-full">
                          <p className="text-[10px] text-gray-600 uppercase font-bold mb-3">Accesos Directos (Demo)</p>
@@ -1077,10 +901,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                              <button onClick={() => setEmail('admin@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Admin</button>
                          </div>
                      </div>
-                     <div>
-                        <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p>
-                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.2 PRO | RECOVERY</p>
-                     </div>
+                     <div><p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p><p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.2 PRO | RECOVERY</p></div>
                  </div>
              </div>
         </div>
