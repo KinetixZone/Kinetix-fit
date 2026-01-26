@@ -1,6 +1,5 @@
 
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   LayoutDashboard, Play, X, Users, Save, Trash2, ArrowRight, CheckCircle2, 
   Plus, LogOut, UserPlus, Edit3, ChevronLeft, Sparkles, Activity,
@@ -12,12 +11,12 @@ import {
   Instagram, Facebook, Linkedin, Phone, Sliders, Calendar
 } from 'lucide-react';
 import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEntry, WorkoutProgress, ChatMessage, UserRole } from './types';
-import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
+import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES, INITIAL_TEMPLATES } from './constants';
 import { getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN ESTABLE 369EA99 ---
-const STORAGE_KEY = 'KINETIX_DATA_V1_STABLE';
+// --- CONFIGURACIÓN DE VERSIÓN 369EA99 (CLASSIC STABLE) ---
+const STORAGE_KEY = 'KINETIX_DATA_V1_CLASSIC';
 const SESSION_KEY = 'KINETIX_SESSION_V1';
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/KinetixZone/Kinetix-fit/32b6e2ce7e4abcd5b5018cdb889feec444a66e22/TEAM%20JG.jpg';
 
@@ -41,6 +40,8 @@ const DataEngine = {
   },
   init: () => {
     const store = DataEngine.getStore();
+    
+    // 1. Inicializar Usuarios si no existen
     if (!store.USERS) {
       const initialUsers = [
           { ...MOCK_USER, isActive: true },
@@ -48,11 +49,25 @@ const DataEngine = {
           { id: 'admin-1', name: 'Admin System', email: 'admin@kinetix.com', role: 'admin' as UserRole, goal: Goal.PERFORMANCE, level: UserLevel.ADVANCED, streak: 0, daysPerWeek: 0, equipment: [], createdAt: new Date().toISOString(), isActive: true }
       ];
       store.USERS = JSON.stringify(initialUsers);
-      store.EXERCISES = JSON.stringify(INITIAL_EXERCISES);
-      store.CONFIG = JSON.stringify({ appName: 'KINETIX ZONE', logoUrl: OFFICIAL_LOGO_URL });
-      store.TEMPLATES_DB = JSON.stringify([]); 
-      DataEngine.saveStore(store);
     }
+
+    // 2. FORCE SYNC: Asegurar que ejercicios y plantillas existan (Fix para "lista vacía")
+    const currentExercises = store.EXERCISES ? JSON.parse(store.EXERCISES) : [];
+    if (currentExercises.length === 0) {
+        store.EXERCISES = JSON.stringify(INITIAL_EXERCISES);
+    }
+    
+    const currentTemplates = store.TEMPLATES_DB ? JSON.parse(store.TEMPLATES_DB) : [];
+    if (currentTemplates.length === 0) {
+        store.TEMPLATES_DB = JSON.stringify(INITIAL_TEMPLATES);
+    }
+
+    // 3. Configuración base
+    if (!store.CONFIG) {
+        store.CONFIG = JSON.stringify({ appName: 'KINETIX ZONE', logoUrl: OFFICIAL_LOGO_URL });
+    }
+
+    DataEngine.saveStore(store);
   },
   getConfig: () => JSON.parse(DataEngine.getStore().CONFIG || '{}'),
   getUsers: (): User[] => JSON.parse(DataEngine.getStore().USERS || '[]'),

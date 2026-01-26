@@ -1,5 +1,5 @@
 
-import { Exercise, Goal, UserLevel } from './types';
+import { Exercise, Goal, UserLevel, Plan } from './types';
 
 export const EXERCISES_DB: Exercise[] = [
   // --- PECHO ---
@@ -108,8 +108,41 @@ export const EXERCISES_DB: Exercise[] = [
   { id: 'iso3', name: 'Barquito isometrico', muscleGroup: 'Isométricos', videoUrl: 'https://youtube.com/shorts/lJoKi3-XYuw?si=IOLEJ4DGqawF40Xj', technique: '', commonErrors: [] }
 ];
 
+export const INITIAL_TEMPLATES: Plan[] = [
+    {
+        id: 'tpl-1',
+        title: 'Full Body - Básico',
+        userId: 'TEMPLATE',
+        updatedAt: new Date().toISOString(),
+        workouts: [
+            {
+                id: 'w-1',
+                name: 'Cuerpo Completo A',
+                day: 1,
+                exercises: [
+                    { exerciseId: 'cua1', name: 'Sentadilla', targetSets: 4, targetReps: '12', targetRest: 90, method: 'standard', videoUrl: 'https://youtube.com/shorts/oSxJ78WQBZ0' },
+                    { exerciseId: 'pec1', name: 'Press horizontal', targetSets: 4, targetReps: '12', targetRest: 90, method: 'standard', videoUrl: 'https://youtu.be/g8oG_jaAxvs' },
+                    { exerciseId: 'esp4', name: 'Jalón abierto', targetSets: 4, targetReps: '12', targetRest: 60, method: 'standard', videoUrl: 'https://youtube.com/shorts/RD4t94XvKsU' },
+                    { exerciseId: 'abd1', name: 'Crunch', targetSets: 3, targetReps: '15', targetRest: 60, method: 'standard', videoUrl: 'https://youtu.be/9VopAXZSZDA' }
+                ]
+            },
+            {
+                id: 'w-2',
+                name: 'Cuerpo Completo B',
+                day: 3,
+                exercises: [
+                    { exerciseId: 'isq1', name: 'Peso muerto Rumano', targetSets: 4, targetReps: '10', targetRest: 90, method: 'standard', videoUrl: 'https://youtube.com/shorts/9z6AYqXkBbY' },
+                    { exerciseId: 'hom1', name: 'Press militar', targetSets: 4, targetReps: '12', targetRest: 90, method: 'standard', videoUrl: 'https://youtube.com/shorts/0ph4dQ4GOI4' },
+                    { exerciseId: 'esp1', name: 'Remo suprino', targetSets: 4, targetReps: '12', targetRest: 60, method: 'standard', videoUrl: 'https://youtube.com/shorts/ZFkJocVACns' },
+                    { exerciseId: 'iso1', name: 'Plancha baja', targetSets: 3, targetReps: '45s', targetRest: 60, method: 'standard', videoUrl: 'https://youtube.com/shorts/3AM7L2k7BEw' }
+                ]
+            }
+        ]
+    }
+];
+
 export const MOCK_USER = {
-  id: '00000000-0000-0000-0000-000000000001', // UUID Válido (Nil UUID + 1) para pruebas
+  id: '00000000-0000-0000-0000-000000000001', 
   name: 'ATLETA KINETIX',
   email: 'atleta@kinetix.com',
   goal: Goal.PERFORMANCE,
