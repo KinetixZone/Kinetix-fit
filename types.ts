@@ -1,5 +1,4 @@
 
-
 export enum Goal {
   LOSE_FAT = 'Bajar Grasa',
   GAIN_MUSCLE = 'Subir Músculo',
