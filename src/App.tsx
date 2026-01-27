@@ -16,7 +16,7 @@ import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
 
-// --- CONFIGURACIÓN DE VERSIÓN ESTABLE ---
+// --- CONFIGURACIÓN DE VERSIÓN ESTABLE V12.6 ---
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_6_SAFE';
 const SESSION_KEY = 'KINETIX_SESSION_PRO_V12_6_SAFE';
 const ADMIN_UUID = '00000000-0000-0000-0000-000000000000';
