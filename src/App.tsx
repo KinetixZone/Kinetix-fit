@@ -790,14 +790,214 @@ const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
     );
 };
 
-const WorkoutsView = () => {
-    const exercises = DataEngine.getExercises();
+const RoutinesView = ({ onAssign }: { onAssign: (p: Plan) => void }) => {
+    const [templates, setTemplates] = useState<Plan[]>(DataEngine.getTemplates());
+    const [showBuilder, setShowBuilder] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState<Plan | null>(null);
+
+    const handleSave = (p: Plan) => {
+        DataEngine.saveTemplate(p);
+        setTemplates(DataEngine.getTemplates());
+        setShowBuilder(false);
+        setEditingTemplate(null);
+    };
+
+    const handleDelete = (id: string) => {
+        if(confirm("¿Archivar esta plantilla?")) {
+            DataEngine.deleteTemplate(id);
+            setTemplates(DataEngine.getTemplates());
+        }
+    };
+
+    const handleDuplicate = (p: Plan) => {
+        const copy = { ...p, id: generateUUID(), title: `${p.title} (Copia)`, updatedAt: new Date().toISOString() };
+        DataEngine.saveTemplate(copy);
+        setTemplates(DataEngine.getTemplates());
+    };
+
+    if (showBuilder && editingTemplate) {
+        return <ManualPlanBuilder plan={editingTemplate} onSave={handleSave} onCancel={() => { setShowBuilder(false); setEditingTemplate(null); }} />;
+    }
+
     return (
-        <div className="space-y-6">
-            <h2 className="text-3xl font-display font-black italic uppercase">BIBLIOTECA</h2>
-            <div className="grid gap-4 md:grid-cols-2">{exercises.map(e => (<div key={e.id} className="bg-[#0F0F11] p-4 rounded-xl border border-white/5 flex justify-between"><div><h4 className="font-bold text-white">{e.name}</h4><span className="text-xs text-gray-500">{e.muscleGroup}</span></div><a href={e.videoUrl} target="_blank" className="text-red-500"><Play size={20}/></a></div>))}</div>
+        <div className="pb-32 animate-fade-in">
+             <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-display font-black italic text-white uppercase">Rutinas Maestras</h3>
+                 <button onClick={() => {
+                     const newTpl: Plan = { id: generateUUID(), title: 'Nueva Rutina', userId: ADMIN_UUID, workouts: [], updatedAt: new Date().toISOString() };
+                     setEditingTemplate(newTpl);
+                     setShowBuilder(true);
+                 }} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200"><Plus size={14}/> Nueva Rutina</button>
+             </div>
+             
+             <div className="grid grid-cols-1 gap-4">
+                 {templates.length === 0 ? (
+                     <div className="text-center py-10 text-gray-500 border-2 border-dashed border-white/5 rounded-2xl">
+                         <p className="text-xs font-bold uppercase tracking-widest mb-2">No hay plantillas creadas</p>
+                         <p className="text-[10px]">Crea rutinas base para asignarlas rápidamente.</p>
+                     </div>
+                 ) : templates.map(t => (
+                     <div key={t.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-white/20 transition-all group relative">
+                         <div className="flex justify-between items-start mb-2">
+                             <div>
+                                 <h4 className="font-bold text-white uppercase text-sm">{t.title}</h4>
+                                 <p className="text-[10px] text-gray-500 uppercase font-bold mt-1">v1.0 • {t.workouts.length} Días • Actualizado: {formatDate(t.updatedAt)}</p>
+                             </div>
+                             <div className="flex gap-2">
+                                 <button onClick={() => { setEditingTemplate(t); setShowBuilder(true); }} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"><Edit3 size={14}/></button>
+                                 <button onClick={() => handleDuplicate(t)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"><Copy size={14}/></button>
+                                 <button onClick={() => handleDelete(t.id)} className="p-2 bg-red-900/10 rounded-lg text-red-500 hover:bg-red-900/30 transition-colors"><Archive size={14}/></button>
+                             </div>
+                         </div>
+                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar mt-2">
+                             {t.workouts.map(w => (
+                                 <span key={w.id} className="text-[9px] bg-white/5 px-2 py-1 rounded text-gray-400 whitespace-nowrap border border-white/5">{w.name}</span>
+                             ))}
+                         </div>
+                         <button onClick={() => onAssign(t)} className="w-full mt-3 py-2 bg-blue-600/10 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2">Asignar a Atleta <ArrowRight size={12}/></button>
+                     </div>
+                 ))}
+             </div>
         </div>
     );
+};
+
+const WorkoutsView = ({ user }: { user: User }) => {
+    const [exercises, setExercises] = useState<Exercise[]>(DataEngine.getExercises());
+    const [filter, setFilter] = useState('');
+    const [showVideo, setShowVideo] = useState<string | null>(null);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [activeTab, setActiveTab] = useState<'exercises' | 'routines'>('exercises');
+    
+    // Asignación de rutinas
+    const [assigningTemplate, setAssigningTemplate] = useState<Plan | null>(null);
+    const [targetClient, setTargetClient] = useState<string>('');
+    const clients = useMemo(() => DataEngine.getUsers().filter(u => u.role === 'client'), []);
+
+    const filtered = exercises.filter(e => e.name.toLowerCase().includes(filter.toLowerCase()) || e.muscleGroup.toLowerCase().includes(filter.toLowerCase()));
+    
+    const handleAddExercise = (e: React.FormEvent) => {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        const formData = new FormData(form);
+        const newEx: Exercise = { id: generateUUID(), name: formData.get('name') as string, muscleGroup: formData.get('muscle') as string, videoUrl: formData.get('video') as string, technique: '', commonErrors: [] };
+        DataEngine.addExercise(newEx);
+        setExercises(DataEngine.getExercises());
+        setShowAddModal(false);
+    };
+
+    const handleAssignRoutine = () => {
+        if (!assigningTemplate || !targetClient) return;
+        const newPlan: Plan = { ...assigningTemplate, id: generateUUID(), userId: targetClient, updatedAt: new Date().toISOString() };
+        DataEngine.savePlan(newPlan);
+        alert(`Rutina asignada correctamente.`);
+        setAssigningTemplate(null);
+        setTargetClient('');
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="flex items-center justify-between">
+                 <h2 className="text-3xl font-display font-black italic text-white uppercase">BIBLIOTECA</h2>
+             </div>
+             
+             {(user.role === 'coach' || user.role === 'admin') && (
+                 <div className="flex gap-4 border-b border-white/5">
+                     <button onClick={() => setActiveTab('exercises')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'exercises' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Ejercicios</button>
+                     <button onClick={() => setActiveTab('routines')} className={`pb-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'routines' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-500'}`}>Rutinas (Plantillas)</button>
+                 </div>
+             )}
+
+             {activeTab === 'exercises' && (
+                 <>
+                     <div className="flex justify-between items-center">
+                         <div className="relative w-full"><Search className="absolute left-4 top-3.5 text-gray-500" size={18} /><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar ejercicio o músculo..." className="w-full bg-[#0F0F11] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white focus:border-white/20 outline-none" /></div>
+                         {(user.role === 'coach' || user.role === 'admin') && <button onClick={() => setShowAddModal(true)} className="ml-3 text-xs font-bold bg-white text-black px-4 py-3 rounded-xl flex items-center gap-2 hover:bg-gray-200 shrink-0"><Plus size={16}/> Nuevo</button>}
+                     </div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">{filtered.map(ex => (<div key={ex.id} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl flex justify-between items-center group hover:border-white/20 transition-colors"><div><h4 className="font-bold text-white uppercase text-sm">{ex.name}</h4><span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded mt-1 inline-block uppercase font-bold">{ex.muscleGroup}</span></div><button onClick={() => setShowVideo(ex.name)} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-red-500 transition-colors"><Play size={16} /></button></div>))}</div>
+                 </>
+             )}
+
+             {activeTab === 'routines' && (user.role === 'coach' || user.role === 'admin') && (
+                 <RoutinesView onAssign={setAssigningTemplate} />
+             )}
+             
+             {showVideo && (<div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm" onClick={() => setShowVideo(null)}><div className="bg-[#111] w-full max-w-lg rounded-3xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151518]"><h3 className="font-bold text-white flex items-center gap-2"><Youtube size={18} className="text-red-500"/> {showVideo}</h3><button onClick={() => setShowVideo(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20} className="text-gray-400 hover:text-white" /></button></div><div className="aspect-video bg-black flex items-center justify-center relative group"><a href={exercises.find(e => e.name === showVideo)?.videoUrl || '#'} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-3 text-white group-hover:scale-110 transition-transform"><div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40"><Play size={32} fill="white" className="ml-1" /></div><span className="text-xs font-bold tracking-widest uppercase">Ver Tutorial</span></a></div></div></div>)}
+             
+             {showAddModal && (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddModal(false)}>
+                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold text-white mb-4">Agregar Ejercicio</h3>
+                        <form onSubmit={handleAddExercise} className="space-y-4">
+                            <input name="name" required placeholder="Nombre del Ejercicio" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                            <select name="muscle" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none"><option value="Pecho">Pecho</option><option value="Espalda">Espalda</option><option value="Pierna">Pierna</option><option value="Hombro">Hombro</option><option value="Brazo">Brazo</option><option value="Funcional">Funcional</option></select>
+                            <input name="video" placeholder="URL Video (YouTube)" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-red-500 outline-none" />
+                            <div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button><button type="submit" className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500">Guardar</button></div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {assigningTemplate && (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setAssigningTemplate(null)}>
+                    <div className="bg-[#1A1A1D] w-full max-w-md rounded-2xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-white mb-4">Asignar Rutina: {assigningTemplate.title}</h3>
+                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Seleccionar Atleta</label>
+                        <select 
+                            className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white mb-6 outline-none focus:border-blue-500"
+                            value={targetClient}
+                            onChange={(e) => setTargetClient(e.target.value)}
+                        >
+                            <option value="">-- Seleccionar --</option>
+                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <div className="flex gap-3">
+                            <button onClick={() => setAssigningTemplate(null)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button>
+                            <button onClick={handleAssignRoutine} className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-sm text-white hover:bg-red-500 shadow-lg shadow-red-900/20">Confirmar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ProfileView = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+    const history = DataEngine.getClientHistory(user.id);
+    const [analyzing, setAnalyzing] = useState(false);
+    const chartData = history.slice(0, 10).reverse().map(h => ({ date: new Date(h.date).toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}), vol: h.summary.totalVolume }));
+    const handleAnalyze = async () => { setAnalyzing(true); try { const advice = await analyzeProgress(user, history); alert(advice); } catch(e) { alert("No se pudo analizar el progreso."); } finally { setAnalyzing(false); } }
+    return (
+        <div className="space-y-10 animate-fade-in pb-32">
+            <div className="flex items-center gap-6"><div className="w-24 h-24 rounded-[2rem] bg-red-600 flex items-center justify-center text-4xl font-black italic font-display text-white shadow-2xl shadow-red-900/40">{user.name[0]}</div><div><h2 className="text-3xl font-display font-black italic text-white uppercase tracking-tighter">{user.name}</h2><p className="text-gray-400 font-bold uppercase text-xs">{user.email}</p><span className="inline-block mt-3 px-3 py-1 bg-red-500/10 rounded-lg text-[9px] font-bold text-red-500 uppercase border border-red-500/20">{user.role}</span></div></div>
+            {user.role === 'client' && (
+                <div className="space-y-6">
+                    <button onClick={handleAnalyze} disabled={analyzing} className="w-full py-5 bg-gradient-to-r from-blue-900 to-blue-800 border border-blue-500/30 rounded-2xl flex items-center justify-center gap-3 shadow-lg relative overflow-hidden group transition-all active:scale-95">{analyzing ? <Loader2 className="animate-spin text-blue-200" /> : <BrainCircuit size={24} className="text-blue-300" />}<span className="font-bold text-blue-100 z-10 uppercase tracking-widest text-xs">Analizar mi Progreso (IA)</span></button>
+                    <div className="bg-[#0F0F11] border border-white/5 rounded-[2rem] p-6 shadow-xl"><h3 className="font-bold text-white mb-6 flex items-center gap-2 uppercase text-xs tracking-widest"><TrendingUp size={16} className="text-green-500"/> Proyección de Carga</h3><div className="h-48 w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/><stop offset="95%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" vertical={false} /><XAxis dataKey="date" tick={{fontSize: 9, fill: '#666', fontWeight: 'bold'}} axisLine={false} tickLine={false} /><Tooltip contentStyle={{backgroundColor: '#0F0F11', border: '1px solid #1F1F1F', borderRadius: '12px'}} /><Area type="monotone" dataKey="vol" stroke="#ef4444" fillOpacity={1} fill="url(#colorVol)" strokeWidth={3} /></AreaChart></ResponsiveContainer></div></div>
+                </div>
+            )}
+            <div className="bg-[#0F0F11] border border-white/5 rounded-[2rem] p-6 space-y-4 shadow-xl"><div className="flex justify-between items-center py-2 border-b border-white/5"><span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Meta de Atleta</span><span className="text-white font-bold text-xs uppercase">{user.goal}</span></div><div className="flex justify-between items-center py-2 border-b border-white/5"><span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Nivel Actual</span><span className="text-white font-bold text-xs uppercase">{user.level}</span></div><div className="flex justify-between items-center py-2"><span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Días / Semana</span><span className="text-white font-bold text-xs uppercase">{user.daysPerWeek}</span></div></div>
+            <button onClick={onLogout} className="w-full py-5 bg-white/5 text-red-500 font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-red-500/10 transition-colors uppercase tracking-widest text-xs"><LogOut size={20}/> Cerrar Sesión</button>
+        </div>
+    );
+};
+
+const AdminView = () => {
+  const [config, setConfig] = useState(DataEngine.getConfig());
+  const [activeTab, setActiveTab] = useState<'branding' | 'users'>('branding');
+  const [users, setUsers] = useState<User[]>(DataEngine.getUsers());
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const adminUserMock: User = { ...MOCK_USER, role: 'admin' as UserRole, id: ADMIN_UUID };
+  const handleSaveConfig = () => { DataEngine.saveConfig(config); alert("Configuración guardada."); }
+  const toggleUserStatus = (u: User) => { const updated = { ...u, isActive: !u.isActive }; DataEngine.saveUser(updated); setUsers(DataEngine.getUsers()); }
+  return (
+      <div className="space-y-8 animate-fade-in pb-20">
+          <div className="flex justify-between items-center mb-6"><h2 className="text-3xl font-display font-black italic text-white uppercase tracking-tighter">COMMAND CENTER</h2><div className="flex gap-2 bg-white/5 p-1 rounded-xl"><button onClick={() => setActiveTab('branding')} className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-widest ${activeTab === 'branding' ? 'bg-white text-black shadow-lg' : 'text-gray-500'}`}>MARCA</button><button onClick={() => setActiveTab('users')} className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-widest ${activeTab === 'users' ? 'bg-white text-black shadow-lg' : 'text-gray-500'}`}>USUARIOS</button></div></div>
+          {activeTab === 'branding' && (<div className="bg-[#0F0F11] border border-white/5 p-8 rounded-[2.5rem] space-y-6 shadow-xl"><h3 className="font-bold text-white uppercase font-display italic text-lg">Personalización de Marca</h3><div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest ml-1">Nombre de la Plataforma</label><input value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} className="w-full bg-black border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-all" /></div><div><label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest ml-1">URL del Logo Oficial</label><input value={config.logoUrl} onChange={e => setConfig({...config, logoUrl: e.target.value})} className="w-full bg-black border border-white/10 rounded-xl p-4 text-white focus:border-red-500 outline-none transition-all" placeholder="https://..." /></div><button onClick={handleSaveConfig} className="bg-red-600 text-white px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-900/20 active:scale-95 transition-all">Guardar Cambios</button></div>)}
+          {activeTab === 'users' && (<div className="space-y-4 pb-32"><div className="flex justify-end"><button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-gray-200 transition-colors shadow-xl"><UserPlus size={16}/> Alta de Usuario</button></div>{users.map(u => (<div key={u.id} className="bg-[#0F0F11] border border-white/5 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-lg"><div className="flex items-center gap-4 w-full"><div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white shadow-inner ${u.isActive !== false ? 'bg-green-600' : 'bg-red-600'}`}>{u.name[0]}</div><div className="flex-1"><div><div className="font-bold text-white uppercase text-sm">{u.name} <span className="text-[9px] text-gray-500 bg-white/5 border border-white/5 px-2 py-0.5 rounded ml-2 uppercase">{u.role}</span></div><div className="text-xs text-gray-500">{u.email}</div></div></div></div><div className="flex gap-2 w-full md:w-auto"><button onClick={() => toggleUserStatus(u)} className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${u.isActive !== false ? 'bg-red-900/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-green-900/10 text-green-500 border border-green-500/20 hover:bg-green-500 hover:text-white'}`}>{u.isActive !== false ? <><UserX size={14}/> Bloquear</> : <><UserCheck size={14}/> Activar</>}</button></div></div>))}</div>)}
+          {showInviteModal && (<UserInviteModal currentUser={adminUserMock} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers())} />)}
+      </div>
+  );
 };
 
 const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
@@ -870,9 +1070,9 @@ export default function App() {
             {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
             {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} />}
             {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
-            {view === 'workouts' && <WorkoutsView />}
-            {view === 'profile' && <div className="text-center py-20 text-gray-500">Perfil de Usuario</div>}
-            {view === 'admin' && <div className="text-center py-20 text-gray-500">Consola Admin</div>}
+            {view === 'workouts' && <WorkoutsView user={user} />}
+            {view === 'profile' && <ProfileView user={user} onLogout={logout} />}
+            {view === 'admin' && <AdminView />}
         </main>
 
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F11]/95 backdrop-blur-xl border-t border-white/5 px-6 py-2 flex justify-between items-center z-40 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
