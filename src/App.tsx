@@ -15,8 +15,6 @@ import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEnt
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
-import { AssignRoutineModal } from './components/AssignRoutineModal';
-import { ScheduleVerificationPanel } from './components/ScheduleVerificationPanel';
 
 // --- CONFIGURACIÓN DE VERSIÓN ESTABLE ---
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_6_SAFE';
@@ -1596,10 +1594,6 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
   const [isGenerating, setIsGenerating] = useState(false);
   const [showManualBuilder, setShowManualBuilder] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'plan' | 'history'>('plan');
-  
-  // States para modal de asignación (reprogramación)
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleModalMode, setScheduleModalMode] = useState<'create' | 'edit'>('create');
 
   if (!client) return <div className="p-8 text-center text-gray-500">Atleta no encontrado.</div>;
 
@@ -1635,17 +1629,6 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
            plan ? (
              <div className="space-y-4 animate-fade-in">
                 <div className="flex justify-between items-center px-2 mb-4"><h3 className="text-lg font-bold flex items-center gap-2 text-white uppercase italic font-display">Plan Asignado</h3><div className="flex gap-2"><button onClick={() => setShowManualBuilder(true)} className="text-[10px] font-bold bg-white/10 text-white border border-white/20 px-4 py-2 rounded-full hover:bg-white/20 flex items-center gap-2 uppercase tracking-widest"><Edit3 size={12}/> Editar</button><button onClick={handleGenerateAI} disabled={isGenerating} className="text-[10px] font-bold bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-2 rounded-full hover:bg-blue-600/20 flex items-center gap-2 uppercase tracking-widest">{isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12} />} IA</button></div></div>
-                
-                {/* --- NUEVO: PANEL DE VERIFICACIÓN DE AGENDA --- */}
-                <ScheduleVerificationPanel 
-                  athleteId={client.id}
-                  currentPlan={plan}
-                  onEditSchedule={() => {
-                    setScheduleModalMode('edit');
-                    setShowScheduleModal(true);
-                  }}
-                />
-
                 <PlanViewer plan={plan} mode="coach" />
              </div>
            ) : (
@@ -1661,16 +1644,6 @@ const ClientDetailView = ({ clientId, onBack }: { clientId: string, onBack: () =
                    </div>
                ))}
            </div>
-       )}
-
-       {showScheduleModal && plan && (
-         <AssignRoutineModal 
-            athlete={client}
-            coach={{ id: plan.userId }} // Usamos el ID del plan (coach creador) o el current user si estuviera disponible
-            template={plan}
-            initialMode={scheduleModalMode}
-            onClose={() => setShowScheduleModal(false)}
-         />
        )}
     </div>
   );
