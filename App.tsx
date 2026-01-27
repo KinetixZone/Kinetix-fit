@@ -15,6 +15,7 @@ import { User, Plan, Workout, Exercise, Goal, UserLevel, WorkoutExercise, SetEnt
 import { MOCK_USER, EXERCISES_DB as INITIAL_EXERCISES } from './constants';
 import { generateSmartRoutine, analyzeProgress, getTechnicalAdvice } from './services/geminiService';
 import { supabaseConnectionStatus } from './services/supabaseClient';
+import { AssignRoutineModal } from './components/AssignRoutineModal';
 
 // --- CONFIGURACIÓN DE VERSIÓN ESTABLE 8644345 ---
 const STORAGE_KEY = 'KINETIX_DATA_PRO_V12_6_SAFE';
@@ -1520,15 +1521,6 @@ const WorkoutsView = ({ user }: { user: User }) => {
         setShowAddModal(false);
     };
 
-    const executeAssignment = () => {
-        if (!assigningTemplate || !targetClient) return;
-        const newPlan = { ...assigningTemplate, id: generateUUID(), userId: targetClient, title: assigningTemplate.title, updatedAt: new Date().toISOString() };
-        DataEngine.savePlan(newPlan);
-        alert("Rutina asignada correctamente.");
-        setAssigningTemplate(null);
-        setTargetClient('');
-    };
-
     return (
         <div className="space-y-6 animate-fade-in">
              <div className="flex items-center justify-between">
@@ -1587,9 +1579,28 @@ const WorkoutsView = ({ user }: { user: User }) => {
                         </select>
                         <div className="flex gap-3">
                             <button onClick={() => setAssigningTemplate(null)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm text-gray-400 hover:text-white">Cancelar</button>
-                            <button onClick={executeAssignment} disabled={!targetClient} className="flex-1 py-3 bg-blue-600 rounded-xl font-bold text-sm text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">Confirmar</button>
+                            {/* Renderización condicional del Modal de Programación:
+                                Al seleccionar un atleta, la lógica cambia para renderizar el Modal encima en lugar del botón Confirmar directo
+                                si se desea un flujo de dos pasos. Sin embargo, para mantener UX simple, mostraremos el modal
+                                DESPUES de que el usuario haya seleccionado el cliente, dentro de este mismo bloque.
+                            */}
                         </div>
+                        {/* 
+                           Integración: Si ya hay un atleta seleccionado, mostramos el AssignRoutineModal en lugar de este select simple,
+                           o superpuesto. Para no romper el UI existente, reemplazaremos el contenido del modal actual
+                           con el componente AssignRoutineModal cuando targetClient tenga valor.
+                        */}
                     </div>
+                    {targetClient && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
+                             <AssignRoutineModal 
+                                athlete={clients.find(c => c.id === targetClient)!}
+                                coach={user}
+                                template={assigningTemplate}
+                                onClose={() => { setAssigningTemplate(null); setTargetClient(''); }}
+                             />
+                        </div>
+                    )}
                 </div>
             )}
         </div>

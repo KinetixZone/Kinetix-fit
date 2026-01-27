@@ -153,6 +153,21 @@ export interface ChatMessage {
     timestamp: number;
 }
 
+// --- CALENDAR EVENTS ---
+export interface CalendarEvent {
+  id: string;
+  type: 'workout';
+  title: string;
+  start: string; // ISO string
+  end: string;   // ISO string
+  allDay: boolean;
+  coachId: string;
+  athleteIds: string[];
+  workoutTemplateId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // --- UI SCHEMA GENERATION TYPES (FASE 1) ---
 
 export interface SchemaField {
