@@ -45,8 +45,8 @@ export interface TabataConfig {
   workTimeSec: number;
   restTimeSec: number;
   rounds: number;
-  sets: number; // Requerido por prompt
-  restBetweenSetsSec: number; // Requerido por prompt
+  sets: number;
+  restBetweenSetsSec: number;
   structure: 'simple' | 'alternado' | 'lista';
   exercises: { id: string; name: string; videoUrl?: string }[]; 
 }
@@ -76,30 +76,28 @@ export interface WorkoutExercise {
   videoUrl?: string;
   method?: TrainingMethod;
   
-  // CAMPOS ESPECÍFICOS POR MÉTODO (UI MAPPING)
+  // CAMPOS OPCIONALES PARA MÉTODOS AVANZADOS (SAFE MODE)
   
-  // FUERZA
-  tempo?: string; 
+  // Para FUERZA
+  tempo?: string;
 
-  // BISERIE
+  // Para BISERIE
   pair?: {
     exerciseId: string;
     name: string;
     targetReps: string;
     targetLoad?: string;
-    targetRest?: number; // Agregado para cumplir "Para CADA ejercicio... Descanso"
     videoUrl?: string;
-    coachCue?: string; // Notas para el par
   };
 
-  // AHAP
+  // Para AHAP
   targetWeights?: string[];
   ahapConfig?: {
-      rounds?: number; // Opcional
-      targetReps?: string; // Opcional
+      rounds?: number;
+      targetReps?: string;
   };
 
-  // DROP SET
+  // Para DROP SET
   dropsetPatternMode?: 'FIXED' | 'PER_SERIES'; 
   drops?: { weight: string; reps: string }[]; 
   dropsetSeriesPatterns?: { [setIndex: number]: { weight: string; reps: string }[] };
@@ -107,13 +105,13 @@ export interface WorkoutExercise {
   dropConfig?: {
       initialLoad: string;
       mode: 'PERCENT' | 'KG';
-      value: number; // El valor del drop (ej: 20% o 5kg)
+      value: number;
   };
 
-  // TABATA
+  // Para TABATA (Nuevo)
   tabataConfig?: TabataConfig;
 
-  // EMOM
+  // Para EMOM (Nuevo)
   emomConfig?: EmomConfig;
 }
 
@@ -125,7 +123,7 @@ export interface Workout {
   isCompleted?: boolean;
   isClass?: boolean;
   classType?: string;
-  scheduledDate?: string; // ISO 8601 YYYY-MM-DD
+  scheduledDate?: string;
 }
 
 export interface SetEntry {
@@ -170,11 +168,11 @@ export interface SchemaField {
 }
 
 export interface BlockSchema {
-  blockId: string; // exerciseId en el contexto actual
+  blockId: string;
   method: string;
   title: string;
   editableFields: SchemaField[];
-  exercises?: { // Específico para BISERIE/Complex
+  exercises?: {
     exerciseId: string;
     fields: SchemaField[];
   }[];
