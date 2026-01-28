@@ -33,7 +33,8 @@ export function AssignRoutineModal({
   const [weeks, setWeeks] = useState<number>(4);
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
-  const [startDate] = useState<string>(getDefaultStartDate());
+  // ✅ Cambio mínimo: permitir editar la fecha de inicio
+  const [startDate, setStartDate] = useState<string>(getDefaultStartDate());
   
   // Nuevo estado para reprogramación
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
@@ -100,6 +101,16 @@ export function AssignRoutineModal({
         </div>
 
         <div className="space-y-6">
+            {/* ✅ Nueva sección mínima: Fecha de inicio editable */}
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Fecha de inicio</label>
+              <input
+                type="date"
+                className="w-full bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
+            </div>
             
             {/* Toggle de Reprogramación (Visible en ambos modos, pero default true en edit) */}
             <div className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
