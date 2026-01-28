@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { generateOccurrencesByWeekdays, combineDateTime } from '../utils/schedule';
 import { calendarRepo } from '../data/calendarRepo';
 import { reprogramFutureSessions } from '../features/reprogram';
-import { X, RefreshCw, CalendarDays, AlertTriangle } from 'lucide-react';
+import { X, RefreshCw, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
@@ -12,6 +12,15 @@ const getTodayISO = () => {
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const getNextMondayISO = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
 
@@ -45,10 +54,9 @@ export function AssignRoutineModal({
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
   
-  // CAMBIO CLAVE: Usar HOY por defecto, no el próximo lunes.
+  // POR DEFECTO: HOY
   const [startDate, setStartDate] = useState<string>(getTodayISO());
   
-  // Nuevo estado para reprogramación
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
 
   const toggleDow = (v: number) => {
@@ -61,7 +69,6 @@ export function AssignRoutineModal({
 
   const handleAssign = () => {
     if (replaceFuture) {
-      // Lógica de Reprogramación (Borrar futuras + Crear nuevas)
       const result = reprogramFutureSessions({
         athleteId: athlete.id,
         coachId: coach.id,
@@ -75,7 +82,6 @@ export function AssignRoutineModal({
       });
       alert(`Programación actualizada. Se eliminaron ${result.deleted} sesiones futuras y se crearon ${result.created} nuevas.`);
     } else {
-      // Lógica clásica (Solo agregar, modo "Crear")
       const now = new Date().toISOString();
       occurrences.forEach(dateISO => {
         const { start, end } = combineDateTime(dateISO, time, duration);
@@ -96,13 +102,12 @@ export function AssignRoutineModal({
       alert(`Se han añadido ${occurrences.length} sesiones correctamente.`);
     }
     
-    // Notificar al padre que la operación fue exitosa (Para guardar el Plan en DataEngine)
-    if (onSuccess) {
-      onSuccess();
-    }
-    
+    if (onSuccess) onSuccess();
     onClose?.();
   };
+
+  const todayISO = getTodayISO();
+  const nextMondayISO = getNextMondayISO();
 
   return (
     <div className="fixed inset-0 bg-black/90 z-[90] flex items-center justify-center p-4">
@@ -119,37 +124,45 @@ export function AssignRoutineModal({
 
         <div className="space-y-6">
             
-            {/* Toggle de Reprogramación (Solo visible si estamos editando o si el usuario quiere activarlo) */}
-            <div className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
-                <button 
-                  onClick={() => setReplaceFuture(!replaceFuture)}
-                  className={`w-10 h-6 rounded-full relative transition-colors ${replaceFuture ? 'bg-orange-500' : 'bg-gray-700'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${replaceFuture ? 'left-5' : 'left-1'}`} />
-                </button>
-                <div className="flex-1">
-                  <p className={`text-xs font-bold ${replaceFuture ? 'text-orange-400' : 'text-gray-400'}`}>Reemplazar futuras</p>
-                  <p className="text-[9px] text-gray-500 leading-tight">Si activas esto, se borrarán las sesiones futuras de esta plantilla antes de crear las nuevas.</p>
-                </div>
-            </div>
+            {/* SELECCIÓN DE FECHA VISUAL Y GRANDE */}
+            <div>
+                <label className="text-[10px] text-gray-500 uppercase font-bold mb-3 block">¿Cuándo iniciamos?</label>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                    <button
+                        onClick={() => setStartDate(todayISO)}
+                        className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all relative ${startDate === todayISO ? 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-900/20' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
+                    >
+                        {startDate === todayISO && <div className="absolute top-2 right-2"><CheckCircle2 size={14}/></div>}
+                        <span className="text-xs font-black uppercase tracking-widest">HOY MISMO</span>
+                        <span className="text-[10px] font-medium opacity-80">{todayISO}</span>
+                    </button>
 
-            <div className="space-y-2">
-                <label className="text-[10px] text-gray-500 uppercase font-bold block">Fecha de Inicio</label>
-                <div className="flex gap-2">
+                    <button
+                        onClick={() => setStartDate(nextMondayISO)}
+                        className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all relative ${startDate === nextMondayISO ? 'bg-white text-black border-white shadow-lg' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
+                    >
+                        {startDate === nextMondayISO && <div className="absolute top-2 right-2"><CheckCircle2 size={14}/></div>}
+                        <span className="text-xs font-black uppercase tracking-widest">PRÓXIMO LUNES</span>
+                        <span className="text-[10px] font-medium opacity-80">{nextMondayISO}</span>
+                    </button>
+                </div>
+                
+                {/* Opción Manual "escondida" pero accesible si quieren otra fecha */}
+                {(startDate !== todayISO && startDate !== nextMondayISO) && (
+                    <div className="bg-white/5 p-2 rounded-lg border border-white/10 mb-3 text-center">
+                        <span className="text-[10px] text-yellow-500 font-bold uppercase">Fecha Personalizada Seleccionada</span>
+                    </div>
+                )}
+                
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-600 font-bold uppercase whitespace-nowrap">O elegir otra:</span>
                     <input 
                         type="date" 
-                        className="flex-1 bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500 font-bold" 
+                        className="bg-black border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs outline-none focus:border-red-500 w-full" 
                         value={startDate} 
                         onChange={(e) => setStartDate(e.target.value)} 
                     />
-                    <button 
-                        onClick={() => setStartDate(getTodayISO())}
-                        className="px-4 bg-white/10 rounded-xl text-[10px] font-bold text-white hover:bg-white/20 transition-colors uppercase tracking-widest border border-white/5"
-                    >
-                        HOY
-                    </button>
                 </div>
-                <p className="text-[9px] text-gray-600">Las sesiones se generarán a partir de este día.</p>
             </div>
 
             <div>
@@ -185,6 +198,20 @@ export function AssignRoutineModal({
                 <div>
                     <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Hora de sesión</label>
                     <input type="time" className="w-full h-[46px] bg-black border border-white/10 rounded-xl px-3 text-white text-sm outline-none focus:border-red-500 text-center font-bold" value={time} onChange={e=>setTime(e.target.value)} />
+                </div>
+            </div>
+
+            {/* Toggle de Reprogramación */}
+            <div className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
+                <button 
+                  onClick={() => setReplaceFuture(!replaceFuture)}
+                  className={`w-10 h-6 rounded-full relative transition-colors ${replaceFuture ? 'bg-orange-500' : 'bg-gray-700'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${replaceFuture ? 'left-5' : 'left-1'}`} />
+                </button>
+                <div className="flex-1">
+                  <p className={`text-xs font-bold ${replaceFuture ? 'text-orange-400' : 'text-gray-400'}`}>Reemplazar futuras</p>
+                  <p className="text-[9px] text-gray-500 leading-tight">Si activas esto, se borrarán las sesiones futuras de esta plantilla antes de crear las nuevas.</p>
                 </div>
             </div>
 
