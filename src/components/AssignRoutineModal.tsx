@@ -2,25 +2,16 @@ import React, { useMemo, useState } from 'react';
 import { generateOccurrencesByWeekdays, combineDateTime } from '../utils/schedule';
 import { calendarRepo } from '../data/calendarRepo';
 import { reprogramFutureSessions } from '../features/reprogram';
-import { X, RefreshCw, CalendarDays, AlertTriangle, ArrowRight } from 'lucide-react';
+import { X, RefreshCw, CalendarDays, AlertTriangle } from 'lucide-react';
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-// Helper para obtener fecha local YYYY-MM-DD
+// Helper para obtener fecha local YYYY-MM-DD (Hoy)
 const getTodayISO = () => {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
-
-const getNextMondayISO = () => {
-    const d = new Date();
-    d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
 
@@ -54,7 +45,7 @@ export function AssignRoutineModal({
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
   
-  // INICIO: Usar HOY por defecto, no el próximo lunes.
+  // CAMBIO CLAVE: Usar HOY por defecto, no el próximo lunes.
   const [startDate, setStartDate] = useState<string>(getTodayISO());
   
   // Nuevo estado para reprogramación
@@ -128,7 +119,7 @@ export function AssignRoutineModal({
 
         <div className="space-y-6">
             
-            {/* Toggle de Reprogramación (Visible en ambos modos, pero default true en edit) */}
+            {/* Toggle de Reprogramación (Solo visible si estamos editando o si el usuario quiere activarlo) */}
             <div className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
                 <button 
                   onClick={() => setReplaceFuture(!replaceFuture)}
@@ -138,28 +129,31 @@ export function AssignRoutineModal({
                 </button>
                 <div className="flex-1">
                   <p className={`text-xs font-bold ${replaceFuture ? 'text-orange-400' : 'text-gray-400'}`}>Reemplazar futuras</p>
-                  <p className="text-[9px] text-gray-500 leading-tight">Si activas esto, se borrarán las sesiones futuras de esta plantilla antes de crear las nuevas. El historial NO se toca.</p>
+                  <p className="text-[9px] text-gray-500 leading-tight">Si activas esto, se borrarán las sesiones futuras de esta plantilla antes de crear las nuevas.</p>
                 </div>
             </div>
 
             <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                    <label className="text-[10px] text-gray-500 uppercase font-bold">Fecha de Inicio</label>
-                    <div className="flex gap-2">
-                        <button onClick={() => setStartDate(getTodayISO())} className="text-[9px] bg-white/10 px-2 py-1 rounded hover:bg-white/20 text-white font-bold transition-colors">HOY</button>
-                        <button onClick={() => setStartDate(getNextMondayISO())} className="text-[9px] bg-white/10 px-2 py-1 rounded hover:bg-white/20 text-gray-400 hover:text-white font-bold transition-colors">LUNES</button>
-                    </div>
+                <label className="text-[10px] text-gray-500 uppercase font-bold block">Fecha de Inicio</label>
+                <div className="flex gap-2">
+                    <input 
+                        type="date" 
+                        className="flex-1 bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500 font-bold" 
+                        value={startDate} 
+                        onChange={(e) => setStartDate(e.target.value)} 
+                    />
+                    <button 
+                        onClick={() => setStartDate(getTodayISO())}
+                        className="px-4 bg-white/10 rounded-xl text-[10px] font-bold text-white hover:bg-white/20 transition-colors uppercase tracking-widest border border-white/5"
+                    >
+                        HOY
+                    </button>
                 </div>
-                <input 
-                    type="date" 
-                    className="w-full bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500 font-bold" 
-                    value={startDate} 
-                    onChange={(e) => setStartDate(e.target.value)} 
-                />
+                <p className="text-[9px] text-gray-600">Las sesiones se generarán a partir de este día.</p>
             </div>
 
             <div>
-                <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Días de la semana</label>
+                <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Días de entrenamiento</label>
                 <div className="flex justify-between gap-1">
                     {DOW.map(d => (
                     <button
@@ -175,7 +169,7 @@ export function AssignRoutineModal({
 
             <div className="grid grid-cols-2 gap-4">
                 <div>
-                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Duración (Semanas)</label>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Duración del ciclo</label>
                     <div className="flex gap-1 h-[46px]">
                         {[2,4,8].map(w => (
                         <button
@@ -189,24 +183,27 @@ export function AssignRoutineModal({
                     </div>
                 </div>
                 <div>
-                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Hora</label>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Hora de sesión</label>
                     <input type="time" className="w-full h-[46px] bg-black border border-white/10 rounded-xl px-3 text-white text-sm outline-none focus:border-red-500 text-center font-bold" value={time} onChange={e=>setTime(e.target.value)} />
                 </div>
             </div>
 
             <div className={`p-4 rounded-xl border text-center ${replaceFuture ? 'bg-orange-900/10 border-orange-500/20' : 'bg-white/5 border-white/5'}`}>
-                <p className="text-[10px] text-gray-500 uppercase font-bold">Resumen de Acción</p>
-                {replaceFuture ? (
-                   <strong className="text-orange-400 text-sm block mt-1 flex items-center justify-center gap-2">
-                     <AlertTriangle size={14}/> Reemplazo Seguro
-                   </strong>
-                ) : (
-                   <strong className="text-white text-sm block mt-1">Modo Aditivo (Agregar)</strong>
-                )}
-                <p className="text-[10px] text-gray-400 mt-1">
-                  Se generarán <strong className="text-white">{occurrences.length} sesiones</strong><br/>
-                  Del <span className="text-white font-bold">{startDate}</span> al <span className="text-white font-bold">{occurrences[occurrences.length - 1] || startDate}</span>
-                </p>
+                <p className="text-[10px] text-gray-500 uppercase font-bold">Resumen de Agenda</p>
+                <div className="mt-2 flex flex-col gap-1">
+                    <div className="flex justify-between text-xs px-4">
+                        <span className="text-gray-400">Inicio:</span>
+                        <span className="text-white font-bold">{startDate}</span>
+                    </div>
+                    <div className="flex justify-between text-xs px-4">
+                        <span className="text-gray-400">Total Sesiones:</span>
+                        <span className="text-white font-bold">{occurrences.length}</span>
+                    </div>
+                    <div className="flex justify-between text-xs px-4 border-t border-white/10 pt-1 mt-1">
+                        <span className="text-gray-400">Fin estimado:</span>
+                        <span className="text-white font-bold">{occurrences[occurrences.length - 1] || startDate}</span>
+                    </div>
+                </div>
             </div>
 
             <div className="flex gap-3 pt-2">
