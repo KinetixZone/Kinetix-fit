@@ -2,11 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { generateOccurrencesByWeekdays, combineDateTime } from '../utils/schedule';
 import { calendarRepo } from '../data/calendarRepo';
 import { reprogramFutureSessions } from '../features/reprogram';
-import { X, RefreshCw, CalendarDays, CheckCircle2, Calendar, ArrowRight } from 'lucide-react';
+import { X, RefreshCw, CalendarDays, CheckCircle2, Calendar, ArrowRight, AlertTriangle } from 'lucide-react';
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-// Helper para obtener fecha local YYYY-MM-DD
+// --- HELPERS DE FECHA LOCALES ---
 const getTodayISO = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -54,7 +54,7 @@ export function AssignRoutineModal({
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
   
-  // CORRECCIÓN CRÍTICA: Ahora sí exponemos setStartDate para poder cambiar la fecha
+  // ESTADO DE FECHA (Ahora es mutable)
   const [startDate, setStartDate] = useState<string>(getTodayISO());
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
 
@@ -110,6 +110,7 @@ export function AssignRoutineModal({
 
   // Formatear fechas para UI (ej: 12 oct)
   const formatDateNice = (iso: string) => {
+      if (!iso) return '-';
       const [y, m, d] = iso.split('-').map(Number);
       const date = new Date(y, m-1, d);
       return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
@@ -132,10 +133,10 @@ export function AssignRoutineModal({
 
         <div className="space-y-6">
             
-            {/* 1. SELECCIÓN DE FECHA VISUAL (TOP) - ESTA ES LA SECCIÓN QUE FALTABA */}
+            {/* 1. SELECCIÓN DE FECHA VISUAL (TOP) - DISEÑO PRIORITARIO */}
             <div>
                 <label className="text-[10px] text-gray-500 uppercase font-bold mb-3 block flex items-center gap-2 tracking-widest">
-                    <Calendar size={12} /> Selecciona el Inicio
+                    <Calendar size={12} /> ¿Cuándo comenzamos?
                 </label>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                     <button
