@@ -6,7 +6,7 @@ import { X, RefreshCw, CalendarDays, CheckCircle2, Calendar, ArrowRight, AlertTr
 
 const generateUUID = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-// --- HELPERS DE FECHA ---
+// --- HELPERS DE FECHA LOCALES ---
 const getTodayISO = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -54,7 +54,7 @@ export function AssignRoutineModal({
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
   
-  // ESTADO DE FECHA (Ahora es mutable y con setters explícitos)
+  // CORRECCIÓN: Ahora startDate es modificable
   const [startDate, setStartDate] = useState<string>(getTodayISO());
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
 
