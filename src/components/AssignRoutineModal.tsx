@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { generateOccurrencesByWeekdays, combineDateTime } from '../utils/schedule';
 import { calendarRepo } from '../data/calendarRepo';
 import { reprogramFutureSessions } from '../features/reprogram';
@@ -54,7 +54,7 @@ export function AssignRoutineModal({
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
   
-  // POR DEFECTO: HOY
+  // POR DEFECTO: HOY. Y exponemos setStartDate para poder cambiarlo.
   const [startDate, setStartDate] = useState<string>(getTodayISO());
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
 
@@ -108,7 +108,7 @@ export function AssignRoutineModal({
   const todayISO = getTodayISO();
   const nextMondayISO = getNextMondayISO();
 
-  // Formatear fechas para UI
+  // Formatear fechas para UI (ej: 12 oct)
   const formatDateNice = (iso: string) => {
       const [y, m, d] = iso.split('-').map(Number);
       const date = new Date(y, m-1, d);
@@ -132,10 +132,10 @@ export function AssignRoutineModal({
 
         <div className="space-y-6">
             
-            {/* 1. SELECCIÓN DE FECHA VISUAL (TOP) */}
+            {/* 1. SELECCIÓN DE FECHA VISUAL (TOP) - ESTO ES LO NUEVO */}
             <div>
                 <label className="text-[10px] text-gray-500 uppercase font-bold mb-3 block flex items-center gap-2 tracking-widest">
-                    <Calendar size={12} /> Selecciona el Inicio
+                    <Calendar size={12} /> ¿Cuándo comenzamos?
                 </label>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                     <button
@@ -157,7 +157,7 @@ export function AssignRoutineModal({
                     </button>
                 </div>
                 
-                {/* Selector Manual (Discreto) */}
+                {/* Selector Manual (Discreto abajo) */}
                 <div className={`flex items-center gap-3 px-3 py-2 rounded-xl border transition-all ${startDate !== todayISO && startDate !== nextMondayISO ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-transparent border-transparent'}`}>
                     <span className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap">O elige otra fecha:</span>
                     <input 
