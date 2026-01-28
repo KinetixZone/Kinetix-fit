@@ -35,7 +35,8 @@ export function AssignRoutineModal({
   const [weeks, setWeeks] = useState<number>(4);
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
-  const [startDate] = useState<string>(getDefaultStartDate());
+  // Allow editing the start date. Initialize with default helper.
+  const [startDate, setStartDate] = useState<string>(getDefaultStartDate());
   
   // Nuevo estado para reprogramación
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
@@ -95,7 +96,7 @@ export function AssignRoutineModal({
 
   return (
     <div className="fixed inset-0 bg-black/90 z-[90] flex items-center justify-center p-4">
-      <div className="bg-[#1A1A1D] w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl animate-fade-in-up">
+      <div className="bg-[#1A1A1D] w-full max-w-md rounded-3xl p-6 border border-white/10 shadow-2xl animate-fade-in-up max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
             <div>
                 <h3 className="text-lg font-bold text-white uppercase italic flex items-center gap-2">
@@ -122,6 +123,32 @@ export function AssignRoutineModal({
                 </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Fecha de Inicio</label>
+                    <input 
+                        type="date" 
+                        className="w-full bg-black border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-red-500" 
+                        value={startDate} 
+                        onChange={(e) => setStartDate(e.target.value)} 
+                    />
+                </div>
+                <div>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Duración (Semanas)</label>
+                    <div className="flex gap-1 h-[46px]">
+                        {[2,4,8].map(w => (
+                        <button
+                            key={w}
+                            className={`flex-1 rounded-xl text-[10px] font-bold transition-all border ${weeks === w ? 'bg-white text-black border-white' : 'bg-transparent text-gray-500 border-white/10 hover:border-white/30'}`}
+                            onClick={() => setWeeks(w)}
+                        >
+                            {w} sem
+                        </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
             <div>
                 <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Días de la semana</label>
                 <div className="flex justify-between gap-1">
@@ -132,21 +159,6 @@ export function AssignRoutineModal({
                         onClick={() => toggleDow(d.value)}
                     >
                         {d.label}
-                    </button>
-                    ))}
-                </div>
-            </div>
-
-            <div>
-                <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">Duración (Semanas)</label>
-                <div className="flex gap-2">
-                    {[2,4,8].map(w => (
-                    <button
-                        key={w}
-                        className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border ${weeks === w ? 'bg-white text-black border-white' : 'bg-transparent text-gray-500 border-white/10 hover:border-white/30'}`}
-                        onClick={() => setWeeks(w)}
-                    >
-                        {w} Semanas
                     </button>
                     ))}
                 </div>
