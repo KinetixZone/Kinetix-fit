@@ -1513,15 +1513,6 @@ const WorkoutsView = ({ user }: { user: User }) => {
         setShowAddModal(false);
     };
 
-    const handleAssignRoutine = () => {
-        if (!assigningTemplate || !targetClient) return;
-        const newPlan: Plan = { ...assigningTemplate, id: generateUUID(), userId: targetClient, updatedAt: new Date().toISOString() };
-        DataEngine.savePlan(newPlan);
-        alert(`Rutina asignada correctamente.`);
-        setAssigningTemplate(null);
-        setTargetClient('');
-    };
-
     return (
         <div className="space-y-6 animate-fade-in">
              <div className="flex items-center justify-between">
@@ -1586,11 +1577,6 @@ const WorkoutsView = ({ user }: { user: User }) => {
                                 DESPUES de que el usuario haya seleccionado el cliente, dentro de este mismo bloque.
                             */}
                         </div>
-                        {/* 
-                           Integración: Si ya hay un atleta seleccionado, mostramos el AssignRoutineModal en lugar de este select simple,
-                           o superpuesto. Para no romper el UI existente, reemplazaremos el contenido del modal actual
-                           con el componente AssignRoutineModal cuando targetClient tenga valor.
-                        */}
                     </div>
                     {targetClient && (
                         <div className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
@@ -1599,6 +1585,16 @@ const WorkoutsView = ({ user }: { user: User }) => {
                                 coach={user}
                                 template={assigningTemplate}
                                 onClose={() => { setAssigningTemplate(null); setTargetClient(''); }}
+                                onSuccess={() => {
+                                    // GUARDADO DE SEGURIDAD DEL PLAN EN EL PERFIL DEL ATLETA
+                                    const newPlan: Plan = { 
+                                        ...assigningTemplate, 
+                                        id: generateUUID(), 
+                                        userId: targetClient, 
+                                        updatedAt: new Date().toISOString() 
+                                    };
+                                    DataEngine.savePlan(newPlan);
+                                }}
                              />
                         </div>
                     )}
@@ -1718,18 +1714,31 @@ const DashboardView = ({ user, onNavigate }: { user: User, onNavigate: (view: st
     );
 };
 
-const ClientsView = ({ onSelect }: { onSelect: (id: string) => void }) => {
-    const [clients, setClients] = useState(DataEngine.getUsers().filter(u => u.role === 'client'));
+const ClientsView = ({ onSelect, user }: { onSelect: (id: string) => void, user: User }) => {
+    const [users, setUsers] = useState<User[]>(DataEngine.getUsers().filter(u => u.role === 'client'));
+    const [search, setSearch] = useState('');
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    useEffect(() => { setUsers(DataEngine.getUsers().filter(u => u.role === 'client')); }, [showInviteModal]);
+    const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
     return (
-        <div className="space-y-6">
-            <h2 className="text-3xl font-display font-black italic uppercase">ATLETAS</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {clients.map(c => (
-                    <div key={c.id} onClick={() => onSelect(c.id)} className="bg-[#0F0F11] border border-white/5 p-5 rounded-2xl cursor-pointer hover:border-red-500/50 transition-all">
-                        <div className="flex items-center gap-4"><div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center font-bold text-white">{c.name[0]}</div><div><h4 className="font-bold text-white uppercase">{c.name}</h4><p className="text-xs text-gray-500">{c.email}</p></div></div>
-                    </div>
-                ))}
-            </div>
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="flex justify-between items-center"><h2 className="text-3xl font-display font-black italic text-white uppercase">ATLETAS</h2>{(user.role === 'coach' || user.role === 'admin') && (<button onClick={() => setShowInviteModal(true)} className="bg-white text-black px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-gray-200 transition-colors"><UserPlus size={16} /> Alta</button>)}</div>
+             <div className="relative"><Search className="absolute left-3 top-2.5 text-gray-500" size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar atleta..." className="bg-[#0F0F11] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:border-red-500 outline-none w-full md:w-64" /></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-32">
+                 {filtered.map(client => {
+                     const plan = DataEngine.getPlan(client.id);
+                     return (
+                         <div key={client.id} onClick={() => onSelect(client.id)} className="bg-[#0F0F11] border border-white/5 p-4 rounded-xl hover:border-red-500/50 cursor-pointer transition-all group relative overflow-hidden shadow-xl">
+                             <div className="flex items-center gap-4 relative z-10">
+                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center font-bold text-white shadow-lg border border-white/5 group-hover:scale-110 transition-transform">{client.name[0]}</div>
+                                 <div><h4 className="font-bold text-white group-hover:text-red-500 transition-colors uppercase text-sm">{client.name}</h4><p className="text-xs text-gray-500">{client.email}</p><div className="flex gap-2 mt-2"><span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/5 uppercase font-bold">{client.goal}</span>{plan && <span className="text-[9px] bg-green-900/20 text-green-500 px-2 py-0.5 rounded border border-green-500/20 flex items-center gap-1 font-bold uppercase"><CheckCircle2 size={10}/> Plan</span>}</div></div>
+                             </div>
+                         </div>
+                     );
+                 })}
+                 {filtered.length === 0 && (<div className="col-span-full text-center py-10 text-gray-500">No se encontraron atletas.</div>)}
+             </div>
+             {showInviteModal && (<UserInviteModal currentUser={user} onClose={() => setShowInviteModal(false)} onInviteSuccess={() => setUsers(DataEngine.getUsers().filter(u => u.role === 'client'))} />)}
         </div>
     );
 };
@@ -1774,10 +1783,11 @@ const AdminView = () => {
 
 const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     const [email, setEmail] = useState('');
-    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); const u = DataEngine.getUserByNameOrEmail(email); if(u) onLogin(u); else alert("Usuario no encontrado"); };
+    const [error, setError] = useState('');
+    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); const u = DataEngine.getUserByNameOrEmail(email); if(u) { if(u.isActive === false) { setError('Usuario desactivado'); return; } onLogin(u); } else setError('Usuario no encontrado'); }
     return (
         <div className="min-h-screen bg-[#050507] flex items-center justify-center p-4 relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-full h-full pointer-events-none"><div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-600/10 rounded-full blur-[100px]" /><div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[100px]" /></div>
+             <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden"><div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-red-600/10 rounded-full blur-[100px]" /><div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[100px]" /></div>
              <div className="w-full max-w-md space-y-8 relative z-10 text-center flex flex-col items-center">
                  <BrandingLogo className="w-48 h-48 mb-6 shadow-2xl" showText={false} />
                  <h1 className="text-5xl font-display font-black italic text-white tracking-tighter uppercase leading-none">KINETIX<br/><span className="text-red-600">ZONE</span></h1>
@@ -1785,14 +1795,22 @@ const LoginPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                  <div className="mt-4"><SocialLinks /></div>
                  <form onSubmit={handleSubmit} className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-[2.5rem] space-y-6 shadow-2xl w-full mt-8">
                     <div className="text-left"><label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 ml-1 tracking-widest">Correo de Acceso</label><input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-2xl p-4 text-white focus:border-red-500 outline-none transition-all placeholder-gray-700 text-sm" placeholder="atleta@kinetix.com" /></div>
+                    {error && <div className="text-red-500 text-[10px] font-bold bg-red-500/10 p-3 rounded-xl flex items-center gap-2 uppercase"><AlertTriangle size={14}/> {error}</div>}
                     <button type="submit" className="w-full bg-red-600 text-white font-bold py-5 rounded-2xl hover:bg-red-500 transition-all shadow-lg shadow-red-900/30 uppercase tracking-widest text-xs">Ingresar al Sistema</button>
                  </form>
-                 <div className="mt-8 space-y-4 w-full border-t border-white/5 pt-4">
-                     <p className="text-[10px] text-gray-600 uppercase font-bold mb-3">Accesos Directos (Demo)</p>
-                     <div className="flex gap-2 justify-center">
-                         <button onClick={() => setEmail('atleta@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Atleta</button>
-                         <button onClick={() => setEmail('coach@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Coach</button>
-                         <button onClick={() => setEmail('admin@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Admin</button>
+                 
+                 <div className="mt-8 space-y-4 w-full">
+                     <div className="border-t border-white/5 pt-4 w-full">
+                         <p className="text-[10px] text-gray-600 uppercase font-bold mb-3">Accesos Directos (Demo)</p>
+                         <div className="flex gap-2 justify-center">
+                             <button onClick={() => setEmail('atleta@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Atleta</button>
+                             <button onClick={() => setEmail('coach@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Coach</button>
+                             <button onClick={() => setEmail('admin@kinetix.com')} className="text-[10px] bg-white/5 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white border border-white/5 transition-colors">Admin</button>
+                         </div>
+                     </div>
+                     <div>
+                        <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Jorge Gonzalez | Head Coach</p>
+                        <p className="text-[8px] text-gray-700 uppercase tracking-widest font-bold">v12.7.2 PRO | RECOVERY</p>
                      </div>
                  </div>
              </div>
@@ -1840,7 +1858,7 @@ export default function App() {
         
         <main className="md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen relative">
             {view === 'dashboard' && <DashboardView user={user} onNavigate={setView} />}
-            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} />}
+            {view === 'clients' && <ClientsView onSelect={(id) => { setSelectedClientId(id); setView('client-detail'); }} user={user} />}
             {view === 'client-detail' && selectedClientId && <ClientDetailView clientId={selectedClientId} onBack={() => setView('clients')} />}
             {view === 'workouts' && <WorkoutsView user={user} />}
             {view === 'profile' && <ProfileView user={user} onLogout={logout} />}
@@ -1855,6 +1873,7 @@ export default function App() {
         </div>
 
         {user.role === 'client' && (<><button onClick={() => setChatbotOpen(!chatbotOpen)} className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl z-50 transition-transform hover:scale-110 active:scale-95"><MessageCircle size={24} /></button>{chatbotOpen && <TechnicalChatbot onClose={() => setChatbotOpen(false)} />}</>)}
+        
         <ConnectionStatus />
     </div>
   );

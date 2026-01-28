@@ -21,12 +21,14 @@ export function AssignRoutineModal({
   coach,
   template,
   onClose,
+  onSuccess,
   initialMode = 'create'
 }: {
   athlete: { id: string; name?: string };
   coach: { id: string };
   template: { id: string; title: string };
   onClose?: () => void;
+  onSuccess?: () => void;
   initialMode?: 'create' | 'edit';
 }) {
   const [weekdays, setWeekdays] = useState<number[]>([1, 3, 5]); // Lun/Mie/Vie por defecto
@@ -81,6 +83,11 @@ export function AssignRoutineModal({
         });
       });
       alert(`Se han añadido ${occurrences.length} sesiones correctamente.`);
+    }
+    
+    // Notificar al padre que la operación fue exitosa (Para guardar el Plan en DataEngine)
+    if (onSuccess) {
+      onSuccess();
     }
     
     onClose?.();
