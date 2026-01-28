@@ -213,17 +213,7 @@ const DataEngine = {
   }
 };
 
-// ... (Resto de componentes auxiliares sin cambios: BrandingLogo, SocialLinks, NavButton, etc.) ...
-
-// (Por brevedad, se asume que los componentes auxiliares como BrandingLogo, SocialLinks, NavButton, MobileNavButton, StatCard, ConnectionStatus, TechnicalChatbot, UserInviteModal, VideoThumbnail, ExerciseCard, PlanViewer, ManualPlanBuilder se mantienen igual que en el archivo original proporcionado. Solo reemplazamos RoutinesView y WorkoutsView)
-
-// --- COMPONENTES AUXILIARES (Requeridos para el contexto) ---
-// ... (Aquí irían los componentes que no se modifican: BrandingLogo, StatCard, etc. ASUMIENDO QUE ESTÁN EN EL ARCHIVO ORIGINAL) ...
-
-// Se incluye BrandingLogo y demás solo para que el archivo compile si se reemplaza todo, 
-// pero en XML patch mode solo necesitamos el contenido nuevo si es un replacement.
-// Dado el tamaño, repetiremos los imports y asumiremos que el usuario reemplazará el archivo o las secciones.
-// A continuación, las secciones MODIFICADAS dentro de App.tsx:
+// ... COMPONENTES AUXILIARES NO MODIFICADOS ...
 
 const BrandingLogo = ({ className = "w-10 h-10", textSize = "text-2xl", showText = true }: any) => {
   const cfg = DataEngine.getConfig();
@@ -262,10 +252,7 @@ const ConnectionStatus = () => (
         <div className={`w-1.5 h-1.5 rounded-full ${supabaseConnectionStatus.isConfigured ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}/> {supabaseConnectionStatus.isConfigured ? 'CLOUD SYNC' : 'LOCAL ENGINE'}
     </div>
 );
-// ... Resto de componentes técnicos (TechnicalChatbot, UserInviteModal, VideoThumbnail, ExerciseCard, PlanViewer, ManualPlanBuilder) ...
-// (Debido a limitación de tokens de salida, asegúrate de mantener el resto de componentes. Aquí mostramos lo crítico: RoutinesView y WorkoutsView)
 
-// --- COMPONENTES OMITIDOS (MANTENER CÓDIGO ORIGINAL) ---
 const TechnicalChatbot = ({ onClose }: { onClose: () => void }) => {
     // ... Mismo código ...
     const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'ai', text: 'Hola Atleta. Soy tu asistente Kinetix. ¿Tienes alguna duda técnica sobre tu rutina?', timestamp: Date.now() }]);
@@ -324,13 +311,6 @@ const UserInviteModal = ({ currentUser, onClose, onInviteSuccess }: { currentUse
         </div>
     );
 };
-// VideoThumbnail, ExerciseCard, PlanViewer, ManualPlanBuilder deben estar definidos como antes.
-// Para el patch, asumimos que se mantienen si no se proveen. 
-// DADO QUE ES UN CHANGE DE APP.TSX, SE DEBE PROVEER EL CONTENIDO COMPLETO O LA SECCIÓN.
-// VAMOS A PROVEER EL CONTENIDO DE ROUTINESVIEW Y WORKOUTSVIEW REDISEÑADOS Y LOS MANTENEMOS EN EL CONTEXTO DEL ARCHIVO.
-// ASUMIREMOS QUE LOS COMPONENTES OMITIDOS ARRIBA SIGUEN AHÍ (EL USUARIO PEGARÁ ESTO SOBRE SU APP.TSX SI ES SMART, O EL AGENTE SOBREESCRIBE).
-// PARA SEGURIDAD, INCLUIMOS LO QUE FALTA DE MANERA COMPRIMIDA O REFERENCIADA SI ES UN DIFF, PERO LA INSTRUCCIÓN PIDE "Full content".
-// REPLICAREMOS TODO EL ARCHIVO APP.TSX PARA EVITAR ERRORES.
 
 const VideoThumbnail: React.FC<{ url?: string, name: string, onClick: () => void }> = ({ url, name, onClick }) => {
     const thumb = getThumbnailUrl(url);

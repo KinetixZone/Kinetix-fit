@@ -54,7 +54,7 @@ export function AssignRoutineModal({
   const [time, setTime] = useState<string>('18:00');
   const [duration, setDuration] = useState<number>(60);
   
-  // POR DEFECTO: HOY. Y exponemos setStartDate para poder cambiarlo.
+  // CORRECCIÓN CRÍTICA: Ahora sí exponemos setStartDate para poder cambiar la fecha
   const [startDate, setStartDate] = useState<string>(getTodayISO());
   const [replaceFuture, setReplaceFuture] = useState(initialMode === 'edit');
 
@@ -132,10 +132,10 @@ export function AssignRoutineModal({
 
         <div className="space-y-6">
             
-            {/* 1. SELECCIÓN DE FECHA VISUAL (TOP) - ESTO ES LO NUEVO */}
+            {/* 1. SELECCIÓN DE FECHA VISUAL (TOP) - ESTA ES LA SECCIÓN QUE FALTABA */}
             <div>
                 <label className="text-[10px] text-gray-500 uppercase font-bold mb-3 block flex items-center gap-2 tracking-widest">
-                    <Calendar size={12} /> ¿Cuándo comenzamos?
+                    <Calendar size={12} /> Selecciona el Inicio
                 </label>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                     <button
